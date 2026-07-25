@@ -1,5 +1,7 @@
 User-agent: *
 Allow: /
 Disallow: /admin-
+Disallow: /files/
+Disallow: /thank-you-pro.html
 
 Sitemap: https://www.stromation.com/sitemap.xml

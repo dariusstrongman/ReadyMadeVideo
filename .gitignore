@@ -1,5 +1,13 @@
 workflows-backup/
 
+# Pro Pack SOURCE (readable) - keep local, only the built zip in /files/ is published
+packs/
+
+# local screenshots / scratch
+*.jpeg
+.playwright-mcp/
+nul
+
 # Internal docs - keep local, do NOT publish
 CLAUDE.md
 .claude/
