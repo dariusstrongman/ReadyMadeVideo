@@ -242,6 +242,34 @@
   footer .flinks a:hover{color:var(--cyan)}
   footer .fine{font-family:var(--mono2); font-size:0.66rem; color:var(--fg-faint); width:100%; margin-top:22px; letter-spacing:0.03em}
 
+  /* ---------- who it's for ---------- */
+  .forwho{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:24px}
+  @media(max-width:760px){ .forwho{grid-template-columns:1fr 1fr} }
+  .fw{border:1px solid var(--line); border-radius:13px; padding:20px 18px; background:var(--ink-2); transition:border-color .25s, transform .25s}
+  .fw:hover{border-color:rgba(0,229,255,0.3); transform:translateY(-2px)}
+  .fw .fwi{font-size:1.5rem; line-height:1}
+  .fw h4{font-size:0.98rem; font-weight:700; margin-top:12px; letter-spacing:-0.01em}
+  .fw p{color:var(--fg-dim); font-size:0.84rem; margin-top:6px; line-height:1.5}
+  /* ---------- faq ---------- */
+  .faq{margin-top:10px; border-top:1px solid var(--line)}
+  .qa{border-bottom:1px solid var(--line)}
+  .qa summary{list-style:none; cursor:pointer; padding:20px 2px; display:flex; justify-content:space-between; align-items:center; gap:18px; font-weight:600; font-size:1.05rem; color:var(--fg)}
+  .qa summary::-webkit-details-marker{display:none}
+  .qa summary:hover{color:var(--cyan)}
+  .qa summary .pm{flex:0 0 auto; width:20px; height:20px; position:relative}
+  .qa summary .pm::before,.qa summary .pm::after{content:''; position:absolute; background:var(--cyan); border-radius:2px; top:50%; left:50%; transform:translate(-50%,-50%)}
+  .qa summary .pm::before{width:13px; height:2px}
+  .qa summary .pm::after{width:2px; height:13px; transition:transform .25s}
+  .qa[open] summary .pm::after{transform:translate(-50%,-50%) scaleY(0)}
+  .qa .ans{padding:0 2px 22px; color:var(--fg-dim); font-size:0.96rem; max-width:72ch; line-height:1.65}
+  .qa .ans a{color:var(--cyan)}
+  /* ---------- sticky mobile cta ---------- */
+  .stickycta{position:fixed; left:0; right:0; bottom:0; z-index:50; transform:translateY(120%); transition:transform .3s;
+    padding:11px 16px; background:rgba(8,9,11,0.94); backdrop-filter:blur(10px); border-top:1px solid var(--line-2)}
+  .stickycta a{display:block; text-align:center; background:var(--cyan); color:var(--ink); font-weight:700; padding:13px; border-radius:9px; font-size:0.92rem}
+  .stickycta.show{transform:none}
+  @media(min-width:761px){ .stickycta{display:none} }
+
   /* ---------- reveals ---------- */
   .anim .rv{opacity:0; transform:translateY(16px)}
   .rv{transition:opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1)}
@@ -384,6 +412,19 @@
     </section>
   </div>
 
+  <!-- ================= WHO IT'S FOR ================= -->
+  <section style="margin-top:36px">
+    <div class="nodetag rv">built for</div>
+    <h2 class="sh rv" style="margin-top:6px">If you're doing all of it yourself.</h2>
+    <p class="snote rv">Stromation is for the person who is the whole company. If any of these is you, the machine was built for you.</p>
+    <div class="forwho">
+      <div class="fw rv"><div class="fwi">🧑‍💻</div><h4>Freelancers &amp; consultants</h4><p>Drowning in admin, follow-ups, and onboarding between real client work.</p></div>
+      <div class="fw rv"><div class="fwi">🛒</div><h4>Solo shop owners</h4><p>One person doing sales, support, and shipping — and missing leads in the gaps.</p></div>
+      <div class="fw rv"><div class="fwi">🎥</div><h4>Creators</h4><p>Posting daily and still running every other part of the business by hand.</p></div>
+      <div class="fw rv"><div class="fwi">🚀</div><h4>Indie founders</h4><p>Building the product AND running the business, with no team to hand things to.</p></div>
+    </div>
+  </section>
+
   <!-- ================= THE FREE PACK ================= -->
   <section class="pack rv" id="pack">
     <div class="pack-in">
@@ -403,6 +444,20 @@
         <button type="submit">Send me the pack</button>
       </form>
       <div class="microcopy" id="capMsg">We email you the pack, then new automations as they drop. No spam. Unsubscribe anytime.</div>
+    </div>
+  </section>
+
+  <!-- ================= FAQ ================= -->
+  <section style="margin-top:80px" id="faq">
+    <div class="nodetag rv">questions</div>
+    <h2 class="sh rv" style="margin-top:6px">Straight answers.</h2>
+    <div class="faq rv" style="margin-top:22px">
+      <details class="qa"><summary>Is the Starter Pack really free?<span class="pm"></span></summary><div class="ans">Yes. No card, no catch. Drop your email and we send you all five automations to keep forever. New ones come free as they're built.</div></details>
+      <details class="qa"><summary>Do I need to be technical?<span class="pm"></span></summary><div class="ans">No. Each automation is a step-by-step blueprint on <b style="color:var(--fg)">n8n</b> — if you can follow a recipe, you can run it. Most take under an hour to set up, and you can hand them to anyone.</div></details>
+      <details class="qa"><summary>What is n8n?<span class="pm"></span></summary><div class="ans">A free, open-source automation tool — like Zapier, but you own it and it doesn't charge you per task. Everything here runs on it, so you're never locked into a subscription just to keep your systems alive.</div></details>
+      <details class="qa"><summary>Do you build it for me, or do I?<span class="pm"></span></summary><div class="ans">The Starter Pack is do-it-yourself blueprints you plug in. Deeper, done-for-you systems and template packs come next — subscribers hear first.</div></details>
+      <details class="qa"><summary>Will these work with the tools I already use?<span class="pm"></span></summary><div class="ans">Yes — they connect to the tools you're already on: Gmail, Stripe, Google Sheets, your CRM, your calendar, and more. You wire them to your accounts and they run.</div></details>
+      <details class="qa"><summary>What happens after I get the pack?<span class="pm"></span></summary><div class="ans">You get new plug-and-play automations as they drop — the whole library over time, free. No spam, and one-click unsubscribe on every email.</div></details>
     </div>
   </section>
 
@@ -433,6 +488,18 @@
     <div class="fine">Stromation — AI automation studio for solopreneurs. Build a business that runs itself.</div>
   </div>
 </footer>
+
+<div class="stickycta" id="stickyCta"><a href="#pack">Get the free Starter Pack →</a></div>
+
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"Is the Starter Pack really free?","acceptedAnswer":{"@type":"Answer","text":"Yes. No card, no catch. Drop your email and we send you all five automations to keep forever, plus new ones free as they are built."}},
+{"@type":"Question","name":"Do I need to be technical?","acceptedAnswer":{"@type":"Answer","text":"No. Each automation is a step-by-step blueprint on n8n. If you can follow a recipe you can run it, and most take under an hour to set up."}},
+{"@type":"Question","name":"What is n8n?","acceptedAnswer":{"@type":"Answer","text":"A free, open-source automation tool like Zapier, but you own it and it does not charge per task. Everything runs on it so you are never locked into a subscription."}},
+{"@type":"Question","name":"Will these work with the tools I already use?","acceptedAnswer":{"@type":"Answer","text":"Yes. They connect to the tools you already use: Gmail, Stripe, Google Sheets, your CRM, your calendar and more."}},
+{"@type":"Question","name":"What happens after I get the pack?","acceptedAnswer":{"@type":"Answer","text":"You get new plug-and-play automations as they drop, free, with one-click unsubscribe on every email."}}
+]}
+</script>
 
 <script>
   document.documentElement.classList.add('anim');
@@ -502,9 +569,16 @@
 
   /* ---------- scroll progress ---------- */
   var prog = document.getElementById('prog');
+  var sticky = document.getElementById('stickyCta');
+  var packEl = document.getElementById('pack');
   addEventListener('scroll', function(){
     var h = document.documentElement.scrollHeight - innerHeight;
     prog.style.width = (h > 0 ? (scrollY / h * 100) : 0) + '%';
+    if (sticky){
+      var packTop = packEl ? packEl.getBoundingClientRect().top : 99999;
+      // show once past the hero, hide once the pack (with its own form) is on screen
+      sticky.classList.toggle('show', scrollY > 640 && packTop > innerHeight * 0.6);
+    }
   }, { passive:true });
 
   /* ---------- live signal in the logo ---------- */
