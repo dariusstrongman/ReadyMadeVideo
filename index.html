@@ -961,7 +961,7 @@
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: em, website: '', page: 'studio' })
     }).then(function(r){ if (!r.ok) throw new Error('bad status'); return r.json().catch(function(){ return {}; }); })
-    .then(function(){ try{ gtag('event','starter_pack_signup'); }catch(_){}; markSubbed(); m.textContent = "you're in — check your inbox for the pack."; m.style.color = 'var(--cyan)'; f.reset(); })
+    .then(function(){ try{ gtag('event','starter_pack_signup'); }catch(_){}; markSubbed(); m.innerHTML = "you're in — check your inbox for the pack. <a href=\"templates.html\" style=\"color:var(--cyan);border-bottom:1px solid var(--cyan-dim)\">browse the library while you wait →</a>"; m.style.color = 'var(--cyan)'; f.reset(); if (inExit){ setTimeout(function(){ var mo=document.getElementById('exit'); if(mo) mo.classList.remove('on'); }, 2600); } })
     .catch(function(){ m.textContent = "that didn't go through. email contact@stromation.com and we'll send it over."; m.style.color = 'var(--fg-dim)'; })
     .finally(function(){ btn.disabled = false; btn.textContent = label; });
     return false;
