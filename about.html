@@ -1,172 +1,81 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>About - Stromation AI News</title>
-    <meta name="description" content="Stromation is a daily AI briefing built by a founder who ships his own AI products. One story a day, the move to make with it, real numbers only.">
-    
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-B6Z6XV02RT"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'G-B6Z6XV02RT');
-    </script>
-
-    <link rel="canonical" href="https://www.stromation.com/about.html">
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles-news.css">
-    <style>
-        .page-header {
-            padding: 80px 0 40px;
-            text-align: center;
-        }
-        .page-header h1 {
-            font-size: clamp(40px, 6vw, 64px);
-            margin-bottom: 24px;
-        }
-        .content-block {
-            max-width: 800px;
-            margin: 0 auto 80px;
-        }
-        .content-block p {
-            font-size: 18px;
-            color: var(--text-muted);
-            margin-bottom: 24px;
-            line-height: 1.6;
-        }
-        .content-block h2 {
-            font-size: 32px;
-            margin: 48px 0 24px;
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 24px;
-            margin: 48px 0;
-        }
-        .stat-card {
-            background: var(--bg-panel);
-            border: 1px solid var(--border-light);
-            padding: 32px;
-            border-radius: var(--radius-md);
-            text-align: center;
-        }
-        .stat-number {
-            font-size: 48px;
-            font-weight: 800;
-            color: var(--accent-cyan);
-            margin-bottom: 8px;
-        }
-        .stat-label {
-            font-size: 14px;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>About — Stromation</title>
+<meta name="description" content="Stromation is an AI automation studio for solopreneurs. We build the systems that run the busywork of a one-person business so it operates like a whole team.">
+<link rel="canonical" href="https://www.stromation.com/about.html">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<meta name="theme-color" content="#08090b">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://www.stromation.com/about.html">
+<meta property="og:title" content="About — Stromation">
+<meta property="og:description" content="An AI automation studio for solopreneurs.">
+<meta property="og:image" content="https://www.stromation.com/banner-1500x500.png">
+<meta name="twitter:card" content="summary_large_image">
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-B6Z6XV02RT"></script>
+<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-B6Z6XV02RT');</script>
+<style>
+  :root{--ink:#08090b;--ink-2:#0e1114;--fg:#e9eef2;--fg-dim:#8b97a1;--fg-faint:#586067;--line:rgba(233,238,242,0.09);--line-2:rgba(233,238,242,0.18);--cyan:#00E5FF;--cyan-dim:rgba(0,229,255,0.55);--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,Helvetica,Arial,sans-serif;--mono:"Courier New",ui-monospace,Menlo,Consolas,monospace;--mono2:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace}
+  *{margin:0;padding:0;box-sizing:border-box}html{scroll-behavior:smooth}
+  body{background:var(--ink);color:var(--fg);font-family:var(--sans);line-height:1.65;letter-spacing:-0.003em;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  ::selection{background:var(--cyan);color:var(--ink)}a{color:inherit;text-decoration:none}:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+  .glow{position:fixed;z-index:0;pointer-events:none;width:60vw;height:60vw;top:-28vw;right:-22vw;border-radius:50%;background:radial-gradient(circle,rgba(0,229,255,0.10),transparent 60%);filter:blur(34px)}
+  .wrap{position:relative;z-index:1;max-width:720px;margin:0 auto;padding:0 24px}
+  header.top{position:sticky;top:0;z-index:40;backdrop-filter:blur(10px);background:linear-gradient(var(--ink),rgba(8,9,11,0.65));border-bottom:1px solid var(--line)}
+  header.top .row{max-width:720px;margin:0 auto;padding:0 24px;display:flex;align-items:center;gap:11px;height:58px}
+  .bmark{width:19px;height:23px}.mark{font-family:var(--mono);font-weight:700;letter-spacing:0.24em;font-size:0.8rem}.mark .dot{color:var(--cyan)}
+  header .cta{margin-left:auto;font-family:var(--mono2);font-size:0.72rem;color:var(--fg-dim)}header .cta:hover{color:var(--cyan)}
+  .head{padding:56px 0 6px}.kick{font-family:var(--mono2);font-size:0.7rem;letter-spacing:0.24em;text-transform:uppercase;color:var(--cyan)}
+  h1{font-size:clamp(2rem,5vw,2.9rem);font-weight:800;letter-spacing:-0.03em;line-height:1.05;margin:16px 0 0}h1 .p{color:var(--cyan)}
+  .body p{color:var(--fg-dim);font-size:1.06rem;margin-top:20px}.body p b{color:var(--fg);font-weight:600}
+  h2{font-size:1.3rem;font-weight:700;letter-spacing:-0.02em;margin-top:40px}
+  .vals{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:20px}@media(max-width:560px){.vals{grid-template-columns:1fr}}
+  .val{border:1px solid var(--line);border-radius:13px;padding:20px;background:var(--ink-2)}
+  .val .vn{font-family:var(--mono2);font-size:0.68rem;color:var(--cyan);letter-spacing:0.16em}.val h3{font-size:1.02rem;font-weight:700;margin-top:9px}.val p{color:var(--fg-dim);font-size:0.9rem;margin-top:7px}
+  .cta-box{border:1px solid rgba(0,229,255,0.3);border-radius:16px;background:linear-gradient(160deg,rgba(0,229,255,0.06),rgba(0,229,255,0.01)),var(--ink-2);padding:32px;margin:46px 0 10px;text-align:center}
+  .cta-box a.btn{display:inline-block;margin-top:8px;background:var(--cyan);color:var(--ink);font-weight:700;font-size:0.9rem;padding:13px 24px;border-radius:9px}
+  .cta-box a.btn:hover{box-shadow:0 8px 24px rgba(0,229,255,0.3)}
+  footer{border-top:1px solid var(--line-2);margin-top:40px;padding:32px 0 60px;font-family:var(--mono2);font-size:0.72rem;color:var(--fg-faint)}
+  footer .row{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}footer a{color:var(--fg-dim)}footer a:hover{color:var(--cyan)}
+</style>
 </head>
 <body>
-    <nav class="site-nav">
-        <div class="container nav-container">
-            <a href="index.html" class="logo">
-                Stromation<span class="logo-dot"></span>
-            </a>
-            <div class="nav-links">
-                <a href="index.html">News</a>
-                <a href="tools.html">AI Tools</a>
-                <a href="guides.html">Guides</a>
-                <a href="blog.html">Blog</a>
-                <a href="about.html" class="text-main">About</a>
-                <a href="advertise.html">Advertise</a>
-                <a href="contact.html">Contact</a>
-                <a href="index.html#subscribe" class="btn-subscribe">Subscribe</a>
-            </div>
-        </div>
-    </nav>
+<div class="glow"></div>
+<header class="top"><div class="row">
+  <svg class="bmark" viewBox="0 0 500 600" aria-hidden="true"><path d="M333,108 C240,100 125,162 124,252 C123,312 194,328 232,332" fill="none" stroke="#00E5FF" stroke-width="16" stroke-linecap="round"/><path d="M268,344 C366,362 394,444 368,506 C346,558 262,572 168,568" fill="none" stroke="#00E5FF" stroke-width="16" stroke-linecap="round"/><circle cx="355" cy="100" r="22" fill="#00E5FF"/><circle cx="250" cy="338" r="18" fill="#00E5FF"/><circle cx="145" cy="572" r="22" fill="#00E5FF"/></svg>
+  <a href="/"><span class="mark">STROMATION<span class="dot">.</span></span></a>
+  <a class="cta" href="/#pack">Free pack →</a>
+</div></header>
 
-    <main class="container">
-        <div class="page-header">
-            <h1>The Signal in the <span class="text-gradient">Noise</span></h1>
-        </div>
+<div class="wrap">
+  <div class="head">
+    <div class="kick">about</div>
+    <h1>Built for the one-person business<span class="p">.</span></h1>
+  </div>
+  <div class="body">
+    <p>Stromation is an <b>AI automation studio for solopreneurs</b>. The idea is simple: one person shouldn't have to do the work of ten to run a business. The repetitive, draining parts — chasing leads, posting content, onboarding clients, sending invoices, answering the same questions — should run on their own.</p>
+    <p>So that's what we build. Real, working automations on top of tools like <b>n8n</b>, <b>Claude</b>, and <b>Stripe</b> — systems you own and control, not another subscription to rent. Plug them in, and the busywork happens while you sleep.</p>
+    <p>Everything starts with the free <a href="starter-pack.html" style="color:var(--cyan);border-bottom:1px solid var(--cyan-dim)">Solopreneur Starter Pack</a> — five automations you can put to work today. New systems drop for subscribers over time.</p>
 
-        <div class="content-block">
-            <p>Artificial Intelligence is moving faster than any technology in human history. But the media covering it is broken.</p>
-            <p>Most AI news falls into two categories: dense academic papers that business leaders can't decipher, or clickbait hype promising that "everything changes tomorrow."</p>
-            <p>Stromation was built to be the bridge. We provide the fastest, most accurate, and most practical AI news for operators, founders, and professionals who need to understand what's happening—and what to actually do about it.</p>
-            <p>We are not a news aggregator. We are a product studio that ships real AI products, and we share the one story a day that actually matters for builders and operators.</p>
+    <h2>How we operate</h2>
+    <div class="vals">
+      <div class="val"><div class="vn">01</div><h3>Ship real things</h3><p>No vaporware, no "coming soon." If it's here, it works and you can run it today.</p></div>
+      <div class="val"><div class="vn">02</div><h3>Systems you own</h3><p>You get the automation, not a rental. Own it, change it, keep it forever.</p></div>
+      <div class="val"><div class="vn">03</div><h3>Built for one</h3><p>Tuned for a one-person business. No enterprise bloat, no team required.</p></div>
+      <div class="val"><div class="vn">04</div><h3>Automate the boring</h3><p>Your time goes to the work only you can do. The machine takes the rest.</p></div>
+    </div>
+  </div>
 
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-number">1</div>
-                    <div class="stat-label">Story A Day</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">6AM</div>
-                    <div class="stat-label">CT, Every Morning</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">4</div>
-                    <div class="stat-label">Sources Scanned Daily</div>
-                </div>
-            </div>
+  <div class="cta-box">
+    <a class="btn" href="/#pack">Get the free Starter Pack →</a>
+  </div>
+</div>
 
-            <h2>Who Runs This</h2>
-            <p>Stromation is built by <strong>Darius Stroman</strong>, a founder who ships his own AI products — including <a href="https://www.atshack.com" target="_blank" rel="noopener noreferrer" style="color: var(--accent-cyan);">ATSHack</a> (AI resume grading) — and runs the automation studio behind it.</p>
-            <p>The daily pick is selected by an automated pipeline Darius built: it reads Hacker News, TechCrunch, VentureBeat, and The Verge every morning, scores every story from the last 24 hours, and picks the one a builder actually needs. The analysis and "the move" come from that same builder lens — when we say something matters, it is because it survived contact with a real business, not because a press release said so.</p>
-
-            <h2>Our Editorial Standard</h2>
-            <p><strong>1. No Hype:</strong> We don't use words like "insane" or "mind-blowing." We report the facts and the implications.</p>
-            <p><strong>2. Business Focus:</strong> If a new model drops, we don't just report the parameter count. We report how it changes the unit economics of your business.</p>
-            <p><strong>3. The Move:</strong> Every story comes with "The Move"—the exact action you should take based on the news.</p>
-            <p><strong>4. Built by Builders:</strong> Our analysis is driven by our experience actually building and shipping AI products.</p>
-            <p><strong>5. Real Numbers Only:</strong> We are early and growing. You will never see an inflated subscriber count or a made-up stat on this site — if we cite a number, it is real.</p>
-        </div>
-    </main>
-
-    <footer class="site-footer">
-        <div class="container">
-            <div class="footer-grid">
-                <div class="footer-brand">
-                    <a href="index.html" class="logo">
-                        Stromation<span class="logo-dot"></span>
-                    </a>
-                    <p>The signal in the noise. Daily AI news, tools, and insights for business leaders.</p>
-                </div>
-                <div class="footer-links">
-                    <h4>Content</h4>
-                    <ul>
-                        <li><a href="index.html">News</a></li>
-                        <li><a href="tools.html">AI Tools</a></li>
-                        <li><a href="guides.html">Guides</a></li>
-                        <li><a href="blog.html">Blog</a></li>
-                    </ul>
-                </div>
-                <div class="footer-links">
-                    <h4>Company</h4>
-                    <ul>
-                        <li><a href="about.html">About</a></li>
-                        <li><a href="advertise.html">Advertise</a></li>
-                        <li><a href="contact.html">Contact</a></li>
-                    </ul>
-                </div>
-                <div class="footer-links">
-                    <h4>Legal</h4>
-                    <ul>
-                        <li><a href="privacy.html">Privacy Policy</a></li>
-                        <li><a href="terms.html">Terms of Service</a></li>
-                    </ul>
-                </div>
-            </div>
-            <div class="footer-bottom">
-                <p>&copy; 2026 Stromation. All rights reserved.</p>
-            </div>
-        </div>
-    </footer>
+<footer><div class="wrap"><div class="row">
+  <span>Stromation — build a business that runs itself.</span>
+  <span><a href="/">home</a> &nbsp; <a href="starter-pack.html">starter pack</a> &nbsp; <a href="mailto:contact@stromation.com">contact</a> &nbsp; <a href="privacy.html">privacy</a></span>
+</div></div></footer>
 </body>
 </html>
