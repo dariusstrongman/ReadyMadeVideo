@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stromation — AI Product House</title>
-<meta name="description" content="Stromation is an AI product house run by one founder. Ideas go in one end, real products come out the other. Built in public. Anything is possible.">
+<title>Stromation — AI Automation Studio for Solopreneurs</title>
+<meta name="description" content="Stromation builds the AI automations that run the busywork of a one-person business — leads, content, follow-ups, admin — so you run like a whole team. Get the free Solopreneur Starter Pack.">
 <link rel="canonical" href="https://www.stromation.com/">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <meta name="theme-color" content="#08090b">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://www.stromation.com/">
-<meta property="og:title" content="Stromation — AI Product House">
-<meta property="og:description" content="Ideas go in one end. Real products come out the other. One founder, built in public. Anything is possible.">
+<meta property="og:title" content="Stromation — AI Automation Studio for Solopreneurs">
+<meta property="og:description" content="The AI automations that run your busywork, so one person can run like a whole team. Free Solopreneur Starter Pack inside.">
 <meta property="og:image" content="https://www.stromation.com/banner-1500x500.png">
 <meta name="twitter:card" content="summary_large_image">
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-B6Z6XV02RT"></script>
@@ -29,8 +29,8 @@
   "url": "https://www.stromation.com/",
   "logo": "https://www.stromation.com/logos/logo.png",
   "email": "contact@stromation.com",
-  "founder": { "@type": "Person", "name": "Darius Stroman" },
-  "description": "AI product house. Ideas in, products out. Built in public by one founder."
+  "description": "AI automation studio for solopreneurs. We build the systems that run the busywork of a one-person business so it operates like a whole team.",
+  "sameAs": []
 }
 </script>
 </head>
@@ -85,8 +85,10 @@
   .top .wrap{display:flex; align-items:center; gap:11px; height:58px}
   .mark{font-family:var(--mono); font-weight:700; letter-spacing:0.24em; font-size:0.8rem}
   .mark .dot{color:var(--cyan)}
-  .top nav{margin-left:auto; display:flex; gap:20px; font-family:var(--mono2); font-size:0.72rem; color:var(--fg-dim); letter-spacing:0.04em}
+  .top nav{margin-left:auto; display:flex; gap:20px; align-items:center; font-family:var(--mono2); font-size:0.72rem; color:var(--fg-dim); letter-spacing:0.04em}
   .top nav a:hover{color:var(--cyan)}
+  .top nav a.navcta{color:var(--ink); background:var(--cyan); padding:8px 14px; border-radius:7px; font-weight:700; letter-spacing:0.02em}
+  .top nav a.navcta:hover{color:var(--ink); box-shadow:0 6px 18px rgba(0,229,255,0.3)}
   @media(max-width:680px){ .top nav a.hideable{display:none} }
 
   /* ---------- hero ---------- */
@@ -96,10 +98,16 @@
   .eyebrow{font-family:var(--mono2); font-size:0.72rem; letter-spacing:0.28em; color:var(--cyan); text-transform:uppercase}
   .eyebrow .dot{display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--cyan); margin-right:10px;
     vertical-align:middle; box-shadow:0 0 8px var(--cyan)}
-  h1.word{font-family:var(--mono); font-size:clamp(2rem,6.6vw,4.4rem); font-weight:700; line-height:0.98; letter-spacing:0.02em; margin:18px 0 0}
-  h1.word .p{color:var(--cyan); text-shadow:0 0 22px rgba(0,229,255,0.5)}
-  .lead{font-size:clamp(1.1rem,2.2vw,1.45rem); margin-top:22px; font-weight:500; line-height:1.4; max-width:34ch}
-  .lead b{color:var(--cyan); font-weight:600}
+  h1.word{font-family:var(--sans); font-size:clamp(2.3rem,6.4vw,4.3rem); font-weight:800; line-height:1.02; letter-spacing:-0.03em; margin:18px 0 0}
+  h1.word .p{color:var(--cyan); text-shadow:0 0 22px rgba(0,229,255,0.4)}
+  .lead{font-size:clamp(1.05rem,2.1vw,1.32rem); margin-top:22px; font-weight:500; line-height:1.5; max-width:46ch; color:var(--fg-dim)}
+  .lead b{color:var(--fg); font-weight:600}
+  .hero-cta{display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:30px}
+  .btn-cy{background:var(--cyan); color:var(--ink); border:0; font-family:var(--sans); font-weight:700; font-size:0.92rem;
+    padding:14px 24px; border-radius:9px; cursor:pointer; transition:transform .15s, box-shadow .15s; display:inline-flex; align-items:center; gap:8px}
+  .btn-cy:hover{transform:translateY(-1px); box-shadow:0 8px 26px rgba(0,229,255,0.35)}
+  .btn-gh{color:var(--fg-dim); font-family:var(--mono2); font-size:0.8rem; border-bottom:1px solid var(--line-2); padding-bottom:3px}
+  .btn-gh:hover{color:var(--cyan); border-color:var(--cyan)}
 
   /* ---------- ops ticker ---------- */
   .ticker{border-top:1px solid var(--line); border-bottom:1px solid var(--line); overflow:hidden; margin-top:44px; position:relative}
@@ -114,7 +122,7 @@
   @keyframes tkscroll{to{transform:translateX(-50%)}}
   @media(prefers-reduced-motion:reduce){ .tk{animation:none} }
 
-  /* ---------- terminal (INPUT node) ---------- */
+  /* ---------- terminal (intake) ---------- */
   .intake{margin-top:38px}
   .nodetag{font-family:var(--mono2); font-size:0.7rem; letter-spacing:0.24em; text-transform:uppercase; color:var(--cyan)}
   .nodetag .hollow{color:var(--fg-faint)}
@@ -157,41 +165,27 @@
   section.mnode.lit::before{background:var(--cyan); border-color:var(--cyan); box-shadow:0 0 12px rgba(0,229,255,0.8)}
   @media(max-width:640px){ section.mnode::before{left:-27px} }
   section.mnode + section.mnode{border-top:1px solid var(--line)}
-  .snote{color:var(--fg-dim); font-size:0.92rem; margin:8px 0 30px; max-width:52ch}
+  .snote{color:var(--fg-dim); font-size:0.96rem; margin:8px 0 30px; max-width:56ch}
+  .sh{font-size:clamp(1.5rem,3.4vw,2.1rem); font-weight:800; letter-spacing:-0.03em; line-height:1.1; margin-top:4px}
 
-  /* ---------- product index ---------- */
-  .idx{display:flex; flex-direction:column; border-top:1px solid var(--line)}
-  .row{display:grid; grid-template-columns:1fr auto; gap:22px; align-items:center; padding:26px 8px;
-    border-bottom:1px solid var(--line); transition:background .25s, padding .25s}
-  .row:hover{background:var(--ink-2); padding-left:16px; padding-right:0}
-  .row .name{font-size:clamp(1.5rem,3.6vw,2.2rem); font-weight:700; letter-spacing:-0.03em; line-height:1.05}
-  .row .desc{color:var(--fg-dim); font-size:0.96rem; margin-top:9px; max-width:48ch}
-  .row .meta{font-family:var(--mono2); font-size:0.72rem; color:var(--fg-faint); margin-top:12px; letter-spacing:0.03em}
-  .row .right{display:flex; flex-direction:column; align-items:flex-end; gap:14px; text-align:right}
-  .status{font-family:var(--mono2); font-size:0.66rem; letter-spacing:0.16em; text-transform:uppercase; display:inline-flex; align-items:center; gap:7px; white-space:nowrap}
-  .status .d{width:7px; height:7px; border-radius:50%}
-  .status.live{color:var(--live)} .status.live .d{background:var(--live); box-shadow:0 0 8px var(--live); animation:pulse 2.4s infinite}
-  .status.lab{color:var(--cyan)} .status.lab .d{background:var(--cyan); box-shadow:0 0 8px var(--cyan); animation:pulse 1.6s infinite}
-  @keyframes pulse{50%{opacity:0.4}}
-  .visit{font-family:var(--mono2); font-size:0.74rem; color:var(--fg-dim); border-bottom:1px solid var(--line-2); padding-bottom:2px; transition:color .2s, border-color .2s}
-  .row:hover .visit{color:var(--cyan); border-color:var(--cyan)}
-  .typeline{font-family:var(--mono2); font-size:0.85rem; color:var(--cyan); margin-top:10px; min-height:1.3em; letter-spacing:0.02em}
-  .typeline .cur{display:inline-block; width:8px; height:1em; background:var(--cyan); vertical-align:text-bottom; margin-left:3px; animation:blink 1s steps(1) infinite}
-  @keyframes blink{50%{opacity:0}}
-  @media(max-width:640px){
-    .row{grid-template-columns:1fr}
-    .row .right{flex-direction:row; align-items:center; justify-content:space-between; text-align:left; margin-top:4px}
-  }
+  /* ---------- automate grid ---------- */
+  .auto{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:8px}
+  @media(max-width:820px){ .auto{grid-template-columns:repeat(2,1fr)} }
+  @media(max-width:520px){ .auto{grid-template-columns:1fr} }
+  .acard{border:1px solid var(--line); border-radius:14px; padding:22px; background:var(--ink-2); transition:border-color .25s, transform .25s}
+  .acard:hover{border-color:rgba(0,229,255,0.35); transform:translateY(-2px)}
+  .acard .ai{font-family:var(--mono2); font-size:0.66rem; color:var(--cyan); letter-spacing:0.16em; text-transform:uppercase}
+  .acard h4{font-size:1.05rem; font-weight:700; letter-spacing:-0.02em; margin-top:10px}
+  .acard p{color:var(--fg-dim); font-size:0.88rem; margin-top:7px; line-height:1.55}
 
-  /* ---------- system log ---------- */
-  .log{position:relative; margin-top:6px}
-  .lg{display:grid; grid-template-columns:110px 1fr; gap:18px; padding:14px 0; border-bottom:1px dashed var(--line)}
-  .lg:last-child{border-bottom:0}
-  .lg .when{font-family:var(--mono2); font-size:0.68rem; letter-spacing:0.16em; text-transform:uppercase; color:var(--fg-faint); padding-top:3px}
-  .lg.hot .when{color:var(--cyan)}
-  .lg .what{font-size:1.02rem; font-weight:600; letter-spacing:-0.01em}
-  .lg .how{color:var(--fg-dim); font-size:0.9rem; margin-top:4px; max-width:54ch}
-  @media(max-width:560px){ .lg{grid-template-columns:1fr; gap:4px} }
+  /* ---------- steps ---------- */
+  .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:8px}
+  @media(max-width:720px){ .steps{grid-template-columns:1fr} }
+  .step{border:1px solid var(--line); border-radius:14px; padding:24px; background:var(--ink-2)}
+  .step .sn{width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,var(--cyan),var(--cyan-deep));
+    color:var(--ink); display:grid; place-items:center; font-weight:800; font-family:var(--mono); box-shadow:0 0 18px rgba(0,229,255,0.25)}
+  .step h4{font-size:1.08rem; font-weight:700; letter-spacing:-0.02em; margin-top:16px}
+  .step p{color:var(--fg-dim); font-size:0.9rem; margin-top:8px; line-height:1.55}
 
   /* ---------- rules ---------- */
   .rules{display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin-top:6px}
@@ -202,37 +196,42 @@
   .rule h4{font-size:1.15rem; font-weight:700; letter-spacing:-0.02em; margin-top:10px}
   .rule p{color:var(--fg-dim); font-size:0.92rem; margin-top:8px; line-height:1.6}
 
-  /* ---------- output ---------- */
-  .anthem{margin-top:20px; font-family:var(--mono); font-weight:700; letter-spacing:0.02em;
-    font-size:clamp(1.9rem,7.8vw,5.9rem); line-height:1.06; text-wrap:balance}
-  .anthem .w{display:inline-block}
-  .anim .anthem .w{opacity:0; transform:translateY(0.35em)}
-  .anthem .w{transition:opacity .6s ease, transform .7s cubic-bezier(.2,.8,.2,1)}
-  .anim .anthem.in .w{opacity:1; transform:none}
-  .anthem.in .w:nth-child(2){transition-delay:.14s}
-  .anthem.in .w:nth-child(3){transition-delay:.28s}
-  .anthem .p{color:var(--cyan); text-shadow:0 0 26px rgba(0,229,255,0.55)}
-  .outp{color:var(--fg-dim); margin-top:22px; max-width:52ch; font-size:1rem}
-  .capture{display:flex; gap:10px; margin-top:26px; max-width:460px; flex-wrap:wrap}
-  .capture input{flex:1; min-width:200px; background:var(--ink-2); border:1px solid var(--line-2); color:var(--fg);
-    font-family:var(--mono2); font-size:0.9rem; padding:13px 15px; border-radius:9px}
+  /* ---------- the pack (conversion) ---------- */
+  .pack{position:relative; margin-top:80px; border:1px solid rgba(0,229,255,0.3); border-radius:20px; overflow:hidden;
+    background:linear-gradient(160deg, rgba(0,229,255,0.07), rgba(0,229,255,0.01)), var(--ink-2);
+    box-shadow:0 30px 90px rgba(0,0,0,0.5)}
+  .pack-in{padding:clamp(30px,5vw,52px)}
+  .pack .kick{font-family:var(--mono2); font-size:0.7rem; letter-spacing:0.24em; text-transform:uppercase; color:var(--cyan)}
+  .pack h2{font-size:clamp(1.9rem,4.4vw,3rem); font-weight:800; letter-spacing:-0.03em; line-height:1.05; margin:16px 0 0}
+  .pack h2 .p{color:var(--cyan)}
+  .pack .sub{color:var(--fg-dim); font-size:1.05rem; margin-top:16px; max-width:52ch; line-height:1.55}
+  .pack-list{list-style:none; margin:26px 0 0; display:grid; grid-template-columns:repeat(2,1fr); gap:12px 26px}
+  @media(max-width:640px){ .pack-list{grid-template-columns:1fr} }
+  .pack-list li{display:flex; gap:11px; align-items:flex-start; font-size:0.94rem; color:var(--fg)}
+  .pack-list li .ck{flex:0 0 auto; color:var(--cyan); font-weight:800; margin-top:1px}
+  .pack-list li b{font-weight:600}
+  .pack-list li span{color:var(--fg-dim); font-weight:400}
+  .capture{display:flex; gap:10px; margin-top:32px; max-width:520px; flex-wrap:wrap}
+  .capture input{flex:1; min-width:220px; background:var(--ink); border:1px solid var(--line-2); color:var(--fg);
+    font-family:var(--mono2); font-size:0.92rem; padding:15px 16px; border-radius:10px}
   .capture input::placeholder{color:var(--fg-faint)}
   .capture input:focus{outline:none; border-color:var(--cyan)}
-  .capture button{background:var(--cyan); color:var(--ink); border:0; font-family:var(--sans); font-weight:700; font-size:0.9rem;
-    padding:13px 22px; border-radius:9px; cursor:pointer; transition:transform .15s, box-shadow .15s}
+  .capture button{background:var(--cyan); color:var(--ink); border:0; font-family:var(--sans); font-weight:700; font-size:0.92rem;
+    padding:15px 26px; border-radius:10px; cursor:pointer; transition:transform .15s, box-shadow .15s}
   .capture button:hover{transform:translateY(-1px); box-shadow:0 8px 24px rgba(0,229,255,0.3)}
-  .microcopy{font-family:var(--mono2); font-size:0.68rem; color:var(--fg-faint); margin-top:14px; letter-spacing:0.02em}
+  .microcopy{font-family:var(--mono2); font-size:0.68rem; color:var(--fg-faint); margin-top:16px; letter-spacing:0.02em}
 
-  /* ---------- operator ---------- */
-  .operator{padding:64px 0 10px}
-  .founder{display:flex; gap:26px; align-items:flex-start; flex-wrap:wrap; margin-top:26px}
-  .founder .badge{width:72px; height:72px; border-radius:14px; flex:0 0 auto;
-    background:linear-gradient(135deg,var(--cyan),var(--cyan-deep)); color:var(--ink); display:grid; place-items:center;
-    font-weight:800; font-size:1.7rem; letter-spacing:-0.04em; box-shadow:0 0 26px rgba(0,229,255,0.28)}
-  .founder .who{flex:1; min-width:260px}
-  .founder .who .nm{font-size:1.3rem; font-weight:700; letter-spacing:-0.02em}
-  .founder .who .rl{font-family:var(--mono2); font-size:0.72rem; color:var(--cyan); letter-spacing:0.1em; text-transform:uppercase; margin-top:4px}
-  .founder .who p{color:var(--fg-dim); margin-top:14px; max-width:56ch; font-size:0.98rem}
+  /* ---------- final ---------- */
+  .fin{text-align:center; padding:90px 0 20px}
+  .fin .anthem{font-family:var(--mono); font-weight:700; letter-spacing:0.01em; font-size:clamp(1.7rem,6vw,4.2rem); line-height:1.06; text-wrap:balance}
+  .anim .fin .anthem .w{opacity:0; transform:translateY(0.35em)}
+  .fin .anthem .w{display:inline-block; transition:opacity .6s ease, transform .7s cubic-bezier(.2,.8,.2,1)}
+  .anim .fin .anthem.in .w{opacity:1; transform:none}
+  .fin .anthem.in .w:nth-child(2){transition-delay:.12s}
+  .fin .anthem.in .w:nth-child(3){transition-delay:.24s}
+  .fin .anthem .p{color:var(--cyan); text-shadow:0 0 26px rgba(0,229,255,0.5)}
+  .fin p{color:var(--fg-dim); margin:22px auto 0; max-width:48ch; font-size:1.02rem}
+  .fin .btn-cy{margin-top:30px}
 
   footer{border-top:1px solid var(--line-2); margin-top:56px; padding:40px 0 64px}
   footer .wrap{display:flex; justify-content:space-between; gap:24px; flex-wrap:wrap; align-items:flex-end}
@@ -248,8 +247,7 @@
   .rv{transition:opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1)}
   .anim .rv.in{opacity:1; transform:none}
   @media(prefers-reduced-motion:reduce){
-    .anim .rv, .anim .anthem .w{opacity:1 !important; transform:none !important}
-    .status .d, .typeline .cur{animation:none !important}
+    .anim .rv, .anim .fin .anthem .w{opacity:1 !important; transform:none !important}
   }
 </style>
 
@@ -275,10 +273,9 @@
     <svg class="ico ico-nav" aria-hidden="true"><use href="#smark"/></svg>
     <span class="mark">STROMATION<span class="dot">.</span></span>
     <nav>
-      <a href="#intake">input</a>
-      <a href="#work" class="hideable">the work</a>
-      <a href="#lab" class="hideable">the lab</a>
-      <a href="#output">follow</a>
+      <a href="#automate" class="hideable">what you automate</a>
+      <a href="#how" class="hideable">how it works</a>
+      <a href="#pack" class="navcta">Free pack</a>
     </nav>
   </div>
 </header>
@@ -300,42 +297,47 @@
         <circle cx="145" cy="572" r="24" fill="none" stroke="#00E5FF" stroke-width="2.8"/><circle cx="145" cy="572" r="10" fill="#00E5FF"/>
       </svg>
       <div class="hero-main">
-        <div class="eyebrow rv"><span class="dot"></span>AI product house</div>
-        <h1 class="word rv">STROMATION<span class="p">.</span></h1>
-        <p class="lead rv">stroman <b>+</b> creation. ideas go in one end. real products come out the other. you are standing inside the machine.</p>
+        <div class="eyebrow rv"><span class="dot"></span>AI automation studio · for solopreneurs</div>
+        <h1 class="word rv">One person.<br>The output of a<span class="p"> team.</span></h1>
+        <p class="lead rv">Stromation builds the AI automations that run the busywork of a one-person business — <b>leads, content, follow-ups, admin</b> — so the work happens while you sleep, and you get to actually run the thing.</p>
+        <div class="hero-cta rv">
+          <a class="btn-cy" href="#pack">Get the free Starter Pack →</a>
+          <a class="btn-gh" href="#automate">see what you can automate</a>
+        </div>
       </div>
     </div>
 
     <!-- ops ticker -->
     <div class="ticker rv" aria-hidden="true">
       <div class="tk" id="tk">
-        <span>SYS // <b>20+</b> automations running</span>
-        <span>BUILD // product <b>02</b> in the lab</span>
-        <span>SHIP // <b>ATSHack</b> live</span>
-        <span>MODE // built in public</span>
-        <span>CREW // <b>one</b> founder, the machine does the rest</span>
-        <span>LOC // dfw, texas</span>
+        <span>SYS // automations that run while you sleep</span>
+        <span>STACK // <b>n8n</b> · claude · stripe · supabase</span>
+        <span>MODE // build once, run forever</span>
+        <span>BUILT FOR // one-person businesses</span>
+        <span>FREE // the solopreneur starter pack</span>
+        <span>PRINCIPLE // systems you own, not services you rent</span>
       </div>
     </div>
 
-    <!-- ============ INPUT NODE: the intake terminal ============ -->
+    <!-- intake terminal -->
     <div class="intake rv" id="intake">
-      <div class="nodetag">input <span class="hollow">//</span> give the machine an idea</div>
+      <div class="nodetag">start here <span class="hollow">//</span> what eats your time?</div>
       <div class="term">
-        <div class="term-bar"><i class="on"></i><i></i><i></i><em>stromation intake</em></div>
-        <div class="term-out" id="tout" aria-live="polite">the machine takes any idea and shows you what it would do with it. type one.</div>
+        <div class="term-bar"><i class="on"></i><i></i><i></i><em>stromation · automation planner</em></div>
+        <div class="term-out" id="tout" aria-live="polite">tell it the task you keep doing by hand. it shows you the automation that kills it. runs right here, nothing leaves the page.</div>
         <form class="term-in" onsubmit="return intake(event)">
           <span class="ps">&gt;</span>
-          <input type="text" id="tin" placeholder="something you wish existed..." maxlength="140" autocomplete="off">
-          <button type="submit">run</button>
+          <input type="text" id="tin" placeholder="the thing you do over and over..." maxlength="140" autocomplete="off">
+          <button type="submit">plan it</button>
         </form>
       </div>
-      <div class="seeds" aria-label="example ideas">
-        <button class="seed" onclick="seed(this)">an app that reads my lease and finds the traps</button>
-        <button class="seed" onclick="seed(this)">a bot that runs my whole shop while i sleep</button>
-        <button class="seed" onclick="seed(this)">a game my kid designs just by talking</button>
+      <div class="seeds" aria-label="example tasks">
+        <button class="seed" onclick="seed(this)">chasing leads and following up</button>
+        <button class="seed" onclick="seed(this)">posting content every single day</button>
+        <button class="seed" onclick="seed(this)">onboarding every new client by hand</button>
+        <button class="seed" onclick="seed(this)">answering the same questions all day</button>
       </div>
-      <div class="term-note">runs right here in your browser. your idea never leaves the page. press / to type from anywhere.</div>
+      <div class="term-note">press / to type from anywhere.</div>
     </div>
   </section>
 
@@ -345,122 +347,70 @@
     <div class="spine-lit" id="spineLit" aria-hidden="true"></div>
     <div class="spine-head" id="spineHead" aria-hidden="true"></div>
 
-    <section class="mnode" id="work">
-      <div class="nodetag rv">node 01 <span class="hollow">//</span> the work</div>
-      <p class="snote rv">what the machine has already produced. live products sell on their own sites. this page is the floor of the factory.</p>
-      <div class="idx">
-        <a class="row rv" href="https://www.atshack.com" target="_blank" rel="noopener">
-          <div>
-            <div class="name">ATSHack</div>
-            <div class="desc">beat the resume bots. upload your resume, see your real ATS score, fix what is killing it for a buck.</div>
-            <div class="meta">consumer saas · resume + hiring · atshack.com</div>
-          </div>
-          <div class="right">
-            <span class="status live"><span class="d"></span>live</span>
-            <span class="visit">visit ↗</span>
-          </div>
-        </a>
+    <section class="mnode" id="automate">
+      <div class="nodetag rv">node 01 <span class="hollow">//</span> what you automate</div>
+      <h2 class="sh rv">The busywork, gone.</h2>
+      <p class="snote rv">The repetitive, mind-numbing work that keeps a solo business small. Each one becomes a system that runs itself.</p>
+      <div class="auto">
+        <div class="acard rv"><div class="ai">leads</div><h4>Capture &amp; follow up</h4><p>Every lead gets caught, enriched, and followed up within minutes — automatically, day or night.</p></div>
+        <div class="acard rv"><div class="ai">content</div><h4>Create &amp; post</h4><p>Turn one idea into a week of content and push it to every platform on schedule, hands-off.</p></div>
+        <div class="acard rv"><div class="ai">clients</div><h4>Onboard on autopilot</h4><p>New client signs up and the whole welcome, intake, and setup sequence runs without you.</p></div>
+        <div class="acard rv"><div class="ai">money</div><h4>Invoice &amp; collect</h4><p>Invoices go out, payments get chased, and failed charges recover themselves.</p></div>
+        <div class="acard rv"><div class="ai">support</div><h4>Answer &amp; route</h4><p>An AI agent handles the repeat questions and books the calls, so your inbox stops running you.</p></div>
+        <div class="acard rv"><div class="ai">ops</div><h4>Report &amp; watch</h4><p>The numbers that matter land in your inbox every morning. No dashboards to check.</p></div>
       </div>
     </section>
 
-    <section class="mnode" id="lab">
-      <div class="nodetag rv">node 02 <span class="hollow">//</span> the lab</div>
-      <p class="snote rv">what is on the bench right now. built in public, revealed here first, launched with its own name and its own site.</p>
-      <div class="idx">
-        <a class="row rv" href="https://viralsidekick.com" target="_blank" rel="noopener">
-          <div>
-            <div class="name">ViralSidekick</div>
-            <div class="desc">AI creator intelligence. paste your channel, see exactly why it didnt go viral, and watch a live radar catch whats erupting in your niche right now. v1 built and shipped in a day. iterating in public.</div>
-            <div class="typeline" aria-hidden="true"><span id="typed"></span><span class="cur"></span></div>
-            <div class="meta">ai saas · creator tools · v1 live</div>
-          </div>
-          <div class="right">
-            <span class="status lab"><span class="d"></span>in the lab</span>
-            <span class="visit">try it ↗</span>
-          </div>
-        </a>
-      </div>
-    </section>
-
-    <section class="mnode" id="log">
-      <div class="nodetag rv">node 03 <span class="hollow">//</span> system log</div>
-      <p class="snote rv">the record. updated every time something real changes.</p>
-      <div class="log rv">
-        <div class="lg hot">
-          <div class="when">now</div>
-          <div><div class="what">product 02 revealed: ViralSidekick</div>
-          <div class="how">AI creator intelligence. built and shipped v1 in one day: real channel autopsies, a live niche radar, a title pre-flight lab. <a href="https://viralsidekick.com" target="_blank" rel="noopener" style="color:var(--cyan)">go scan your channel</a>.</div></div>
-        </div>
-        <div class="lg hot">
-          <div class="when">jul 2026</div>
-          <div><div class="what">the machine learns to war game</div>
-          <div class="how">every build now gets fought on paper first, move by move, failure by failure. plans assume sunshine. war games assume reality.</div></div>
-        </div>
-        <div class="lg hot">
-          <div class="when">jul 2026</div>
-          <div><div class="what">stromation becomes the house</div>
-          <div class="how">one flag over all the work instead of one product pretending to be everything.</div></div>
-        </div>
-        <div class="lg">
-          <div class="when">2026</div>
-          <div><div class="what">ATSHack sharpened</div>
-          <div class="how">grader rebuilt, $1 scan tuned, conversion overhauled. the live product earns its keep.</div></div>
-        </div>
-        <div class="lg">
-          <div class="when">origin</div>
-          <div><div class="what">one man automation studio</div>
-          <div class="how">stromation starts as a studio building automations for businesses. the name sticks. the mission grows.</div></div>
-        </div>
+    <section class="mnode" id="how">
+      <div class="nodetag rv">node 02 <span class="hollow">//</span> how it works</div>
+      <h2 class="sh rv">Build once. Run forever.</h2>
+      <p class="snote rv">No agency retainer, no dependency. You get working systems you own and control.</p>
+      <div class="steps">
+        <div class="step rv"><div class="sn">1</div><h4>Name the task</h4><p>Point at the thing eating your day. The one you keep doing by hand that a machine should be doing.</p></div>
+        <div class="step rv"><div class="sn">2</div><h4>Get the system</h4><p>A ready-to-run automation — built on n8n, Claude, and the tools you already use. Plug it in.</p></div>
+        <div class="step rv"><div class="sn">3</div><h4>It runs itself</h4><p>It works while you sleep, and it's yours. No monthly service to keep it alive.</p></div>
       </div>
     </section>
 
     <section class="mnode" id="rules">
-      <div class="nodetag rv">node 04 <span class="hollow">//</span> house rules</div>
-      <p class="snote rv">how this operates. four rules, no exceptions.</p>
-      <div class="rules">
-        <div class="rule rv">
-          <div class="rn">RULE 01</div><h4>ship real things</h4>
-          <p>no fake numbers, no vapor, no coming soon that never comes. if its on this page it exists and you can touch it.</p>
-        </div>
-        <div class="rule rv">
-          <div class="rn">RULE 02</div><h4>one product, one shot</h4>
-          <p>every product gets its own name, its own site, and a real chance to win. the house carries the vision so the products can stay sharp.</p>
-        </div>
-        <div class="rule rv">
-          <div class="rn">RULE 03</div><h4>kill it clean</h4>
-          <p>products that dont earn their keep get retired, not put on life support. the house always moves forward.</p>
-        </div>
-        <div class="rule rv">
-          <div class="rn">RULE 04</div><h4>automate the boring</h4>
-          <p>the house runs on automations built in house. thats how one person runs the whole thing without burning out.</p>
-        </div>
+      <div class="nodetag rv">node 03 <span class="hollow">//</span> how this operates</div>
+      <h2 class="sh rv">Four rules, no exceptions.</h2>
+      <div class="rules" style="margin-top:24px">
+        <div class="rule rv"><div class="rn">RULE 01</div><h4>Ship real things</h4><p>No fluff, no vaporware, no "coming soon." Every system here works and you can run it today.</p></div>
+        <div class="rule rv"><div class="rn">RULE 02</div><h4>Systems you own</h4><p>You get the automation, not a subscription to rent it. Own it, change it, keep it forever.</p></div>
+        <div class="rule rv"><div class="rn">RULE 03</div><h4>Built for one</h4><p>Everything here is tuned for a one-person business. No enterprise bloat, no team required.</p></div>
+        <div class="rule rv"><div class="rn">RULE 04</div><h4>Automate the boring</h4><p>Your time goes to the work only you can do. The machine takes everything else.</p></div>
       </div>
-    </section>
-
-    <section class="mnode" id="output">
-      <div class="nodetag rv">output <span class="hollow">//</span> what comes out of the machine</div>
-      <div class="anthem rv" id="anthem"><span class="w">ANYTHING</span> <span class="w">IS</span> <span class="w">POSSIBLE<span class="p">.</span></span></div>
-      <p class="outp rv">thats not a slogan, its the production schedule. im building product 02 in public right now. get the behind the scenes. what im making, what is working, what broke. subscribers see it before anyone.</p>
-      <form class="capture rv" onsubmit="return realSub(event)">
-        <input type="email" placeholder="you@email.com" aria-label="email" required>
-        <input type="text" name="website" value="" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0;height:0;width:0">
-        <button type="submit">follow the build</button>
-      </form>
-      <div class="microcopy rv" id="capMsg">no spam. just the real build, when there is something real to show.</div>
     </section>
   </div>
 
-  <!-- ================= OPERATOR ================= -->
-  <section class="operator">
-    <div class="nodetag rv">operator <span class="hollow">//</span> the human in the loop</div>
-    <div class="founder rv">
-      <div class="badge">DS</div>
-      <div class="who">
-        <div class="nm">Darius Stroman</div>
-        <div class="rl">founder · builder · runs the machine</div>
-        <p>i taught myself to build with AI and now i ship products with it. stromation is my name on the work. one person, moving fast, putting real things into the world and letting the good ones grow.</p>
-      </div>
+  <!-- ================= THE FREE PACK ================= -->
+  <section class="pack rv" id="pack">
+    <div class="pack-in">
+      <div class="kick">free · no card · yours to keep</div>
+      <h2>The Solopreneur<br>Starter Pack<span class="p">.</span></h2>
+      <p class="sub">Five real, plug-and-play automations that kill the busywork most solo businesses waste hours on. No course, no fluff — just systems that work.</p>
+      <ul class="pack-list">
+        <li><span class="ck">→</span><span><b>Missed call, instant text-back</b> — never lose a lead to a voicemail again.</span></li>
+        <li><span class="ck">→</span><span><b>New lead, auto follow-up</b> — captured, enriched, and messaged in minutes.</span></li>
+        <li><span class="ck">→</span><span><b>One idea, a week of content</b> — drafted and scheduled across platforms.</span></li>
+        <li><span class="ck">→</span><span><b>Client onboarding on autopilot</b> — welcome, intake, and setup run themselves.</span></li>
+        <li><span class="ck">→</span><span><b>Your morning business digest</b> — the numbers that matter, in your inbox daily.</span></li>
+      </ul>
+      <form class="capture" onsubmit="return realSub(event)">
+        <input type="email" placeholder="you@email.com" aria-label="email" required>
+        <input type="text" name="website" value="" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0;height:0;width:0">
+        <button type="submit">Send me the pack</button>
+      </form>
+      <div class="microcopy" id="capMsg">We email you the pack, then new automations as they drop. No spam. Unsubscribe anytime.</div>
     </div>
+  </section>
+
+  <!-- ================= FINAL ================= -->
+  <section class="fin">
+    <div class="anthem rv" id="anthem"><span class="w">RUN</span> <span class="w">IT</span> <span class="w">ALL<span class="p">.</span></span></div>
+    <p class="rv">You don't need a team. You need the machine that does the work of one.</p>
+    <a class="btn-cy rv" href="#pack">Get the free Starter Pack →</a>
   </section>
 
 </div>
@@ -472,14 +422,15 @@
       <span class="fmark">STROMATION<span class="dot">.</span></span>
     </div>
     <div class="flinks">
-      <a href="https://www.atshack.com" target="_blank" rel="noopener">ATSHack</a>
-      <a href="blog.html">blog</a>
-      <a href="tools.html">ai tools</a>
-      <a href="guides.html">guides</a>
-      <a href="#output">follow the build</a>
+      <a href="#pack">Free pack</a>
+      <a href="#automate">What you automate</a>
+      <a href="guides.html">Guides</a>
+      <a href="tools.html">AI tools</a>
+      <a href="blog.html">Blog</a>
       <a href="mailto:contact@stromation.com">contact@stromation.com</a>
+      <a href="privacy.html">Privacy</a>
     </div>
-    <div class="fine">stromation — an AI product house. ideas in, products out. anything is possible.</div>
+    <div class="fine">Stromation — AI automation studio for solopreneurs. Build a business that runs itself.</div>
   </div>
 </footer>
 
@@ -491,9 +442,9 @@
   (function(){
     var boot = document.getElementById('boot'), txt = document.getElementById('bootTxt');
     var seen = false;
-    try { seen = !!sessionStorage.getItem('stroBoot'); } catch(err){}
+    try { seen = !!sessionStorage.getItem('stroBoot2'); } catch(err){}
     function close(){
-      try { sessionStorage.setItem('stroBoot','1'); } catch(err){}
+      try { sessionStorage.setItem('stroBoot2','1'); } catch(err){}
       boot.style.opacity = '0'; setTimeout(function(){ boot.style.display = 'none'; }, 360);
     }
     if (reduce || seen){ boot.style.display = 'none'; return; }
@@ -502,11 +453,11 @@
     var i = 0;
     (function t(){
       if (i <= s.length){ txt.textContent = s.slice(0, i); i++; setTimeout(t, 34); }
-      else { txt.innerHTML = s + '\n<span class="dim">&gt; house online</span>'; setTimeout(close, 420); }
+      else { txt.innerHTML = s + '\n<span class="dim">&gt; studio online</span>'; setTimeout(close, 420); }
     })();
   })();
 
-  /* ---------- ticker: duplicate content for seamless loop ---------- */
+  /* ---------- ticker: duplicate for seamless loop ---------- */
   (function(){ var tk = document.getElementById('tk'); tk.innerHTML += tk.innerHTML; })();
 
   /* ---------- reveals ---------- */
@@ -520,9 +471,11 @@
       entries.forEach(function(e){ if (e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
     }, { threshold:0.12, rootMargin:'0px 0px -8% 0px' });
     rvs.forEach(function(el){ if (hero.indexOf(el) === -1) io.observe(el); });
+    var anth = document.getElementById('anthem');
+    if (anth){ var io2 = new IntersectionObserver(function(en){ en.forEach(function(e){ if(e.isIntersecting){ anth.classList.add('in'); io2.disconnect(); } }); }, {threshold:0.4}); io2.observe(anth); }
   }
 
-  /* ---------- machine spine: lights up as you walk through ---------- */
+  /* ---------- machine spine ---------- */
   (function(){
     var machine = document.getElementById('machine');
     var lit = document.getElementById('spineLit');
@@ -585,38 +538,36 @@
     })();
   })();
 
-  /* ---------- intake terminal ---------- */
+  /* ---------- automation planner ---------- */
   function seed(btn){ var inp = document.getElementById('tin'); inp.value = btn.textContent; intake(); inp.focus(); }
   function hashStr(s){ var h = 0; for (var i=0;i<s.length;i++){ h = ((h<<5)-h+s.charCodeAt(i))|0; } return Math.abs(h); }
   function intake(e){
     if (e) e.preventDefault();
     var inp = document.getElementById('tin');
     var out = document.getElementById('tout');
-    var idea = inp.value.trim();
-    if (!idea){
-      out.innerHTML = '<span class="c">&gt;</span> thats not an idea yet. type anything. seriously, anything.';
+    var task = inp.value.trim();
+    if (!task){
+      out.innerHTML = '<span class="c">&gt;</span> name a task. the thing you keep doing by hand.';
       return false;
     }
     inp.value = '';
-    var l = idea.toLowerCase();
-    var shape, stack;
-    if (/video|tiktok|youtube|content|clip|stream/.test(l)){ shape = 'content engine'; stack = 'ai video pipeline + cloned voice + n8n'; }
-    else if (/shop|store|sell|ecom|product|order/.test(l)){ shape = 'storefront with an agent behind the counter'; stack = 'stripe + supabase + one tireless agent'; }
-    else if (/bot|agent|assistant|auto|run|manage/.test(l)){ shape = 'an agent with one job it never stops doing'; stack = 'claude + n8n + a memory that compounds'; }
-    else if (/game|play|kid|fun/.test(l)){ shape = 'playable prototype'; stack = 'canvas + an ai design partner'; }
-    else if (/read|scan|check|review|doc|lease|contract|paper/.test(l)){ shape = 'document brain'; stack = 'ai vision + structured extraction'; }
-    else { shape = 'web app with an ai core'; stack = 'claude + supabase + stripe'; }
-    var ests = ['a weekend to prove it', 'one focused month', 'two sprints and a demo'];
-    var est = ests[hashStr(idea) % ests.length];
+    var l = task.toLowerCase();
+    var shape, stack, saves;
+    if (/lead|follow|sales|prospect|outreach|dm|cold/.test(l)){ shape = 'lead-capture + auto follow-up agent'; stack = 'form/inbox trigger → enrich → n8n → first message in minutes'; saves = '5-8 hrs/week'; }
+    else if (/content|post|video|tiktok|youtube|social|caption|write/.test(l)){ shape = 'content engine: one idea → a week of posts'; stack = 'claude + your voice + auto-scheduler'; saves = '6-10 hrs/week'; }
+    else if (/client|onboard|welcome|intake|setup|contract/.test(l)){ shape = 'client onboarding that runs itself'; stack = 'signup trigger → docs + emails + setup, hands-off'; saves = '3-5 hrs/client'; }
+    else if (/invoice|pay|bill|money|charge|collect|quote/.test(l)){ shape = 'invoice + payment recovery loop'; stack = 'stripe + n8n → send, chase, recover failed charges'; saves = 'hours + lost revenue'; }
+    else if (/support|answer|question|email|inbox|reply|dm|chat/.test(l)){ shape = 'AI agent for your repeat questions'; stack = 'claude + your docs → answer + book the call'; saves = '4-7 hrs/week'; }
+    else if (/report|track|number|dashboard|metric|data|watch/.test(l)){ shape = 'a morning digest of what matters'; stack = 'pull your numbers → one clean email, daily'; saves = 'the dashboard habit'; }
+    else { shape = 'a system that does this on its own'; stack = 'n8n + claude + the tools you already use'; saves = 'hours a week'; }
     var lines = [
-      '<span class="c">&gt;</span> idea received: <span class="w">"' + idea.replace(/[<>&]/g,'') + '"</span>',
-      '<span class="c">&gt;</span> scoping ........ <span class="ok">done</span>',
-      '<span class="c">&gt;</span> war game ....... <span class="w">' + (8 + hashStr(idea) % 9) + ' moves simulated, ' + (2 + hashStr(idea) % 3) + ' counter-moves ready</span>',
-      '<span class="c">&gt;</span> shape .......... <span class="w">' + shape + '</span>',
-      '<span class="c">&gt;</span> stack .......... <span class="w">' + stack + '</span>',
-      '<span class="c">&gt;</span> first demo ..... <span class="w">' + est + '</span>',
-      '<span class="c">&gt;</span> verdict ........ <span class="ok">BUILDABLE</span>',
-      '<span class="c">&gt;</span> this is what the house does. <a href="#lab" style="color:var(--cyan); border-bottom:1px solid var(--cyan-dim)">watch one get built ↓</a>'
+      '<span class="c">&gt;</span> task: <span class="w">"' + task.replace(/[<>&]/g,'') + '"</span>',
+      '<span class="c">&gt;</span> reading ........ <span class="ok">done</span>',
+      '<span class="c">&gt;</span> automation ..... <span class="w">' + shape + '</span>',
+      '<span class="c">&gt;</span> how ............ <span class="w">' + stack + '</span>',
+      '<span class="c">&gt;</span> gets back ...... <span class="w">' + saves + '</span>',
+      '<span class="c">&gt;</span> status ......... <span class="ok">AUTOMATABLE</span>',
+      '<span class="c">&gt;</span> a few of these are in the free pack. <a href="#pack" style="color:var(--cyan); border-bottom:1px solid var(--cyan-dim)">grab it ↓</a>'
     ];
     if (reduce){ out.innerHTML = lines.join('<br>'); return false; }
     out.innerHTML = '';
@@ -628,32 +579,12 @@
       out.appendChild(div);
       out.scrollTop = out.scrollHeight;
       li++;
-      setTimeout(next, li === 2 ? 520 : 210);
+      setTimeout(next, li === 2 ? 480 : 200);
     })();
     return false;
   }
 
-  /* ---------- lab typing ---------- */
-  (function(){
-    var el = document.getElementById('typed');
-    var phrases = ['v1 is live. go scan your channel...', 'niche radar online...', 'weekly pulse armed...', 'retention autopsy loading...'];
-    if (reduce){ el.textContent = phrases[phrases.length-1]; return; }
-    var pi = 0, ci = 0, del = false;
-    (function step(){
-      var ph = phrases[pi];
-      if (!del){
-        ci++; el.textContent = ph.slice(0, ci);
-        if (ci === ph.length){ del = true; setTimeout(step, 2100); return; }
-        setTimeout(step, 46 + Math.random()*54);
-      } else {
-        ci--; el.textContent = ph.slice(0, ci);
-        if (ci === 0){ del = false; pi = (pi+1) % phrases.length; setTimeout(step, 420); return; }
-        setTimeout(step, 22);
-      }
-    })();
-  })();
-
-  /* "/" jumps to the intake from anywhere */
+  /* "/" jumps to the planner */
   document.addEventListener('keydown', function(e){
     if (e.key !== '/') return;
     var tag = document.activeElement && document.activeElement.tagName;
@@ -664,6 +595,7 @@
     setTimeout(function(){ inp.focus({ preventScroll:true }); }, reduce ? 0 : 350);
   });
 
+  /* ---------- capture ---------- */
   var pageT = Date.now();
   function realSub(e){
     e.preventDefault();
@@ -673,14 +605,14 @@
     var hp = f.querySelector('input[name=website]').value;
     if (hp || Date.now() - pageT < 3000){ m.textContent = 'you are in.'; f.reset(); return false; }
     var btn = f.querySelector('button[type=submit]');
-    btn.disabled = true; btn.textContent = 'joining...';
+    btn.disabled = true; btn.textContent = 'sending...';
     fetch('https://n8n.stromation.com/webhook/ai-daily-subscribe', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: em, website: '', page: 'house' })
+      body: JSON.stringify({ email: em, website: '', page: 'studio' })
     }).then(function(r){ if (!r.ok) throw new Error('bad status'); return r.json().catch(function(){ return {}; }); })
-    .then(function(){ m.textContent = 'you are in. welcome to the build.'; m.style.color = 'var(--cyan)'; f.reset(); })
-    .catch(function(){ m.textContent = 'that didnt go through. email contact@stromation.com and ill add you myself.'; m.style.color = 'var(--fg-dim)'; })
-    .finally(function(){ btn.disabled = false; btn.textContent = 'follow the build'; });
+    .then(function(){ try{ gtag('event','starter_pack_signup'); }catch(_){}; m.textContent = "you're in — check your inbox for the pack."; m.style.color = 'var(--cyan)'; f.reset(); })
+    .catch(function(){ m.textContent = "that didn't go through. email contact@stromation.com and we'll send it over."; m.style.color = 'var(--fg-dim)'; })
+    .finally(function(){ btn.disabled = false; btn.textContent = 'Send me the pack'; });
     return false;
   }
 </script>
