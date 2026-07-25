@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Automation Guides for Solopreneurs — Stromation</title>
+<meta name="description" content="Plain-English guides on automating a one-person business with n8n and AI — your first automation, what to set up first, and how to stop losing leads. Free and practical.">
+<link rel="canonical" href="https://www.stromation.com/guides.html">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<meta name="theme-color" content="#08090b">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://www.stromation.com/guides.html">
+<meta property="og:title" content="Automation Guides for Solopreneurs — Stromation">
+<meta property="og:description" content="Plain-English guides on automating a one-person business with n8n and AI.">
+<meta property="og:image" content="https://www.stromation.com/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-B6Z6XV02RT"></script>
+<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-B6Z6XV02RT');</script>
+<style>
+  :root{--ink:#08090b;--ink-2:#0e1114;--fg:#e9eef2;--fg-dim:#8b97a1;--fg-faint:#586067;--line:rgba(233,238,242,0.09);--line-2:rgba(233,238,242,0.18);--cyan:#00E5FF;--cyan-dim:rgba(0,229,255,0.55);--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,Helvetica,Arial,sans-serif;--mono:"Courier New",ui-monospace,Menlo,Consolas,monospace;--mono2:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  *{margin:0;padding:0;box-sizing:border-box}html{scroll-behavior:smooth}
+  body{background:var(--ink);color:var(--fg);font-family:var(--sans);line-height:1.6;letter-spacing:-0.003em;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  ::selection{background:var(--cyan);color:var(--ink)}a{color:inherit;text-decoration:none}:focus-visible{outline:2px solid var(--cyan);outline-offset:3px;border-radius:2px}
+  .glow{position:fixed;z-index:0;pointer-events:none;width:60vw;height:60vw;top:-28vw;right:-22vw;border-radius:50%;background:radial-gradient(circle,rgba(0,229,255,0.10),transparent 60%);filter:blur(34px)}
+  .wrap{position:relative;z-index:1;max-width:860px;margin:0 auto;padding:0 24px}
+  header.top{position:sticky;top:0;z-index:40;backdrop-filter:blur(10px);background:linear-gradient(var(--ink),rgba(8,9,11,0.65));border-bottom:1px solid var(--line)}
+  header.top .row{max-width:860px;margin:0 auto;padding:0 24px;display:flex;align-items:center;gap:11px;height:58px}
+  .bmark{width:19px;height:23px}.mark{font-family:var(--mono);font-weight:700;letter-spacing:0.24em;font-size:0.8rem}.mark .dot{color:var(--cyan)}
+  header.top nav{margin-left:auto;display:flex;gap:20px;align-items:center;font-family:var(--mono2);font-size:0.72rem;color:var(--fg-dim)}
+  header.top nav a:hover{color:var(--cyan)}header.top nav a.cta{color:var(--ink);background:var(--cyan);padding:8px 14px;border-radius:7px;font-weight:700}
+  @media(max-width:560px){header.top nav a.hideable{display:none}}
+  .head{padding:54px 0 6px}.kick{font-family:var(--mono2);font-size:0.7rem;letter-spacing:0.24em;text-transform:uppercase;color:var(--cyan)}
+  h1{font-size:clamp(2rem,5.2vw,3rem);font-weight:800;letter-spacing:-0.03em;line-height:1.04;margin:16px 0 0}h1 .p{color:var(--cyan)}
+  .sub{color:var(--fg-dim);font-size:1.1rem;margin-top:18px;max-width:60ch}
+  .list{display:grid;gap:16px;margin-top:34px}
+  .g{display:block;border:1px solid var(--line);border-radius:16px;background:var(--ink-2);padding:26px;transition:border-color .2s,transform .2s}
+  .g:hover{border-color:var(--cyan-dim);transform:translateY(-2px)}
+  .g .tag{font-family:var(--mono2);font-size:0.64rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--cyan)}
+  .g h2{font-size:1.3rem;font-weight:700;letter-spacing:-0.02em;margin-top:10px}
+  .g p{color:var(--fg-dim);font-size:0.96rem;margin-top:9px}
+  .g .rt{font-family:var(--mono2);font-size:0.66rem;color:var(--fg-faint);margin-top:14px}
+  .cta-box{text-align:center;border:1px solid rgba(0,229,255,0.3);border-radius:18px;background:linear-gradient(160deg,rgba(0,229,255,0.06),rgba(0,229,255,0.01)),var(--ink-2);padding:clamp(28px,5vw,40px);margin:44px 0 20px}
+  .cta-box h3{font-size:clamp(1.3rem,3.2vw,1.8rem);font-weight:800;letter-spacing:-0.02em}
+  .cta-box p{color:var(--fg-dim);margin:12px auto 0;max-width:46ch}
+  .cta-box a.btn{display:inline-block;margin-top:22px;background:var(--cyan);color:var(--ink);font-weight:700;font-size:0.92rem;padding:13px 24px;border-radius:10px}
+  footer{border-top:1px solid var(--line-2);margin-top:40px;padding:34px 0 60px;font-family:var(--mono2);font-size:0.72rem;color:var(--fg-faint)}
+  footer .row{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:center}footer a{color:var(--fg-dim)}footer a:hover{color:var(--cyan)}
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<header class="top"><div class="row">
+  <svg class="bmark" viewBox="0 0 500 600" aria-hidden="true"><path d="M333,108 C240,100 125,162 124,252 C123,312 194,328 232,332" fill="none" stroke="#00E5FF" stroke-width="16" stroke-linecap="round"/><path d="M268,344 C366,362 394,444 368,506 C346,558 262,572 168,568" fill="none" stroke="#00E5FF" stroke-width="16" stroke-linecap="round"/><circle cx="355" cy="100" r="22" fill="#00E5FF"/><circle cx="250" cy="338" r="18" fill="#00E5FF"/><circle cx="145" cy="572" r="22" fill="#00E5FF"/></svg>
+  <a href="/"><span class="mark">STROMATION<span class="dot">.</span></span></a>
+  <nav>
+    <a href="templates.html" class="hideable">library</a>
+    <a href="pro-pack.html" class="hideable">pro pack</a>
+    <a href="/#pack" class="cta">Free pack</a>
+  </nav>
+</div></header>
+
+<div class="wrap">
+  <div class="head">
+    <div class="kick">guides · free &amp; practical</div>
+    <h1>Automation guides for the one-person business<span class="p">.</span></h1>
+    <p class="sub">No theory, no jargon. Just the specific systems that hand a solo operator back hours every week — how they work, and how to set them up on tools you already have.</p>
+  </div>
+
+  <div class="list">
+    <a class="g" href="guides/first-n8n-automation.html">
+      <div class="tag">start here</div>
+      <h2>Your first n8n automation, in 30 minutes</h2>
+      <p>What n8n is, why you'd use it over Zapier, and a step-by-step build of your first working automation — using a real free workflow you can import today.</p>
+      <div class="rt">~6 min read</div>
+    </a>
+    <a class="g" href="guides/automations-every-solopreneur-needs.html">
+      <div class="tag">the shortlist</div>
+      <h2>7 automations every solopreneur should set up first</h2>
+      <p>The highest-leverage systems for a one-person business — lead capture, follow-up, content, onboarding, invoicing — and how many hours each one gives back.</p>
+      <div class="rt">~7 min read</div>
+    </a>
+    <a class="g" href="guides/missed-call-text-back.html">
+      <div class="tag">stop the leak</div>
+      <h2>Missed-call text-back: stop losing leads to voicemail</h2>
+      <p>Most people who hit voicemail never call back — they call your competitor. Here's how to text every missed caller back automatically, within seconds.</p>
+      <div class="rt">~5 min read</div>
+    </a>
+  </div>
+
+  <div class="cta-box">
+    <h3>Get the systems, not just the theory.</h3>
+    <p>The free Solopreneur Starter Pack turns these guides into five automations you can put to work this week.</p>
+    <a class="btn" href="/#pack">Get the free Starter Pack →</a>
+  </div>
+</div>
+
+<footer><div class="wrap"><div class="row">
+  <span>Stromation — AI automation studio for solopreneurs.</span>
+  <span><a href="/">home</a> &nbsp; <a href="templates.html">library</a> &nbsp; <a href="pro-pack.html">pro pack</a> &nbsp; <a href="/#pack">free pack</a> &nbsp; <a href="privacy.html">privacy</a></span>
+</div></div></footer>
+</body>
+</html>
