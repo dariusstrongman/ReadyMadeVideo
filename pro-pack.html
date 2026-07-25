@@ -114,6 +114,14 @@
   .stickybuy{position:fixed;left:0;right:0;bottom:0;z-index:50;display:none;padding:12px 16px;background:linear-gradient(rgba(8,9,11,0),var(--ink) 40%);}
   .stickybuy a{display:flex;align-items:center;justify-content:center;gap:8px;background:var(--cyan);color:var(--ink);font-weight:700;font-size:0.95rem;padding:14px;border-radius:11px;box-shadow:0 8px 30px rgba(0,0,0,0.5)}
   @media(max-width:680px){ .stickybuy{display:block} footer{padding-bottom:96px} }
+  /* workflow preview */
+  .wfcanvas{display:flex;align-items:stretch;gap:10px;flex-wrap:wrap;margin-top:24px;padding:22px;border:1px solid var(--line);border-radius:16px;background:var(--ink-2);overflow-x:auto}
+  .wfnode{flex:1;min-width:150px;border:1px solid var(--line-2);border-radius:12px;background:var(--ink);padding:16px 14px;transition:border-color .3s,box-shadow .3s,transform .3s}
+  .wfnode.on{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan),0 8px 24px rgba(0,229,255,0.14);transform:translateY(-2px)}
+  .wfnode .wfk{display:block;font-family:var(--mono2);font-size:0.6rem;letter-spacing:0.16em;text-transform:uppercase;color:var(--cyan)}
+  .wfnode .wfn{display:block;font-weight:600;font-size:0.98rem;margin-top:8px}
+  .wfar{display:flex;align-items:center;color:var(--fg-faint);font-size:1.1rem}
+  @media(max-width:640px){ .wfcanvas{flex-direction:column} .wfar{transform:rotate(90deg);justify-content:center} .wfnode{min-width:0} }
 </style>
 </head>
 <body>
@@ -166,6 +174,22 @@
       <div class="card"><div class="n">05</div><h3>Morning Business Digest</h3><p>One calm email each morning: yesterday's revenue, new customers, and today's focus — pulled from Stripe automatically.</p><div class="fl">your data<i>→</i>claude<i>→</i>one email, daily</div></div>
       <div class="card"><div class="n">06</div><h3>Invoice &amp; Payment Recovery <span style="color:var(--live);font-size:0.7rem;font-family:var(--mono2)">bonus</span></h3><p>A daily scan of open and overdue invoices into one prioritized recovery list — with optional auto-reminders so money stops slipping.</p><div class="fl">stripe<i>→</i>find overdue<i>→</i>recover</div></div>
     </div>
+  </section>
+
+  <section class="blk">
+    <div class="nodetag">peek inside</div>
+    <h2>Real workflows, not a PDF.</h2>
+    <p class="snote">Each file opens as a proper multi-step workflow in n8n — a trigger, an AI step, and the actions, wired and ready. Here's the shape of the missed-call system:</p>
+    <div class="wfcanvas" aria-hidden="true">
+      <div class="wfnode" data-i="0"><span class="wfk">trigger</span><span class="wfn">Missed call</span></div>
+      <span class="wfar">→</span>
+      <div class="wfnode" data-i="1"><span class="wfk">ai</span><span class="wfn">Draft the reply</span></div>
+      <span class="wfar">→</span>
+      <div class="wfnode" data-i="2"><span class="wfk">action</span><span class="wfn">Text them back</span></div>
+      <span class="wfar">→</span>
+      <div class="wfnode" data-i="3"><span class="wfk">action</span><span class="wfn">Log + alert you</span></div>
+    </div>
+    <p class="snote" style="font-size:0.9rem">Six of these, ready to import. You edit one short config block, attach your accounts, and flip it on.</p>
   </section>
 
   <section class="blk">
@@ -228,6 +252,19 @@
 </div></div></footer>
 
 <div class="stickybuy"><a href="https://buy.stripe.com/8x228tb0s4yt4XedPS5wI0v" onclick="try{gtag('event','begin_checkout',{value:47,currency:'USD',items:['pro-pack']});}catch(e){}">Get the Pro Pack — $47 →</a></div>
+
+<script>
+  (function(){
+    var ns = document.querySelectorAll('.wfcanvas .wfnode');
+    if (!ns.length) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      ns.forEach(function(n){ n.classList.add('on'); }); return;
+    }
+    var i = 0;
+    function step(){ ns.forEach(function(n,j){ n.classList.toggle('on', j===i); }); i=(i+1)%ns.length; }
+    step(); setInterval(step, 1100);
+  })();
+</script>
 
 </body>
 </html>
