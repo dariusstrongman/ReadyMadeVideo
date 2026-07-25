@@ -471,6 +471,7 @@
       entries.forEach(function(e){ if (e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
     }, { threshold:0.12, rootMargin:'0px 0px -8% 0px' });
     rvs.forEach(function(el){ if (hero.indexOf(el) === -1) io.observe(el); });
+    setTimeout(function(){ rvs.forEach(function(el){ el.classList.add('in'); }); }, 2600); /* failsafe: nothing stays hidden */
     var anth = document.getElementById('anthem');
     if (anth){ var io2 = new IntersectionObserver(function(en){ en.forEach(function(e){ if(e.isIntersecting){ anth.classList.add('in'); io2.disconnect(); } }); }, {threshold:0.4}); io2.observe(anth); }
   }
