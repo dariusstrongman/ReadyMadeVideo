@@ -354,6 +354,25 @@
   #exit button.go:hover{transform:translateY(-1px); box-shadow:0 8px 24px rgba(0,229,255,0.3)}
   #exit .fine{font-family:var(--mono2); font-size:0.64rem; color:var(--fg-faint); margin-top:12px; text-align:center; letter-spacing:0.02em}
 
+  /* ---------- cost calculator ---------- */
+  .calc{margin-top:26px; border:1px solid var(--line); border-radius:18px; background:var(--ink-2); padding:clamp(24px,4vw,38px)}
+  .calc-grid{display:grid; grid-template-columns:1fr 1.05fr; gap:34px; align-items:center}
+  @media(max-width:720px){ .calc-grid{grid-template-columns:1fr; gap:26px} }
+  .calc .field{margin-top:22px}
+  .calc .field:first-child{margin-top:0}
+  .calc label{font-family:var(--mono2); font-size:0.74rem; color:var(--fg-dim); letter-spacing:0.03em; display:flex; justify-content:space-between; align-items:baseline; gap:12px}
+  .calc label b{color:var(--cyan); font-weight:700; font-size:0.98rem; white-space:nowrap}
+  .calc input[type=range]{width:100%; margin-top:13px; accent-color:var(--cyan); height:4px; cursor:pointer}
+  .calc .readout{border-left:2px solid var(--cyan-dim); padding-left:24px}
+  .calc .rlab{font-family:var(--mono2); font-size:0.7rem; letter-spacing:0.16em; text-transform:uppercase; color:var(--fg-faint)}
+  .calc .big{font-size:clamp(2.5rem,7vw,3.6rem); font-weight:800; letter-spacing:-0.03em; color:var(--fg); line-height:1; margin-top:8px; font-variant-numeric:tabular-nums}
+  .calc .big .u{font-size:0.32em; color:var(--fg-dim); font-weight:600; margin-left:8px; letter-spacing:0}
+  .calc .roline{margin-top:16px; color:var(--fg-dim); font-size:0.98rem; line-height:1.5}
+  .calc .roline b{color:var(--fg); font-weight:600}
+  .calc .roline .hl{color:var(--cyan); font-weight:700}
+  .calc .cta-row{margin-top:24px; display:flex; align-items:center; gap:16px; flex-wrap:wrap}
+  .calc .cta-note{font-family:var(--mono2); font-size:0.68rem; color:var(--fg-faint); letter-spacing:0.02em}
+
   /* ---------- reveals ---------- */
   .anim .rv{opacity:0; transform:translateY(16px)}
   .rv{transition:opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1)}
@@ -566,6 +585,36 @@
       <div class="fw rv"><div class="fwi">🛒</div><h4>Solo shop owners</h4><p>One person doing sales, support, and shipping — and missing leads in the gaps.</p></div>
       <div class="fw rv"><div class="fwi">🎥</div><h4>Creators</h4><p>Posting daily and still running every other part of the business by hand.</p></div>
       <div class="fw rv"><div class="fwi">🚀</div><h4>Indie founders</h4><p>Building the product AND running the business, with no team to hand things to.</p></div>
+    </div>
+  </section>
+
+  <!-- ================= COST CALCULATOR ================= -->
+  <section style="margin-top:64px" id="cost">
+    <div class="nodetag rv">the math</div>
+    <h2 class="sh rv" style="margin-top:6px">What is the busywork costing you?</h2>
+    <p class="snote rv">Drag the sliders. This is the time and money the repetitive work quietly takes every year — before you automate a thing.</p>
+    <div class="calc rv">
+      <div class="calc-grid">
+        <div class="calc-in">
+          <div class="field">
+            <label>hours a week on busywork <b id="choV">10 hrs</b></label>
+            <input type="range" id="cho" min="1" max="40" value="10" step="1" aria-label="hours a week on busywork">
+          </div>
+          <div class="field">
+            <label>what an hour of your time is worth <b id="crV">$60</b></label>
+            <input type="range" id="cr" min="20" max="250" value="60" step="5" aria-label="hourly value of your time">
+          </div>
+        </div>
+        <div class="readout">
+          <div class="rlab">that is costing you</div>
+          <div class="big"><span id="coY">$30,000</span><span class="u">/ year</span></div>
+          <div class="roline">That is <b id="cwk">~13</b> full work-weeks and <b class="hl" id="chY">500 hrs</b> a year — gone to work a machine could do.</div>
+          <div class="cta-row">
+            <a class="btn-cy" href="#pack">Get the free pack →</a>
+            <span class="cta-note">the five automations target exactly this.</span>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -872,6 +921,27 @@
     inp.scrollIntoView({ block:'center', behavior: reduce ? 'auto' : 'smooth' });
     setTimeout(function(){ inp.focus({ preventScroll:true }); }, reduce ? 0 : 350);
   });
+
+  /* ---------- cost calculator ---------- */
+  (function(){
+    var ho = document.getElementById('cho'), rt = document.getElementById('cr');
+    if (!ho || !rt) return;
+    var choV = document.getElementById('choV'), crV = document.getElementById('crV');
+    var coY = document.getElementById('coY'), chY = document.getElementById('chY'), cwk = document.getElementById('cwk');
+    var WEEKS = 50;
+    function money(n){ return '$' + Math.round(n).toLocaleString('en-US'); }
+    function calc(){
+      var h = +ho.value, r = +rt.value;
+      var hrsYr = h * WEEKS;
+      choV.textContent = h + ' hr' + (h===1?'':'s');
+      crV.textContent = '$' + r;
+      coY.textContent = money(hrsYr * r);
+      chY.textContent = hrsYr.toLocaleString('en-US') + ' hrs';
+      cwk.textContent = '~' + Math.round(hrsYr / 40);
+    }
+    ho.addEventListener('input', calc); rt.addEventListener('input', calc);
+    calc();
+  })();
 
   /* ---------- capture ---------- */
   var pageT = Date.now();
