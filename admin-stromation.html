@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stromation · Control</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<meta name="theme-color" content="#08090b">
+<style>
+  :root{--ink:#08090b;--ink-2:#0e1114;--ink-3:#141920;--fg:#e9eef2;--fg-dim:#8b97a1;--fg-faint:#727d8a;--line:rgba(233,238,242,0.09);--line-2:rgba(233,238,242,0.18);--cyan:#00E5FF;--live:#4fd6a0;--warn:#f5c451;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,Helvetica,Arial,sans-serif;--mono:"Courier New",ui-monospace,Menlo,Consolas,monospace;--mono2:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--ink);color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;min-height:100vh}
+  .glow{position:fixed;inset:0;pointer-events:none;background:radial-gradient(60vw 40vw at 80% -10%,rgba(0,229,255,0.08),transparent 60%)}
+  .wrap{position:relative;max-width:960px;margin:0 auto;padding:32px 24px 80px}
+  .top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .bmark{width:22px;height:26px}
+  .mark{font-family:var(--mono);font-weight:700;letter-spacing:0.24em;font-size:0.85rem}.mark .dot{color:var(--cyan)}
+  .tag{font-family:var(--mono2);font-size:0.64rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--fg-faint);border:1px solid var(--line);border-radius:99px;padding:4px 10px}
+  .top .r{margin-left:auto;display:flex;gap:10px;align-items:center}
+  button{font-family:var(--mono2);font-size:0.74rem;color:var(--fg-dim);background:var(--ink-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 14px;cursor:pointer}
+  button:hover{color:var(--cyan);border-color:var(--cyan)}
+  .gen{font-family:var(--mono2);font-size:0.68rem;color:var(--fg-faint)}
+  h2{font-family:var(--mono2);font-size:0.7rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--cyan);margin:34px 0 0}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:16px}
+  @media(max-width:760px){.grid{grid-template-columns:repeat(2,1fr)}}
+  .tile{border:1px solid var(--line);border-radius:14px;background:var(--ink-2);padding:20px}
+  .tile.hero{grid-column:span 2;border-color:rgba(0,229,255,0.28);background:linear-gradient(160deg,rgba(0,229,255,0.05),transparent),var(--ink-2)}
+  .tile .k{font-family:var(--mono2);font-size:0.66rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--fg-dim)}
+  .tile .v{font-size:2.1rem;font-weight:800;letter-spacing:-0.02em;margin-top:8px;font-variant-numeric:tabular-nums}
+  .tile.hero .v{font-size:2.8rem;color:var(--cyan)}
+  .tile .s{font-family:var(--mono2);font-size:0.66rem;color:var(--fg-faint);margin-top:6px}
+  .tile .v.money{color:var(--live)}
+  .msg{font-family:var(--mono2);font-size:0.85rem;color:var(--fg-dim);margin-top:30px;border:1px solid var(--line);border-radius:12px;padding:22px;background:var(--ink-2)}
+  .msg code{color:var(--cyan)}
+  a{color:var(--cyan)}
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<div class="wrap">
+  <div class="top">
+    <svg class="bmark" viewBox="0 0 500 600" aria-hidden="true"><path d="M333,108 C240,100 125,162 124,252 C123,312 194,328 232,332" fill="none" stroke="#00E5FF" stroke-width="16" stroke-linecap="round"/><path d="M268,344 C366,362 394,444 368,506 C346,558 262,572 168,568" fill="none" stroke="#00E5FF" stroke-width="16" stroke-linecap="round"/><circle cx="355" cy="100" r="22" fill="#00E5FF"/><circle cx="250" cy="338" r="18" fill="#00E5FF"/><circle cx="145" cy="572" r="22" fill="#00E5FF"/></svg>
+    <span class="mark">STROMATION<span class="dot">.</span></span>
+    <span class="tag">control</span>
+    <div class="r"><span class="gen" id="gen"></span><button id="refresh">↻ refresh</button></div>
+  </div>
+
+  <div id="board" style="display:none">
+    <h2>money</h2>
+    <div class="grid">
+      <div class="tile hero"><div class="k">Pro Pack revenue</div><div class="v money" id="revenue">$0</div><div class="s" id="salesline">0 sales</div></div>
+      <div class="tile"><div class="k">Paying customers</div><div class="v" id="buyers">0</div><div class="s">Pro Pack</div></div>
+      <div class="tile"><div class="k">Free → paid</div><div class="v" id="conv">0%</div><div class="s">conversion</div></div>
+    </div>
+
+    <h2>audience</h2>
+    <div class="grid">
+      <div class="tile hero"><div class="k">Total on the list</div><div class="v" id="total">0</div><div class="s" id="new7">+0 this week</div></div>
+      <div class="tile"><div class="k">Free pack</div><div class="v" id="starter">0</div><div class="s">starter_pack</div></div>
+      <div class="tile"><div class="k">The Build waitlist</div><div class="v" id="waitlist">0</div><div class="s">founding interest</div></div>
+    </div>
+
+    <h2>engine</h2>
+    <div class="grid">
+      <div class="tile"><div class="k">In nurture</div><div class="v" id="nurtured">0</div><div class="s">got a drip email</div></div>
+      <div class="tile"><div class="k">Unsubscribed</div><div class="v" id="unsub">0</div><div class="s">all-time</div></div>
+      <div class="tile"><div class="k">New (7 days)</div><div class="v" id="new7b">0</div><div class="s">signups</div></div>
+      <div class="tile"><div class="k">Machine</div><div class="v" style="font-size:1.1rem;color:var(--live);margin-top:14px">● running</div><div class="s">7 workflows live</div></div>
+    </div>
+  </div>
+
+  <div class="msg" id="msg">loading…</div>
+</div>
+
+<script>
+  var params = new URLSearchParams(location.search);
+  var k = params.get('k') || '';
+  var msg = document.getElementById('msg'), board = document.getElementById('board');
+  function money(n){ return '$' + Number(n||0).toLocaleString('en-US'); }
+  function set(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; }
+  function load(){
+    if(!k){ msg.style.display='block'; board.style.display='none'; msg.innerHTML='Add your key to the URL: <code>admin-stromation.html?k=YOUR_KEY</code>'; return; }
+    msg.style.display='block'; msg.textContent='loading…';
+    fetch('https://n8n.stromation.com/webhook/stromation-stats?k='+encodeURIComponent(k))
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(!d || !d.ok){ msg.textContent='unauthorized — check your key.'; board.style.display='none'; return; }
+        var s=d.subscribers||{}, sa=d.sales||{};
+        set('revenue', money(sa.revenue_usd));
+        set('salesline', (sa.count||0)+' sale'+((sa.count===1)?'':'s'));
+        set('buyers', s.buyers||0);
+        var conv = (s.total>0)? Math.round((s.buyers/s.total)*1000)/10 : 0;
+        set('conv', conv+'%');
+        set('total', s.total||0);
+        set('new7', '+'+(s.new_7d||0)+' this week');
+        set('starter', s.starter||0);
+        set('waitlist', s.waitlist||0);
+        set('nurtured', s.nurtured||0);
+        set('unsub', s.unsubscribed||0);
+        set('new7b', s.new_7d||0);
+        document.getElementById('gen').textContent = 'updated '+ new Date(d.generated).toLocaleString();
+        board.style.display='block'; msg.style.display='none';
+      })
+      .catch(function(){ msg.textContent='could not reach the stats service.'; });
+  }
+  document.getElementById('refresh').addEventListener('click', load);
+  load();
+</script>
+</body>
+</html>
