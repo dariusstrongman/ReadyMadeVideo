@@ -12,7 +12,7 @@
 <meta property="og:url" content="https://www.stromation.com/">
 <meta property="og:title" content="Stromation — AI Automation Studio for Solopreneurs">
 <meta property="og:description" content="The AI automations that run your busywork, so one person can run like a whole team. Free Solopreneur Starter Pack inside.">
-<meta property="og:image" content="https://www.stromation.com/banner-1500x500.png">
+<meta property="og:image" content="https://www.stromation.com/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-B6Z6XV02RT"></script>
 <script>
@@ -315,6 +315,45 @@
   .formtrust span{display:inline-flex; align-items:center; gap:7px}
   .formtrust span::before{content:'\2713'; color:var(--cyan); font-weight:700}
 
+  /* ---------- pack flow chips ---------- */
+  .pack-list li .pi{display:flex; flex-direction:column; gap:0; min-width:0}
+  .pack-list li .fl{margin-top:7px; font-family:var(--mono2); font-size:0.66rem; letter-spacing:0.03em; color:var(--fg-faint); font-weight:400}
+  .pack-list li .fl i{color:var(--cyan); font-style:normal; margin:0 5px}
+  /* ---------- ship log ---------- */
+  .slog{margin-top:24px; border:1px solid var(--line); border-radius:16px; background:var(--ink-2); padding:clamp(22px,3.4vw,32px)}
+  .slog-head{display:flex; align-items:center; gap:10px; font-family:var(--mono2); font-size:0.72rem; letter-spacing:0.08em; color:var(--fg-dim); text-transform:uppercase}
+  .slog-head .pulse{width:8px; height:8px; border-radius:50%; background:var(--live); box-shadow:0 0 0 0 rgba(79,214,160,0.6); animation:beat 2.4s ease-out infinite}
+  @keyframes beat{0%{box-shadow:0 0 0 0 rgba(79,214,160,0.55)}70%{box-shadow:0 0 0 9px rgba(79,214,160,0)}100%{box-shadow:0 0 0 0 rgba(79,214,160,0)}}
+  @media(prefers-reduced-motion:reduce){ .slog-head .pulse{animation:none} }
+  .slog ol{list-style:none; margin:18px 0 0; padding:0}
+  .slog li{display:flex; gap:18px; padding:13px 0; border-top:1px solid var(--line); align-items:baseline}
+  .slog li:first-child{border-top:0}
+  .slog .d{font-family:var(--mono2); font-size:0.72rem; color:var(--cyan); letter-spacing:0.03em; flex:0 0 88px; white-space:nowrap}
+  .slog .t{color:var(--fg-dim); font-size:0.95rem; line-height:1.5}
+  .slog .t b{color:var(--fg); font-weight:600}
+  @media(max-width:560px){ .slog li{flex-direction:column; gap:3px} .slog .d{flex-basis:auto} }
+  /* ---------- exit-intent modal ---------- */
+  #exit{position:fixed; inset:0; z-index:80; display:none; align-items:center; justify-content:center; padding:24px;
+    background:rgba(4,5,6,0.72); backdrop-filter:blur(6px); opacity:0; transition:opacity .28s}
+  #exit.on{display:flex; opacity:1}
+  #exit .card{position:relative; max-width:440px; width:100%; border:1px solid rgba(0,229,255,0.32); border-radius:18px;
+    background:linear-gradient(165deg,rgba(0,229,255,0.06),rgba(0,229,255,0.01)),var(--ink-2); padding:clamp(28px,5vw,40px);
+    box-shadow:0 30px 80px rgba(0,0,0,0.5); transform:translateY(14px) scale(0.98); transition:transform .3s cubic-bezier(.2,.8,.2,1)}
+  #exit.on .card{transform:none}
+  #exit .x{position:absolute; top:14px; right:16px; background:none; border:0; color:var(--fg-faint); font-size:1.3rem; cursor:pointer; line-height:1; padding:4px}
+  #exit .x:hover{color:var(--cyan)}
+  #exit .kick{font-family:var(--mono2); font-size:0.66rem; letter-spacing:0.2em; text-transform:uppercase; color:var(--cyan)}
+  #exit h3{font-size:1.5rem; font-weight:800; letter-spacing:-0.02em; margin-top:12px; line-height:1.1}
+  #exit p{color:var(--fg-dim); font-size:0.95rem; margin-top:12px; line-height:1.5}
+  #exit form{display:flex; flex-direction:column; gap:10px; margin-top:22px}
+  #exit input[type=email]{background:var(--ink); border:1px solid var(--line-2); color:var(--fg); font-family:var(--sans);
+    font-size:0.95rem; padding:13px 15px; border-radius:10px}
+  #exit input[type=email]:focus{outline:none; border-color:var(--cyan)}
+  #exit button.go{background:var(--cyan); color:var(--ink); border:0; font-family:var(--sans); font-weight:700; font-size:0.92rem;
+    padding:13px 18px; border-radius:10px; cursor:pointer; transition:transform .15s, box-shadow .15s}
+  #exit button.go:hover{transform:translateY(-1px); box-shadow:0 8px 24px rgba(0,229,255,0.3)}
+  #exit .fine{font-family:var(--mono2); font-size:0.64rem; color:var(--fg-faint); margin-top:12px; text-align:center; letter-spacing:0.02em}
+
   /* ---------- reveals ---------- */
   .anim .rv{opacity:0; transform:translateY(16px)}
   .rv{transition:opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1)}
@@ -537,11 +576,11 @@
       <h2>The Solopreneur<br>Starter Pack<span class="p">.</span></h2>
       <p class="sub">Five automations that hand a solo business back hours every week — the exact busywork every one-person shop burns time on. Import them, plug in your accounts, done. No course, no fluff.</p>
       <ul class="pack-list">
-        <li><span class="ck">→</span><span><b>Missed call, instant text-back</b> — never lose a lead to a voicemail again.</span></li>
-        <li><span class="ck">→</span><span><b>New lead, auto follow-up</b> — captured, enriched, and messaged in minutes.</span></li>
-        <li><span class="ck">→</span><span><b>One idea, a week of content</b> — drafted and scheduled across platforms.</span></li>
-        <li><span class="ck">→</span><span><b>Client onboarding on autopilot</b> — welcome, intake, and setup run themselves.</span></li>
-        <li><span class="ck">→</span><span><b>Your morning business digest</b> — the numbers that matter, in your inbox daily.</span></li>
+        <li><span class="ck">→</span><div class="pi"><span><b>Missed call, instant text-back</b> — never lose a lead to a voicemail again.</span><span class="fl">missed call<i>→</i>n8n<i>→</i>instant sms + inbox</span></div></li>
+        <li><span class="ck">→</span><div class="pi"><span><b>New lead, auto follow-up</b> — captured, enriched, and messaged in minutes.</span><span class="fl">form<i>→</i>enrich<i>→</i>first message</span></div></li>
+        <li><span class="ck">→</span><div class="pi"><span><b>One idea, a week of content</b> — drafted and scheduled across platforms.</span><span class="fl">idea<i>→</i>claude<i>→</i>scheduled posts</span></div></li>
+        <li><span class="ck">→</span><div class="pi"><span><b>Client onboarding on autopilot</b> — welcome, intake, and setup run themselves.</span><span class="fl">signup<i>→</i>docs + emails<i>→</i>setup</span></div></li>
+        <li><span class="ck">→</span><div class="pi"><span><b>Your morning business digest</b> — the numbers that matter, in your inbox daily.</span><span class="fl">your data<i>→</i>one email<i>→</i>every morning</span></div></li>
       </ul>
       <form class="capture" onsubmit="return realSub(event)">
         <input type="email" placeholder="you@email.com" aria-label="email" required>
@@ -577,6 +616,22 @@
         <p>A community where new automations ship weekly and you learn to build your own. Get in early, free members first.</p>
         <span class="tagpill">opening soon</span>
       </div>
+    </div>
+  </section>
+
+  <!-- ================= SHIP LOG ================= -->
+  <section style="margin-top:70px" id="log">
+    <div class="nodetag rv">ship log</div>
+    <h2 class="sh rv" style="margin-top:6px">Built in the open.</h2>
+    <p class="snote rv">This studio ships in public. Every drop gets logged here — real dates, real things you can use.</p>
+    <div class="slog rv">
+      <div class="slog-head"><span class="pulse"></span>the machine is running</div>
+      <ol>
+        <li><span class="d">Jul 2026</span><span class="t"><b>Automation planner online.</b> Type any task and see the system that kills it, right on the homepage.</span></li>
+        <li><span class="d">Jul 2026</span><span class="t"><b>The Solopreneur Starter Pack shipped.</b> Five plug-and-play automations, free and yours to keep.</span></li>
+        <li><span class="d">Jul 2026</span><span class="t"><b>Studio launched.</b> Stromation goes all-in on automations for the one-person business.</span></li>
+        <li><span class="d">next</span><span class="t">Template packs — deeper done-for-you systems. Subscribers get them first.</span></li>
+      </ol>
     </div>
   </section>
 
@@ -623,6 +678,21 @@
 </footer>
 
 <div class="stickycta" id="stickyCta"><a href="#pack">Get the free Starter Pack →</a></div>
+
+<div id="exit" role="dialog" aria-modal="true" aria-labelledby="exitH">
+  <div class="card">
+    <button class="x" id="exitX" aria-label="close">✕</button>
+    <div class="kick">before you go</div>
+    <h3 id="exitH">Grab the free Starter Pack.</h3>
+    <p>Five automations that hand a solo business back hours every week. Free, yours to keep, no card. Where should we send it?</p>
+    <form onsubmit="return realSub(event)">
+      <input type="email" placeholder="you@email.com" aria-label="email" required>
+      <input type="text" name="website" value="" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0;height:0;width:0">
+      <button type="submit" class="go">Send me the pack →</button>
+    </form>
+    <div class="fine" id="exitMsg">delivered instantly · one-click unsubscribe</div>
+  </div>
+</div>
 
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
@@ -805,24 +875,57 @@
 
   /* ---------- capture ---------- */
   var pageT = Date.now();
+  function markSubbed(){ try{ sessionStorage.setItem('stroSub','1'); }catch(_){}}
   function realSub(e){
     e.preventDefault();
     var f = e.target;
-    var m = document.getElementById('capMsg');
+    var inExit = !!f.closest('#exit');
+    var m = document.getElementById(inExit ? 'exitMsg' : 'capMsg');
+    var btn = f.querySelector('button[type=submit]');
+    var label = btn.textContent;
     var em = f.querySelector('input[type=email]').value.trim();
     var hp = f.querySelector('input[name=website]').value;
-    if (hp || Date.now() - pageT < 3000){ m.textContent = 'you are in.'; f.reset(); return false; }
-    var btn = f.querySelector('button[type=submit]');
+    if (hp || Date.now() - pageT < 3000){ m.textContent = 'you are in.'; markSubbed(); f.reset(); return false; }
     btn.disabled = true; btn.textContent = 'sending...';
     fetch('https://n8n.stromation.com/webhook/ai-daily-subscribe', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: em, website: '', page: 'studio' })
     }).then(function(r){ if (!r.ok) throw new Error('bad status'); return r.json().catch(function(){ return {}; }); })
-    .then(function(){ try{ gtag('event','starter_pack_signup'); }catch(_){}; m.textContent = "you're in — check your inbox for the pack."; m.style.color = 'var(--cyan)'; f.reset(); })
+    .then(function(){ try{ gtag('event','starter_pack_signup'); }catch(_){}; markSubbed(); m.textContent = "you're in — check your inbox for the pack."; m.style.color = 'var(--cyan)'; f.reset(); })
     .catch(function(){ m.textContent = "that didn't go through. email contact@stromation.com and we'll send it over."; m.style.color = 'var(--fg-dim)'; })
-    .finally(function(){ btn.disabled = false; btn.textContent = 'Send me the pack'; });
+    .finally(function(){ btn.disabled = false; btn.textContent = label; });
     return false;
   }
+
+  /* ---------- exit-intent ---------- */
+  (function(){
+    var modal = document.getElementById('exit');
+    if (!modal) return;
+    var shown = false;
+    function seen(){ try{ return !!sessionStorage.getItem('stroExit') || !!sessionStorage.getItem('stroSub'); }catch(_){ return false; } }
+    function open(){
+      if (shown || seen() || document.getElementById('boot').style.display !== 'none') return;
+      shown = true; try{ sessionStorage.setItem('stroExit','1'); }catch(_){}
+      modal.classList.add('on');
+      var em = modal.querySelector('input[type=email]'); if (em){ setTimeout(function(){ em.focus(); }, 320); }
+      try{ gtag('event','exit_intent_shown'); }catch(_){}
+    }
+    function close(){ modal.classList.remove('on'); }
+    document.getElementById('exitX').addEventListener('click', close);
+    modal.addEventListener('click', function(e){ if (e.target === modal) close(); });
+    document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && modal.classList.contains('on')) close(); });
+    // desktop: mouse leaves toward the top (going for the tab bar / back)
+    document.addEventListener('mouseout', function(e){
+      if (!e.relatedTarget && e.clientY <= 4 && scrollY > 500) open();
+    });
+    // mobile / no-mouse: fast scroll back toward the top after real engagement
+    var last = scrollY, maxed = false;
+    addEventListener('scroll', function(){
+      if (scrollY > 1400) maxed = true;
+      if (maxed && last - scrollY > 60 && scrollY < 900) open();
+      last = scrollY;
+    }, { passive:true });
+  })();
 </script>
 
 </body>
