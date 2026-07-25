@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Automation Library — Free n8n Templates for Solopreneurs | Stromation</title>
+<meta name="description" content="A free, growing library of plug-and-play AI automations for one-person businesses — leads, content, onboarding, invoicing, ops. Built on n8n. Yours to keep.">
+<link rel="canonical" href="https://www.stromation.com/templates.html">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<meta name="theme-color" content="#08090b">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://www.stromation.com/templates.html">
+<meta property="og:title" content="The Automation Library — Free templates for solopreneurs">
+<meta property="og:description" content="A free, growing library of plug-and-play AI automations for one-person businesses. Built on n8n. Yours to keep.">
+<meta property="og:image" content="https://www.stromation.com/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-B6Z6XV02RT"></script>
+<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-B6Z6XV02RT');</script>
+<style>
+  :root{
+    --ink:#08090b;--ink-2:#0e1114;--ink-3:#141920;--fg:#e9eef2;--fg-dim:#8b97a1;--fg-faint:#586067;
+    --line:rgba(233,238,242,0.09);--line-2:rgba(233,238,242,0.18);--cyan:#00E5FF;--cyan-deep:#00b3cc;--cyan-dim:rgba(0,229,255,0.55);--live:#4fd6a0;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,Helvetica,Arial,sans-serif;
+    --mono:"Courier New",ui-monospace,"SF Mono",Menlo,Consolas,monospace;--mono2:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{background:var(--ink);color:var(--fg);font-family:var(--sans);line-height:1.6;letter-spacing:-0.003em;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  ::selection{background:var(--cyan);color:var(--ink)}
+  a{color:inherit;text-decoration:none}
+  :focus-visible{outline:2px solid var(--cyan);outline-offset:3px;border-radius:2px}
+  .glow{position:fixed;z-index:0;pointer-events:none;width:60vw;height:60vw;top:-28vw;right:-22vw;border-radius:50%;background:radial-gradient(circle,rgba(0,229,255,0.10),transparent 60%);filter:blur(34px)}
+  .wrap{position:relative;z-index:1;max-width:980px;margin:0 auto;padding:0 24px}
+  header.top{position:sticky;top:0;z-index:40;backdrop-filter:blur(10px);background:linear-gradient(var(--ink),rgba(8,9,11,0.65));border-bottom:1px solid var(--line)}
+  header.top .row{max-width:980px;margin:0 auto;padding:0 24px;display:flex;align-items:center;gap:11px;height:58px}
+  .bmark{width:19px;height:23px}
+  .mark{font-family:var(--mono);font-weight:700;letter-spacing:0.24em;font-size:0.8rem}.mark .dot{color:var(--cyan)}
+  header.top nav{margin-left:auto;display:flex;gap:20px;align-items:center;font-family:var(--mono2);font-size:0.72rem;color:var(--fg-dim);letter-spacing:0.04em}
+  header.top nav a:hover{color:var(--cyan)}
+  header.top nav a.cta{color:var(--ink);background:var(--cyan);padding:8px 14px;border-radius:7px;font-weight:700;letter-spacing:0.02em}
+  header.top nav a.cta:hover{box-shadow:0 6px 18px rgba(0,229,255,0.3)}
+  @media(max-width:600px){ header.top nav a.hideable{display:none} }
+  .head{padding:54px 0 6px}
+  .kick{font-family:var(--mono2);font-size:0.7rem;letter-spacing:0.24em;text-transform:uppercase;color:var(--cyan)}
+  h1{font-size:clamp(2rem,5.4vw,3.1rem);font-weight:800;letter-spacing:-0.03em;line-height:1.04;margin:16px 0 0}
+  h1 .p{color:var(--cyan)}
+  .sub{color:var(--fg-dim);font-size:1.1rem;margin-top:18px;max-width:60ch}
+  .sub b{color:var(--fg);font-weight:600}
+  /* filters */
+  .filters{display:flex;flex-wrap:wrap;gap:9px;margin-top:28px;border-top:1px solid var(--line);padding-top:22px}
+  .filters button{font-family:var(--mono2);font-size:0.74rem;letter-spacing:0.04em;color:var(--fg-dim);background:var(--ink-2);border:1px solid var(--line-2);border-radius:99px;padding:8px 15px;cursor:pointer;transition:all .15s}
+  .filters button:hover{color:var(--fg);border-color:var(--fg-faint)}
+  .filters button.on{background:var(--cyan);color:var(--ink);border-color:var(--cyan);font-weight:700}
+  /* grid */
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:24px}
+  @media(max-width:680px){ .grid{grid-template-columns:1fr} }
+  .card{border:1px solid var(--line);border-radius:16px;background:var(--ink-2);padding:26px;display:flex;flex-direction:column;transition:border-color .2s,transform .2s}
+  .card:hover{border-color:var(--cyan-dim);transform:translateY(-2px)}
+  .card .ct{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .card .cat{font-family:var(--mono2);font-size:0.64rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--cyan)}
+  .card .badge{font-family:var(--mono2);font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--live);border:1px solid rgba(79,214,160,0.4);border-radius:99px;padding:3px 9px;white-space:nowrap}
+  .card h3{font-size:1.22rem;font-weight:700;letter-spacing:-0.02em;margin-top:14px}
+  .card p{color:var(--fg-dim);font-size:0.93rem;margin-top:10px;line-height:1.5;flex:1}
+  .card .fl{margin-top:16px;font-family:var(--mono2);font-size:0.68rem;letter-spacing:0.02em;color:var(--fg-faint)}
+  .card .fl i{color:var(--cyan);font-style:normal;margin:0 5px}
+  .card .foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+  .card .saves{font-family:var(--mono2);font-size:0.68rem;color:var(--live)}
+  .card .get{font-family:var(--mono2);font-size:0.72rem;color:var(--cyan);border-bottom:1px solid var(--cyan-dim);padding-bottom:2px}
+  .card .get:hover{color:var(--fg)}
+  .empty{display:none;text-align:center;color:var(--fg-faint);font-family:var(--mono2);font-size:0.85rem;padding:40px 0}
+  /* cta */
+  .cta-box{text-align:center;border:1px solid rgba(0,229,255,0.3);border-radius:18px;background:linear-gradient(160deg,rgba(0,229,255,0.06),rgba(0,229,255,0.01)),var(--ink-2);padding:clamp(30px,5vw,44px);margin:44px 0 20px}
+  .cta-box h3{font-size:clamp(1.4rem,3.4vw,2rem);font-weight:800;letter-spacing:-0.02em}
+  .cta-box p{color:var(--fg-dim);margin:14px auto 0;max-width:48ch}
+  .cta-box a.btn{display:inline-block;margin-top:24px;background:var(--cyan);color:var(--ink);font-weight:700;font-size:0.92rem;padding:14px 26px;border-radius:10px;transition:transform .15s,box-shadow .15s}
+  .cta-box a.btn:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(0,229,255,0.3)}
+  footer{border-top:1px solid var(--line-2);margin-top:40px;padding:34px 0 60px;font-family:var(--mono2);font-size:0.72rem;color:var(--fg-faint)}
+  footer .row{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:center}
+  footer a{color:var(--fg-dim)}footer a:hover{color:var(--cyan)}
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<header class="top">
+  <div class="row">
+    <svg class="bmark" viewBox="0 0 500 600" aria-hidden="true">
+      <path d="M333,108 C240,100 125,162 124,252 C123,312 194,328 232,332" fill="none" stroke="#00E5FF" stroke-width="16" stroke-linecap="round"/>
+      <path d="M268,344 C366,362 394,444 368,506 C346,558 262,572 168,568" fill="none" stroke="#00E5FF" stroke-width="16" stroke-linecap="round"/>
+      <circle cx="355" cy="100" r="22" fill="#00E5FF"/><circle cx="250" cy="338" r="18" fill="#00E5FF"/><circle cx="145" cy="572" r="22" fill="#00E5FF"/>
+    </svg>
+    <a href="/"><span class="mark">STROMATION<span class="dot">.</span></span></a>
+    <nav>
+      <a href="/#automate" class="hideable">what you automate</a>
+      <a href="about.html" class="hideable">about</a>
+      <a href="/#pack" class="cta">Free pack</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="head">
+    <div class="kick">the library · free &amp; growing</div>
+    <h1>The Automation Library<span class="p">.</span></h1>
+    <p class="sub">Every automation the studio ships lives here — plug-and-play systems for a one-person business, built on <b>n8n</b> and the tools you already use. Free, yours to keep, and a new one drops for subscribers every week.</p>
+
+    <div class="filters" id="filters">
+      <button class="on" data-f="all">all</button>
+      <button data-f="leads">leads</button>
+      <button data-f="content">content</button>
+      <button data-f="clients">clients</button>
+      <button data-f="money">money</button>
+      <button data-f="ops">ops</button>
+    </div>
+  </div>
+
+  <div class="grid" id="grid">
+
+    <a class="card" data-cat="leads" href="starter-pack.html#a01">
+      <div class="ct"><span class="cat">leads</span><span class="badge">free · in the pack</span></div>
+      <h3>Missed call, instant text-back</h3>
+      <p>A missed call is a lead about to text your competitor. This texts them back in seconds and drops the lead in your inbox before they've put the phone down.</p>
+      <div class="fl">missed call<i>→</i>n8n<i>→</i>instant sms + inbox</div>
+      <div class="foot"><span class="saves">saves every missed lead</span><span class="get">get it free →</span></div>
+    </a>
+
+    <a class="card" data-cat="leads" href="starter-pack.html#a02">
+      <div class="ct"><span class="cat">leads</span><span class="badge">free · in the pack</span></div>
+      <h3>New lead, auto follow-up</h3>
+      <p>Speed wins deals. The moment a lead comes in from anywhere, it enriches who they are and sends a personal-feeling first message in minutes — then nudges you if they go quiet.</p>
+      <div class="fl">form / dm<i>→</i>claude<i>→</i>first message + crm</div>
+      <div class="foot"><span class="saves">5–8 hrs/week back</span><span class="get">get it free →</span></div>
+    </a>
+
+    <a class="card" data-cat="content" href="starter-pack.html#a03">
+      <div class="ct"><span class="cat">content</span><span class="badge">free · in the pack</span></div>
+      <h3>One idea, a week of content</h3>
+      <p>Drop in one idea and it becomes a week of platform-ready posts — hooks, captions, hashtags — queued to publish on schedule. Stop feeding the content machine by hand.</p>
+      <div class="fl">one idea<i>→</i>claude<i>→</i>scheduled posts</div>
+      <div class="foot"><span class="saves">6–10 hrs/week back</span><span class="get">get it free →</span></div>
+    </a>
+
+    <a class="card" data-cat="clients" href="starter-pack.html#a04">
+      <div class="ct"><span class="cat">clients</span><span class="badge">free · in the pack</span></div>
+      <h3>Client onboarding on autopilot</h3>
+      <p>Someone pays and the whole welcome runs itself — the email, the intake form, the folder, the kickoff call — so every client gets a sharp first experience without you touching a thing.</p>
+      <div class="fl">payment<i>→</i>welcome + intake<i>→</i>setup</div>
+      <div class="foot"><span class="saves">3–5 hrs/client back</span><span class="get">get it free →</span></div>
+    </a>
+
+    <a class="card" data-cat="ops" href="starter-pack.html#a05">
+      <div class="ct"><span class="cat">ops</span><span class="badge">free · in the pack</span></div>
+      <h3>Your morning business digest</h3>
+      <p>Stop opening five dashboards. Every morning, one clean email lands with the numbers that matter — new leads, revenue, what needs you today — pulled from all your tools automatically.</p>
+      <div class="fl">your data<i>→</i>claude<i>→</i>one email, daily</div>
+      <div class="foot"><span class="saves">kills the dashboard habit</span><span class="get">get it free →</span></div>
+    </a>
+
+    <a class="card" data-cat="money" href="/#pack">
+      <div class="ct"><span class="cat">money</span><span class="badge" style="color:var(--fg-dim);border-color:var(--line-2)">next drop</span></div>
+      <h3>Invoice &amp; payment recovery</h3>
+      <p>Invoices go out on their own, unpaid ones get chased on a schedule, and failed charges recover themselves. The next system dropping to the library — subscribers get it first.</p>
+      <div class="fl">stripe<i>→</i>n8n<i>→</i>send · chase · recover</div>
+      <div class="foot"><span class="saves">hours + lost revenue</span><span class="get">get on the list →</span></div>
+    </a>
+
+  </div>
+  <div class="empty" id="empty">nothing in that category yet — more dropping every week.</div>
+
+  <div class="cta-box">
+    <h3>New automations, every week.</h3>
+    <p>Get the five in the free Starter Pack now, then a fresh plug-and-play system as each one ships. The whole library, over time, for free.</p>
+    <a class="btn" href="/#pack">Get the free Starter Pack →</a>
+  </div>
+</div>
+
+<footer><div class="wrap"><div class="row">
+  <span>Stromation — AI automation studio for solopreneurs.</span>
+  <span><a href="/">home</a> &nbsp; <a href="starter-pack.html">starter pack</a> &nbsp; <a href="about.html">about</a> &nbsp; <a href="privacy.html">privacy</a> &nbsp; <a href="terms.html">terms</a></span>
+</div></div></footer>
+
+<script>
+  (function(){
+    var filters = document.getElementById('filters');
+    var cards = Array.prototype.slice.call(document.querySelectorAll('#grid .card'));
+    var empty = document.getElementById('empty');
+    filters.addEventListener('click', function(e){
+      var b = e.target.closest('button'); if (!b) return;
+      var f = b.getAttribute('data-f');
+      filters.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x === b); });
+      var shown = 0;
+      cards.forEach(function(c){
+        var ok = f === 'all' || c.getAttribute('data-cat') === f;
+        c.style.display = ok ? '' : 'none';
+        if (ok) shown++;
+      });
+      empty.style.display = shown ? 'none' : 'block';
+      try{ gtag('event','library_filter',{category:f}); }catch(_){}
+    });
+  })();
+</script>
+</body>
+</html>
