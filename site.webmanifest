@@ -1,0 +1,13 @@
+{
+  "name": "Stromation — AI Automation Studio",
+  "short_name": "Stromation",
+  "description": "AI automation studio for solopreneurs. Build a business that runs itself.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08090b",
+  "theme_color": "#08090b",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
