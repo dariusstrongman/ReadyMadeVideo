@@ -66,8 +66,36 @@
     </ol>
   </div>
 
-  <p class="help">Lost this page? Check your email for the download link. Stuck on setup? Email <a href="mailto:contact@stromation.com">contact@stromation.com</a> and we'll get you running.</p>
+  <div class="card" style="text-align:center">
+    <h3 style="text-align:center">Didn't get the email?</h3>
+    <p style="color:var(--fg-dim);font-size:0.95rem;margin-top:10px">Enter the email you paid with and we'll resend your download link.</p>
+    <form id="resendForm" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px">
+      <input type="email" id="reEmail" placeholder="you@email.com" required aria-label="email" style="flex:1;min-width:220px;max-width:320px;background:var(--ink);border:1px solid var(--line-2);color:var(--fg);font-family:var(--sans);font-size:0.95rem;padding:12px 14px;border-radius:10px">
+      <input type="text" id="reHp" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0;height:0;width:0">
+      <button type="submit" style="background:var(--cyan);color:var(--ink);border:0;font-family:var(--sans);font-weight:700;font-size:0.92rem;padding:12px 20px;border-radius:10px;cursor:pointer">Resend link</button>
+    </form>
+    <div id="reMsg" style="font-family:var(--mono2);font-size:0.72rem;color:var(--fg-faint);margin-top:12px"></div>
+  </div>
+
+  <p class="help">Still stuck? Email <a href="mailto:contact@stromation.com">contact@stromation.com</a> and we'll get you sorted fast.</p>
 </div>
+
+<script>
+  (function(){
+    var f=document.getElementById('resendForm'), m=document.getElementById('reMsg');
+    f.addEventListener('submit',function(e){
+      e.preventDefault();
+      var email=document.getElementById('reEmail').value.trim();
+      var hp=document.getElementById('reHp').value;
+      var btn=f.querySelector('button'); btn.disabled=true; btn.textContent='sending...';
+      fetch('https://n8n.stromation.com/webhook/pro-pack-resend',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email,website:hp})})
+        .then(function(r){return r.json().catch(function(){return {ok:true,message:'if that email has a purchase, your link is on the way. check spam too.'};});})
+        .then(function(d){ m.textContent=(d&&d.message)||'sent. check your inbox and spam.'; m.style.color='var(--cyan)'; f.reset(); })
+        .catch(function(){ m.textContent="couldnt reach the server. email contact@stromation.com and we'll send it over."; })
+        .finally(function(){ btn.disabled=false; btn.textContent='Resend link'; });
+    });
+  })();
+</script>
 
 <footer><div class="wrap">
   Stromation — build a business that runs itself. &nbsp; <a href="/">home</a> &nbsp; <a href="templates.html">library</a>
