@@ -521,7 +521,7 @@
       <div class="nodetag rv">node 03 <span class="hollow">//</span> how this operates</div>
       <h2 class="sh rv">Four rules, no exceptions.</h2>
       <div class="rules" style="margin-top:24px">
-        <div class="rule rv"><div class="rn">RULE 01</div><h4>Ship real things</h4><p>No fluff, no vaporware, no "coming soon." Every system here works and you can run it today.</p></div>
+        <div class="rule rv"><div class="rn">RULE 01</div><h4>Ship real things</h4><p>No fluff, no vaporware. Every system here works and you can run it today — and we tell you honestly what's coming next.</p></div>
         <div class="rule rv"><div class="rn">RULE 02</div><h4>Systems you own</h4><p>You get the automation, not a subscription to rent it. Own it, change it, keep it forever.</p></div>
         <div class="rule rv"><div class="rn">RULE 03</div><h4>Built for one</h4><p>Everything here is tuned for a one-person business. No enterprise bloat, no team required.</p></div>
         <div class="rule rv"><div class="rn">RULE 04</div><h4>Automate the boring</h4><p>Your time goes to the work only you can do. The machine takes everything else.</p></div>
@@ -660,13 +660,26 @@
         <p>Six done-for-you automations you import and run — the busywork killers, ready to go and yours to own. No monthly fee.</p>
         <span class="tagpill" style="color:var(--ink);background:var(--cyan);border-color:var(--cyan);font-weight:700">get it now →</span>
       </a>
-      <div class="rung rv">
-        <div class="rl">03 · soon</div>
+      <a class="rung rv" href="#build" style="display:block">
+        <div class="rl">03 · waitlist open</div>
         <h4>The Build</h4>
-        <p>A community where new automations ship weekly and you learn to build your own. Get in early, free members first.</p>
-        <span class="tagpill">opening soon</span>
-      </div>
+        <p>A community where a new automation ships weekly and you learn to build your own. Founding members get in first, and free.</p>
+        <span class="tagpill" style="color:var(--ink);background:var(--cyan);border-color:var(--cyan);font-weight:700">join the waitlist →</span>
+      </a>
     </div>
+  </section>
+
+  <!-- ================= THE BUILD WAITLIST ================= -->
+  <section style="margin-top:64px" id="build">
+    <div class="nodetag rv">what's next</div>
+    <h2 class="sh rv" style="margin-top:6px">The Build — get in early.</h2>
+    <p class="snote rv">A membership where a new automation ships every week and you learn to build your own — the whole machine, not just the parts. Founding members get in first, and free. Drop your email and you'll be first through the door.</p>
+    <form class="capture rv" onsubmit="return buildSub(event)" style="margin-top:22px">
+      <input type="email" placeholder="you@email.com" aria-label="email" required>
+      <input type="text" name="website" value="" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0;height:0;width:0">
+      <button type="submit">Join the waitlist</button>
+    </form>
+    <div class="microcopy" id="buildMsg">no spam — one email when the doors open.</div>
   </section>
 
   <!-- ================= SHIP LOG ================= -->
@@ -677,10 +690,11 @@
     <div class="slog rv">
       <div class="slog-head"><span class="pulse"></span>the machine is running</div>
       <ol>
-        <li><span class="d">Jul 2026</span><span class="t"><b>Automation planner online.</b> Type any task and see the system that kills it, right on the homepage.</span></li>
-        <li><span class="d">Jul 2026</span><span class="t"><b>The Solopreneur Starter Pack shipped.</b> Five plug-and-play automations, free and yours to keep.</span></li>
-        <li><span class="d">Jul 2026</span><span class="t"><b>Studio launched.</b> Stromation goes all-in on automations for the one-person business.</span></li>
-        <li><span class="d">next</span><span class="t">Template packs — deeper done-for-you systems. Subscribers get them first.</span></li>
+        <li><span class="d">Jul 25</span><span class="t"><b>The Pro Pack shipped.</b> Six done-for-you automations you import and run — the ready-to-use version of the free blueprints. <a href="pro-pack.html" style="color:var(--cyan);border-bottom:1px solid var(--cyan-dim)">See it →</a></span></li>
+        <li><span class="d">Jul 25</span><span class="t"><b>Guides + automation library live.</b> Practical how-tos and a growing, filterable library of every system.</span></li>
+        <li><span class="d">Jul 24</span><span class="t"><b>The Starter Pack shipped.</b> Five plug-and-play blueprints plus a real importable workflow, free and yours to keep.</span></li>
+        <li><span class="d">Jul 24</span><span class="t"><b>Studio launched.</b> Stromation goes all-in on automations for the one-person business.</span></li>
+        <li><span class="d">next</span><span class="t"><b>The Build</b> — a members community where a new automation ships weekly. <a href="#build" style="color:var(--cyan);border-bottom:1px solid var(--cyan-dim)">Join the waitlist →</a></span></li>
       </ol>
     </div>
   </section>
@@ -690,10 +704,10 @@
     <div class="nodetag rv">questions</div>
     <h2 class="sh rv" style="margin-top:6px">Straight answers.</h2>
     <div class="faq rv" style="margin-top:22px">
-      <details class="qa"><summary>Is the Starter Pack really free?<span class="pm"></span></summary><div class="ans">Yes. No card, no catch. Drop your email and we send you all five automations to keep forever. New ones come free as they're built.</div></details>
+      <details class="qa"><summary>Is the Starter Pack really free?<span class="pm"></span></summary><div class="ans">Yes. No card, no catch. Drop your email and we send you the five blueprints plus a real, importable workflow — yours to keep. New ones come free as they're built.</div></details>
       <details class="qa"><summary>Do I need to be technical?<span class="pm"></span></summary><div class="ans">No. Each automation is a step-by-step blueprint on <b style="color:var(--fg)">n8n</b> — if you can follow a recipe, you can run it. Most take under an hour to set up, and you can hand them to anyone.</div></details>
       <details class="qa"><summary>What is n8n?<span class="pm"></span></summary><div class="ans">A free, open-source automation tool — like Zapier, but you own it and it doesn't charge you per task. Everything here runs on it, so you're never locked into a subscription just to keep your systems alive.</div></details>
-      <details class="qa"><summary>Do you build it for me, or do I?<span class="pm"></span></summary><div class="ans">The Starter Pack is do-it-yourself blueprints you plug in. Deeper, done-for-you systems and template packs come next — subscribers hear first.</div></details>
+      <details class="qa"><summary>Do you build it for me, or do I?<span class="pm"></span></summary><div class="ans">The Starter Pack is do-it-yourself blueprints you plug in. Want them done for you, ready to import? That's the <a href="pro-pack.html" style="color:var(--cyan)">Pro Pack</a> — the same systems as importable files, yours to own.</div></details>
       <details class="qa"><summary>Will these work with the tools I already use?<span class="pm"></span></summary><div class="ans">Yes — they connect to the tools you're already on: Gmail, Stripe, Google Sheets, your CRM, your calendar, and more. You wire them to your accounts and they run.</div></details>
       <details class="qa"><summary>What happens after I get the pack?<span class="pm"></span></summary><div class="ans">You get new plug-and-play automations as they drop — the whole library over time, free. No spam, and one-click unsubscribe on every email.</div></details>
     </div>
@@ -748,7 +762,7 @@
 
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
-{"@type":"Question","name":"Is the Starter Pack really free?","acceptedAnswer":{"@type":"Answer","text":"Yes. No card, no catch. Drop your email and we send you all five automations to keep forever, plus new ones free as they are built."}},
+{"@type":"Question","name":"Is the Starter Pack really free?","acceptedAnswer":{"@type":"Answer","text":"Yes. No card, no catch. Drop your email and we send you the five blueprints plus a real importable workflow to keep, plus new ones free as they are built."}},
 {"@type":"Question","name":"Do I need to be technical?","acceptedAnswer":{"@type":"Answer","text":"No. Each automation is a step-by-step blueprint on n8n. If you can follow a recipe you can run it, and most take under an hour to set up."}},
 {"@type":"Question","name":"What is n8n?","acceptedAnswer":{"@type":"Answer","text":"A free, open-source automation tool like Zapier, but you own it and it does not charge per task. Everything runs on it so you are never locked into a subscription."}},
 {"@type":"Question","name":"Will these work with the tools I already use?","acceptedAnswer":{"@type":"Answer","text":"Yes. They connect to the tools you already use: Gmail, Stripe, Google Sheets, your CRM, your calendar and more."}},
@@ -966,6 +980,27 @@
     }).then(function(r){ if (!r.ok) throw new Error('bad status'); return r.json().catch(function(){ return {}; }); })
     .then(function(){ try{ gtag('event','starter_pack_signup'); }catch(_){}; markSubbed(); m.innerHTML = "you're in — check your inbox for the pack. <a href=\"templates.html\" style=\"color:var(--cyan);border-bottom:1px solid var(--cyan-dim)\">browse the library while you wait →</a>"; m.style.color = 'var(--cyan)'; f.reset(); if (inExit){ setTimeout(function(){ var mo=document.getElementById('exit'); if(mo) mo.classList.remove('on'); }, 2600); } })
     .catch(function(){ m.textContent = "that didn't go through. email contact@stromation.com and we'll send it over."; m.style.color = 'var(--fg-dim)'; })
+    .finally(function(){ btn.disabled = false; btn.textContent = label; });
+    return false;
+  }
+
+  /* ---------- the build waitlist ---------- */
+  function buildSub(e){
+    e.preventDefault();
+    var f = e.target;
+    var m = document.getElementById('buildMsg');
+    var btn = f.querySelector('button[type=submit]');
+    var label = btn.textContent;
+    var em = f.querySelector('input[type=email]').value.trim();
+    var hp = f.querySelector('input[name=website]').value;
+    if (hp || Date.now() - pageT < 3000){ m.textContent = 'you are on the list.'; f.reset(); return false; }
+    btn.disabled = true; btn.textContent = 'joining...';
+    fetch('https://n8n.stromation.com/webhook/ai-daily-subscribe', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: em, website: '', page: 'build_waitlist' })
+    }).then(function(r){ if (!r.ok) throw new Error('bad status'); return r.json().catch(function(){ return {}; }); })
+    .then(function(){ try{ gtag('event','build_waitlist_signup'); }catch(_){}; m.textContent = "you're on the list — we'll email you the moment The Build opens."; m.style.color = 'var(--cyan)'; f.reset(); })
+    .catch(function(){ m.textContent = "that didn't go through. email contact@stromation.com to get on the list."; m.style.color = 'var(--fg-dim)'; })
     .finally(function(){ btn.disabled = false; btn.textContent = label; });
     return false;
   }
