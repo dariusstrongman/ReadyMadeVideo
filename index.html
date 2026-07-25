@@ -270,6 +270,51 @@
   .stickycta.show{transform:none}
   @media(min-width:761px){ .stickycta{display:none} }
 
+  /* ---------- trust band ---------- */
+  .trustband{margin-top:36px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:22px 0; text-align:center}
+  .trustband .tbl{font-family:var(--mono2); font-size:0.62rem; letter-spacing:0.22em; text-transform:uppercase; color:var(--fg-faint); margin-bottom:12px}
+  .trustband .marks{display:flex; align-items:center; gap:14px 22px; flex-wrap:wrap; justify-content:center}
+  .trustband .tk2{font-family:var(--mono); font-weight:700; font-size:0.98rem; letter-spacing:0.01em; color:var(--fg-dim); transition:color .2s}
+  .trustband .tk2:hover{color:var(--cyan)}
+  .trustband .sep{color:var(--fg-faint); font-size:0.7rem}
+  .trustband .tsub{font-family:var(--mono2); font-size:0.68rem; color:var(--fg-faint); margin-top:12px}
+  /* ---------- before/after ---------- */
+  .baf{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:24px}
+  @media(max-width:640px){ .baf{grid-template-columns:1fr} }
+  .bcol{border:1px solid var(--line); border-radius:14px; padding:24px; background:var(--ink-2)}
+  .bcol.on{border-color:rgba(0,229,255,0.35); background:linear-gradient(160deg,rgba(0,229,255,0.05),transparent)}
+  .bcol .bh{font-family:var(--mono2); font-size:0.68rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--fg-faint)}
+  .bcol.on .bh{color:var(--cyan)}
+  .bcol ul{list-style:none; margin-top:16px; display:flex; flex-direction:column; gap:13px}
+  .bcol li{font-size:0.92rem; color:var(--fg-dim); padding-left:24px; position:relative; line-height:1.45}
+  .bcol li::before{content:'\00d7'; position:absolute; left:0; color:var(--fg-faint); font-weight:700}
+  .bcol.on li{color:var(--fg)}
+  .bcol.on li::before{content:'\2713'; color:var(--cyan)}
+  /* ---------- own vs rent ---------- */
+  .cmp-wrap{overflow-x:auto; margin-top:22px}
+  .cmp{width:100%; border-collapse:collapse; font-size:0.92rem; min-width:460px}
+  .cmp th,.cmp td{padding:14px 12px; text-align:left; border-bottom:1px solid var(--line)}
+  .cmp th{font-family:var(--mono2); font-size:0.66rem; letter-spacing:0.14em; text-transform:uppercase; color:var(--fg-faint); font-weight:500}
+  .cmp th.own{color:var(--cyan)}
+  .cmp td:first-child{color:var(--fg-dim)}
+  .cmp td.own{color:var(--fg); font-weight:600}
+  .cmp td.rent{color:var(--fg-faint)}
+  .cmp .yes{color:var(--cyan); font-weight:700} .cmp .no{color:var(--fg-faint)}
+  /* ---------- offer ladder ---------- */
+  .ladder{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:24px}
+  @media(max-width:720px){ .ladder{grid-template-columns:1fr} }
+  .rung{border:1px solid var(--line); border-radius:14px; padding:24px; background:var(--ink-2)}
+  .rung.free{border-color:rgba(0,229,255,0.4); box-shadow:0 0 40px rgba(0,229,255,0.06) inset}
+  .rung .rl{font-family:var(--mono2); font-size:0.66rem; letter-spacing:0.16em; color:var(--cyan)}
+  .rung h4{font-size:1.12rem; font-weight:700; margin-top:10px; letter-spacing:-0.02em}
+  .rung p{color:var(--fg-dim); font-size:0.88rem; margin-top:8px; line-height:1.5}
+  .rung .tagpill{display:inline-block; margin-top:14px; font-family:var(--mono2); font-size:0.62rem; letter-spacing:0.12em; text-transform:uppercase; padding:5px 11px; border-radius:99px; border:1px solid var(--line-2); color:var(--fg-faint)}
+  .rung.free .tagpill{color:var(--ink); background:var(--cyan); border-color:var(--cyan); font-weight:700}
+  /* ---------- form trust row ---------- */
+  .formtrust{display:flex; gap:8px 18px; flex-wrap:wrap; margin-top:16px; font-family:var(--mono2); font-size:0.72rem; color:var(--fg-dim)}
+  .formtrust span{display:inline-flex; align-items:center; gap:7px}
+  .formtrust span::before{content:'\2713'; color:var(--cyan); font-weight:700}
+
   /* ---------- reveals ---------- */
   .anim .rv{opacity:0; transform:translateY(16px)}
   .rv{transition:opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1)}
@@ -333,6 +378,19 @@
           <a class="btn-gh" href="#automate">see what you can automate</a>
         </div>
       </div>
+    </div>
+
+    <!-- trust band -->
+    <div class="trustband rv">
+      <div class="tbl">built on the stack the pros use</div>
+      <div class="marks">
+        <span class="tk2">n8n</span><span class="sep">/</span>
+        <span class="tk2">Claude</span><span class="sep">/</span>
+        <span class="tk2">Stripe</span><span class="sep">/</span>
+        <span class="tk2">Supabase</span><span class="sep">/</span>
+        <span class="tk2">OpenAI</span>
+      </div>
+      <div class="tsub">real infrastructure you own — no toy no-code lock-in.</div>
     </div>
 
     <!-- ops ticker -->
@@ -412,8 +470,55 @@
     </section>
   </div>
 
+  <!-- ================= BEFORE / AFTER ================= -->
+  <section style="margin-top:64px">
+    <div class="nodetag rv">the difference</div>
+    <h2 class="sh rv" style="margin-top:6px">A day by hand vs. a day on the machine.</h2>
+    <div class="baf">
+      <div class="bcol rv">
+        <div class="bh">by hand</div>
+        <ul>
+          <li>Chase every lead manually — and lose the ones you forget</li>
+          <li>Write and post content daily, from scratch</li>
+          <li>Onboard each new client by hand, every time</li>
+          <li>Check five dashboards before you can start the day</li>
+          <li>Answer the same questions over and over</li>
+        </ul>
+      </div>
+      <div class="bcol on rv">
+        <div class="bh">on the machine</div>
+        <ul>
+          <li>Leads caught and followed up within minutes, automatically</li>
+          <li>One idea becomes a week of content, scheduled</li>
+          <li>Welcome, intake, and setup run themselves</li>
+          <li>One digest email — then you close the laptop</li>
+          <li>An agent handles the repeats while you sleep</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= OWN VS RENT ================= -->
+  <section style="margin-top:64px">
+    <div class="nodetag rv">why it's different</div>
+    <h2 class="sh rv" style="margin-top:6px">Systems you own — not services you rent.</h2>
+    <p class="snote rv">Agencies and no-code SaaS rent you access and lock you in. Stromation hands you the system.</p>
+    <div class="cmp-wrap rv">
+      <table class="cmp">
+        <thead><tr><th></th><th class="own">Own it (Stromation)</th><th>Rent it (agency / SaaS)</th></tr></thead>
+        <tbody>
+          <tr><td>Monthly fee just to keep it alive</td><td class="own"><span class="no">no</span></td><td class="rent">yes</td></tr>
+          <tr><td>You can change how it works</td><td class="own"><span class="yes">yes</span></td><td class="rent">rarely</td></tr>
+          <tr><td>Locked to their platform</td><td class="own"><span class="no">no</span></td><td class="rent">yes</td></tr>
+          <tr><td>Still works if they shut down</td><td class="own"><span class="yes">yes</span></td><td class="rent">no</td></tr>
+          <tr><td>Built for a one-person business</td><td class="own"><span class="yes">yes</span></td><td class="rent">rarely</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
   <!-- ================= WHO IT'S FOR ================= -->
-  <section style="margin-top:36px">
+  <section style="margin-top:64px">
     <div class="nodetag rv">built for</div>
     <h2 class="sh rv" style="margin-top:6px">If you're doing all of it yourself.</h2>
     <p class="snote rv">Stromation is for the person who is the whole company. If any of these is you, the machine was built for you.</p>
@@ -430,7 +535,7 @@
     <div class="pack-in">
       <div class="kick">free · no card · yours to keep</div>
       <h2>The Solopreneur<br>Starter Pack<span class="p">.</span></h2>
-      <p class="sub">Five real, plug-and-play automations that kill the busywork most solo businesses waste hours on. No course, no fluff — just systems that work.</p>
+      <p class="sub">Five automations that hand a solo business back hours every week — the exact busywork every one-person shop burns time on. Import them, plug in your accounts, done. No course, no fluff.</p>
       <ul class="pack-list">
         <li><span class="ck">→</span><span><b>Missed call, instant text-back</b> — never lose a lead to a voicemail again.</span></li>
         <li><span class="ck">→</span><span><b>New lead, auto follow-up</b> — captured, enriched, and messaged in minutes.</span></li>
@@ -443,7 +548,35 @@
         <input type="text" name="website" value="" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0;height:0;width:0">
         <button type="submit">Send me the pack</button>
       </form>
-      <div class="microcopy" id="capMsg">We email you the pack, then new automations as they drop. No spam. Unsubscribe anytime.</div>
+      <div class="formtrust"><span>free forever, no card</span><span>delivered instantly</span><span>one-click unsubscribe</span></div>
+      <div class="microcopy" id="capMsg">We email you the pack, then new automations as they drop. No spam.</div>
+    </div>
+  </section>
+
+  <!-- ================= THE LADDER ================= -->
+  <section style="margin-top:70px" id="ladder">
+    <div class="nodetag rv">the ladder</div>
+    <h2 class="sh rv" style="margin-top:6px">Where this goes.</h2>
+    <p class="snote rv">The free pack is step one. Subscribers get everything below first, as it drops.</p>
+    <div class="ladder">
+      <div class="rung free rv">
+        <div class="rl">01 · today</div>
+        <h4>Starter Pack</h4>
+        <p>Five plug-and-play automations, free and yours to keep. The busywork killers every solo business needs.</p>
+        <span class="tagpill">available now</span>
+      </div>
+      <div class="rung rv">
+        <div class="rl">02 · next</div>
+        <h4>Template Packs</h4>
+        <p>Deeper, done-for-you systems for specific jobs — content engines, sales pipelines, full back-office setups.</p>
+        <span class="tagpill">dropping soon</span>
+      </div>
+      <div class="rung rv">
+        <div class="rl">03 · soon</div>
+        <h4>The Build</h4>
+        <p>A community where new automations ship weekly and you learn to build your own. Get in early, free members first.</p>
+        <span class="tagpill">opening soon</span>
+      </div>
     </div>
   </section>
 
