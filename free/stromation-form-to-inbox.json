@@ -1,0 +1,110 @@
+{
+  "name": "Stromation Free - Contact Form to Inbox + Auto-Reply",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Free: Contact Form to Inbox + Auto-Reply\n\nWhen someone fills your website contact form, they get an instant friendly auto-reply and the lead lands in your inbox. No lead ever sits unseen, and every person hears back in seconds instead of hours.\n\nThis is the free taster from Stromation. If you like it, the Solopreneur Pro Pack has six more (missed-call text-back, AI lead follow-up, content multiplier, onboarding, morning digest, invoice recovery): stromation.com/pro-pack.html\n\n### Setup (5 min, no API keys)\n1. Point your form at the /webhook/contact-form URL of the first node. Send JSON like:\n   { \"name\":\"..\", \"email\":\"..\", \"message\":\"..\", \"website\":\"\" }\n   (the empty 'website' field is a honeypot - bots fill it, humans dont.)\n2. Edit the CONFIG block in the Code node (your business name + your inbox).\n3. Attach your SMTP or Gmail credential to BOTH Email nodes.\n4. Activate. Submit your form once to test.\n\nYou own it. Runs on n8n, no monthly fee.",
+        "height": 440,
+        "width": 380
+      },
+      "id": "note",
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-420, -40]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "contact-form",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "trigger",
+      "name": "Contact Form Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "contact-form"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== CONFIG =====\nconst BUSINESS = 'Your Business';\nconst YOUR_INBOX = 'you@youremail.com';\n// ==================\n\nconst i = $input.first().json; const b = i.body || i;\nconst name = String(b.name || b.Name || 'there').trim();\nconst email = String(b.email || b.Email || '').trim();\nconst message = String(b.message || b.Message || b.msg || '').trim();\nconst hp = String(b.website || b.url || '').trim(); // honeypot\n\n// bot check: honeypot filled OR no real content\nif (hp || (!email && !message)) {\n  return [{ json: { skip: true, ownerTo: YOUR_INBOX, ownerSubject: '', ownerBody: '', replyTo: '', replySubject: '', replyBody: '', sendReply: false } }];\n}\n\nconst autoReply = 'Hi ' + name + ',\\n\\nThanks for reaching out to ' + BUSINESS + ' - we got your message and will get back to you shortly.\\n\\nFor reference, here is what you sent:\\n\"' + (message || '(no message)') + '\"\\n\\nTalk soon,\\n' + BUSINESS;\nconst ownerBody = 'New contact form submission\\n\\nName: ' + name + '\\nEmail: ' + (email || '(none)') + '\\n\\nMessage:\\n' + (message || '(none)');\n\nreturn [{ json: {\n  skip: false,\n  ownerTo: YOUR_INBOX,\n  ownerSubject: '[' + BUSINESS + '] New lead: ' + name,\n  ownerBody: ownerBody,\n  replyTo: email,\n  replySubject: 'Thanks for reaching out to ' + BUSINESS,\n  replyBody: autoReply,\n  sendReply: !!email\n} }];"
+      },
+      "id": "handle",
+      "name": "Handle Submission",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            { "id": "c1", "leftValue": "={{ $json.skip }}", "rightValue": false, "operator": { "type": "boolean", "operation": "false", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "notbot",
+      "name": "Real submission?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 0]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.ownerTo }}",
+        "subject": "={{ $json.ownerSubject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.ownerBody }}",
+        "options": { "appendAttribution": false }
+      },
+      "id": "mailowner",
+      "name": "Email You The Lead",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [740, -90]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            { "id": "r1", "leftValue": "={{ $json.sendReply }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "hasemail",
+      "name": "Have their email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [740, 100]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.replyTo }}",
+        "subject": "={{ $json.replySubject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.replyBody }}",
+        "options": { "appendAttribution": false }
+      },
+      "id": "mailreply",
+      "name": "Auto-Reply To Them",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1000, 100]
+    }
+  ],
+  "connections": {
+    "Contact Form Webhook": { "main": [[{ "node": "Handle Submission", "type": "main", "index": 0 }]] },
+    "Handle Submission": { "main": [[{ "node": "Real submission?", "type": "main", "index": 0 }]] },
+    "Real submission?": { "main": [[{ "node": "Email You The Lead", "type": "main", "index": 0 }, { "node": "Have their email?", "type": "main", "index": 0 }], []] },
+    "Have their email?": { "main": [[{ "node": "Auto-Reply To Them", "type": "main", "index": 0 }], []] }
+  },
+  "settings": {}
+}
