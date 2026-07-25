@@ -1,5 +1,15 @@
 [
  {
+  "date": "Sat, Jul 25",
+  "title": "Claude Opus 5",
+  "url": "https://www.anthropic.com/news/claude-opus-5",
+  "src": "HN 1685pts",
+  "why": "The release of Claude Opus 5 is a major lab release that builders, founders, and automation enthusiasts can use today, offering significant advancements in AI capabilities and applications.",
+  "blurb": "Anthropic just dropped Claude Opus 5, grabbing attention with 1685 upvotes on Hacker News. Its not just about chat anymore, this model handles complex reasoning. Builders should look at integrating it with n8n to automate deeper workflows.",
+  "move": "Integrate Claude Opus 5 with n8n to enhance workflow automation for complex tasks. Its time to level up your automation game.",
+  "tweet": "Claude Opus 5 isnt just chat. Its built for complex reasoning. Builders, hook it up with n8n to level up your automation game."
+ },
+ {
   "date": "Fri, Jul 24",
   "title": "DARPA, U.S. Air Force fly AI-controlled F-16",
   "url": "https://www.darpa.mil/news/2026/darpa-us-air-force-fly-ai-controlled-f-16",
