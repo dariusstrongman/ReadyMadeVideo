@@ -72,12 +72,15 @@
     <p>If you are automating a one-person business, the tool you pick matters more than any single workflow, because it sets your ceiling on cost and control. Here is the honest comparison for a solo operator in 2026.</p>
     <table>
       <tr><th></th><th>n8n</th><th>Zapier</th><th>Make</th></tr>
-      <tr><td>Pricing model</td><td>Free self-host, or flat cloud plan</td><td>Per-task, climbs fast</td><td>Per-operation</td></tr>
-      <tr><td>You own it</td><td>Yes, export and keep</td><td>No, rented</td><td>No, rented</td></tr>
-      <tr><td>Cost at scale</td><td>Flat, does not punish volume</td><td>Expensive once busy</td><td>Cheaper than Zapier, still metered</td></tr>
+      <tr><td>How you're billed</td><td>Per execution (a whole workflow run = 1), or self-host</td><td>Per task (every single step counts)</td><td>Per operation (every step counts)</td></tr>
+      <tr><td>Free tier</td><td>Self-host is unlimited; Cloud has a trial</td><td>~100 tasks/mo</td><td>~1,000 ops/mo</td></tr>
+      <tr><td>Entry paid plan (approx, 2026)</td><td>~$20-24/mo Cloud, or ~$5-10/mo self-host on a VPS</td><td>~$20/mo, then climbs fast</td><td>~$9/mo for 10k ops</td></tr>
+      <tr><td>Cost once you're busy</td><td>Stays flat, volume doesn't punish you</td><td>Climbs hard, heavy users report hundreds/mo</td><td>Cheaper than Zapier, still metered</td></tr>
+      <tr><td>You own it</td><td>Yes, export and keep forever</td><td>No, rented</td><td>No, rented</td></tr>
       <tr><td>Custom code / AI</td><td>Full code nodes</td><td>Limited</td><td>Some</td></tr>
       <tr><td>Ease for beginners</td><td>Medium</td><td>Easiest</td><td>Medium</td></tr>
     </table>
+    <p style="font-size:0.9rem;color:var(--fg-faint)">Prices are approximate as of 2026 and change often, so check each site for the current number. The part that does not change is the billing model: per-task and per-operation meters charge you more the busier you get, while per-execution and self-hosting stay flat.</p>
     <h2>The honest take</h2>
     <p>Zapier is the easiest to start and fine for a handful of simple zaps. But its per-task pricing turns into a tax the moment your automations get busy, and you never own anything. Make is cheaper and more flexible, still metered and rented.</p>
     <p><b>n8n</b> wins for a solopreneur running lots of automations: self-host it for free or use a flat cloud plan, drop in real code and AI, and export the workflows so they are yours forever. No per-task meter punishing you for succeeding. The tradeoff is a slightly steeper start, which good templates erase.</p>
