@@ -409,8 +409,10 @@
 
 <header class="top">
   <div class="wrap">
-    <svg class="ico ico-nav" aria-hidden="true"><use href="#smark"/></svg>
-    <span class="mark">STROMATION<span class="dot">.</span></span>
+    <a href="#top" aria-label="Stromation — back to top" onclick="window.scrollTo({top:0,behavior:'smooth'});history.replaceState(null,'',location.pathname);return false;" style="display:flex;align-items:center;gap:11px">
+      <svg class="ico ico-nav" aria-hidden="true"><use href="#smark"/></svg>
+      <span class="mark">STROMATION<span class="dot">.</span></span>
+    </a>
     <nav>
       <a href="templates.html" class="hideable">library</a>
       <a href="guides.html" class="hideable">guides</a>
