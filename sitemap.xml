@@ -14,4 +14,7 @@
   <url><loc>https://www.stromation.com/about.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
   <url><loc>https://www.stromation.com/privacy.html</loc><changefreq>yearly</changefreq><priority>0.2</priority></url>
   <url><loc>https://www.stromation.com/terms.html</loc><changefreq>yearly</changefreq><priority>0.2</priority></url>
+  <url><loc>https://www.stromation.com/guides/morning-business-digest.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://www.stromation.com/guides/recover-failed-payments-automatically.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://www.stromation.com/guides/n8n-vs-zapier-vs-make.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
 </urlset>
