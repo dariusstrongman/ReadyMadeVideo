@@ -66,6 +66,7 @@
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
   .glow{position:fixed; z-index:0; pointer-events:none; width:64vw; height:64vw; top:-26vw; right:-20vw; border-radius:50%;
     background:radial-gradient(circle, rgba(0,229,255,0.12), transparent 60%); filter:blur(34px)}
+  .mesh{position:fixed; inset:0; z-index:0; pointer-events:none; width:100%; height:100%}
   .glow2{position:fixed; z-index:0; pointer-events:none; width:50vw; height:50vw; bottom:-28vw; left:-22vw; border-radius:50%;
     background:radial-gradient(circle, rgba(0,229,255,0.05), transparent 62%); filter:blur(30px)}
   #prog{position:fixed; top:0; left:0; height:2px; width:0; z-index:70;
@@ -403,6 +404,7 @@
 <div class="grain"></div>
 <div class="glow"></div>
 <div class="glow2"></div>
+<canvas class="mesh" id="mesh" aria-hidden="true"></canvas>
 <div id="prog"></div>
 
 <header class="top">
@@ -1038,6 +1040,59 @@
       if (maxed && last - scrollY > 60 && scrollY < 900) open();
       last = scrollY;
     }, { passive:true });
+  })();
+</script>
+
+<script>
+  /* ---------- ambient node-mesh (brand: node-flow) ---------- */
+  (function(){
+    var c = document.getElementById('mesh'); if(!c) return;
+    var ctx = c.getContext('2d'); if(!ctx) return;
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var W=0, H=0, nodes=[], raf=null, D=150;
+    function size(){
+      W = c.clientWidth; H = c.clientHeight;
+      c.width = W*dpr; c.height = H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+      var target = Math.max(18, Math.min(52, Math.round(W*H/26000)));
+      nodes = [];
+      for (var i=0;i<target;i++){
+        nodes.push({ x:Math.random()*W, y:Math.random()*H,
+          vx:(Math.random()-0.5)*0.18, vy:(Math.random()-0.5)*0.18,
+          r: 0.8 + Math.random()*1.4 });
+      }
+    }
+    function draw(){
+      ctx.clearRect(0,0,W,H);
+      for (var i=0;i<nodes.length;i++){
+        var a=nodes[i];
+        for (var j=i+1;j<nodes.length;j++){
+          var b=nodes[j], dx=a.x-b.x, dy=a.y-b.y, d=Math.sqrt(dx*dx+dy*dy);
+          if (d<D){
+            ctx.strokeStyle='rgba(0,229,255,'+(0.10*(1-d/D)).toFixed(3)+')';
+            ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+          }
+        }
+      }
+      for (var k=0;k<nodes.length;k++){
+        var n=nodes[k];
+        ctx.beginPath(); ctx.arc(n.x,n.y,n.r,0,6.2832);
+        ctx.fillStyle='rgba(0,229,255,0.30)'; ctx.fill();
+      }
+    }
+    function step(){
+      for (var i=0;i<nodes.length;i++){
+        var n=nodes[i]; n.x+=n.vx; n.y+=n.vy;
+        if (n.x<0||n.x>W) n.vx*=-1; if (n.y<0||n.y>H) n.vy*=-1;
+      }
+      draw(); raf=requestAnimationFrame(step);
+    }
+    function start(){ if(raf==null && !reduce) raf=requestAnimationFrame(step); }
+    function stop(){ if(raf!=null){ cancelAnimationFrame(raf); raf=null; } }
+    size(); draw();                      // static first frame (also the reduced-motion frame)
+    if(!reduce) start();
+    var rt; addEventListener('resize', function(){ clearTimeout(rt); rt=setTimeout(function(){ size(); draw(); }, 200); }, {passive:true});
+    document.addEventListener('visibilitychange', function(){ document.hidden ? stop() : start(); });
   })();
 </script>
 
