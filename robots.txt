@@ -2,5 +2,6 @@ User-agent: *
 Allow: /
 Disallow: /admin-
 Disallow: /thank-you-pro.html
+Disallow: /book-confirmed.html
 
 Sitemap: https://www.stromation.com/sitemap.xml
