@@ -108,6 +108,34 @@
     </div>
   </a>
 
+  <div id="get" style="border:1px solid rgba(0,229,255,0.32);border-radius:16px;background:var(--ink-2);padding:26px;margin-top:26px">
+    <div style="font-family:var(--mono2);font-size:0.64rem;letter-spacing:0.16em;text-transform:uppercase;color:var(--cyan)">get the pack by email</div>
+    <div style="font-size:1.15rem;font-weight:700;letter-spacing:-0.02em;margin-top:7px">Want the pack plus new drops as they land?</div>
+    <div style="color:var(--fg-dim);font-size:0.92rem;margin-top:6px;max-width:56ch">Drop your email and we send the Starter Pack plus a ready-to-import workflow file straight to your inbox. New automations drop for subscribers, free.</div>
+    <form onsubmit="return spSub(event)" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+      <input type="text" name="website" style="position:absolute;left:-9999px" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <input type="email" id="spEmail" placeholder="you@email.com" aria-label="email" required style="flex:1;min-width:220px;background:var(--ink);border:1px solid rgba(233,238,242,0.18);color:var(--fg);font-family:inherit;font-size:0.95rem;padding:13px 15px;border-radius:9px">
+      <button type="submit" id="spBtn" style="background:var(--cyan);color:var(--ink);border:0;font-weight:700;font-size:0.92rem;padding:13px 22px;border-radius:9px;cursor:pointer;font-family:inherit">Send me the pack</button>
+    </form>
+    <div id="spMsg" style="font-family:var(--mono2);font-size:0.7rem;color:var(--fg-faint);margin-top:10px">delivered instantly · one-click unsubscribe</div>
+  </div>
+  <script>
+    var spT0 = Date.now();
+    function spSub(e){
+      e.preventDefault();
+      var f = e.target, hp = f.querySelector('input[name=website]').value, em = document.getElementById('spEmail').value.trim();
+      var m = document.getElementById('spMsg'), b = document.getElementById('spBtn');
+      if (hp !== '' || (Date.now()-spT0) < 3000) { m.textContent = 'submission blocked, please try again'; return false; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) { m.textContent = 'please enter a valid email'; m.style.color = '#f59e0b'; return false; }
+      b.disabled = true; b.textContent = 'Sending...';
+      fetch('https://n8n.stromation.com/webhook/ai-daily-subscribe', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email: em, website: hp, page: 'studio', source: 'starter_pack'})})
+        .then(function(r){ if(!r.ok) throw 0; return r.json().catch(function(){return {};}); })
+        .then(function(){ try{gtag('event','starter_pack_signup');}catch(_){ } m.textContent = "you're in — check your inbox for the pack"; m.style.color = 'var(--cyan)'; f.reset(); b.textContent = 'Sent'; })
+        .catch(function(){ b.disabled = false; b.textContent = 'Send me the pack'; m.textContent = 'that did not go through — email contact@stromation.com and we will send it directly'; m.style.color = '#f59e0b'; });
+      return false;
+    }
+  </script>
+
   <div class="auto" id="a01">
     <div class="num">AUTOMATION 01</div>
     <h2>Missed call, instant text-back</h2>
@@ -177,7 +205,7 @@
     <h3>Want them ready to import?</h3>
     <p>The <b style="color:var(--fg)">Pro Pack</b> is the done-for-you version of these — the actual n8n workflow files plus a bonus automation and full setup guide. Import, paste your keys, run. $47, yours to own.</p>
     <a class="btn" href="pro-pack.html">Get the Pro Pack — $47 →</a>
-    <p style="margin-top:16px;font-family:var(--mono2);font-size:0.72rem;color:var(--fg-faint)">or <a href="/#pack" style="color:var(--cyan)">stay on the free list</a> — new automations drop for subscribers regularly.</p>
+    <p style="margin-top:16px;font-family:var(--mono2);font-size:0.72rem;color:var(--fg-faint)">or <a href="#get" style="color:var(--cyan)">stay on the free list</a> — new automations drop for subscribers regularly.</p>
   </div>
 </div>
 

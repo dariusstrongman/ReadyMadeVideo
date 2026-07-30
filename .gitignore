@@ -25,3 +25,11 @@ __pycache__/
 
 # paid product zip - served only via n8n gated download, never public
 files/*.zip
+
+# New-direction planning documents (internal, never publish)
+new direction/
+# Internal business docs (public repo - keep local only)
+docs-internal/
+# scratch screenshots
+shot*.png
+thankyou-pro-verified.png
