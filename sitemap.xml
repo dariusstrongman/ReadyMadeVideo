@@ -32,4 +32,6 @@
   <url><loc>https://www.stromation.com/terms.html</loc><changefreq>yearly</changefreq><priority>0.2</priority></url>
   <url><loc>https://www.stromation.com/refund-policy.html</loc><changefreq>yearly</changefreq><priority>0.2</priority></url>
   <url><loc>https://www.stromation.com/product-license.html</loc><changefreq>yearly</changefreq><priority>0.2</priority></url>
+  <url><loc>https://www.stromation.com/guides/what-happens-after-a-missed-call.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://www.stromation.com/guides/cost-of-slow-lead-response.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
 </urlset>
