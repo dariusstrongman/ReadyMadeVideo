@@ -1,0 +1,105 @@
+{
+  "name": "W-003 CRM and Booking Handoff (Stromation template)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## W-003 CRM and Booking Handoff\n\n**Purpose:** turn a validated structured-lead object into a clean CRM record plus a booking link or a human task.\n\n**Controls:** schema validation before routing, deterministic safety override beats confidence, search-before-create, ambiguous matches go to a human, CRM failures fail safe to a human task, AI summary never overwrites authoritative fields.\n\n**Input:** POST the structured AI output schema (see fixtures/w-003-lead.json).",
+        "width": 430,
+        "height": 340
+      },
+      "id": "5bc95ba0-e84c-46dd-9445-9fb3da387ece",
+      "name": "Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm-booking-handoff",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "d096ff95-5426-4a21-947b-b0173671152c",
+      "name": "Lead Object In",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "9ccaca8f-7471-41f0-ad5d-9cd68395804c"
+    },
+    {
+      "parameters": {
+        "jsCode": "/* CONFIG - qualified lead object -> clean CRM record + booking or human task. */\nconst CONFIG = {\n  CRM_URL: $env.CRM_URL || \"YOUR_CRM_OR_SUPABASE_URL\",\n  CRM_KEY: $env.CRM_KEY || \"YOUR_SERVICE_KEY\",\n  CONTACTS_TABLE: \"contacts\", OPPS_TABLE: \"opportunities\",\n  BOOKING_URL: \"YOUR_BOOKING_URL\",\n  MIN_CONFIDENCE: 0.7\n};\nconst H = this.helpers;\nconst HDRS = { apikey: CONFIG.CRM_KEY, Authorization: \"Bearer \" + CONFIG.CRM_KEY, \"Content-Type\": \"application/json\", Prefer: \"return=representation\" };\nconst j = $input.first().json;\n\n// 1. Validate the structured lead schema (see docs - AI output must be validated\n//    BEFORE it influences routing; deterministic safety codes override confidence)\nconst lead = j.lead || j;\nconst intentOk = [\"request_service\",\"schedule\",\"existing_customer\",\"urgent\",\"unknown\"].includes(lead.intent);\nconst conf = Number(lead.confidence);\nconst reasons = Array.isArray(lead.reasonCodes) ? lead.reasonCodes : [];\nif (!intentOk || !lead.summary) return [{ json: { route: \"human_task\", reason: \"invalid_schema\", lead } }];\nif (reasons.includes(\"SAFETY\") || lead.urgency === \"emergency_or_safety\") {\n  return [{ json: { route: \"human_task\", reason: \"safety_override\", lead } }];\n}\nif (!(conf >= CONFIG.MIN_CONFIDENCE) || lead.requiresHuman === true) {\n  return [{ json: { route: \"human_task\", reason: \"low_confidence\", lead } }];\n}\n\n// 2. Normalize identifiers, SEARCH BEFORE CREATE\nconst phone = String(lead.phone || \"\").replace(/[^0-9+]/g, \"\");\nconst email = String(lead.email || \"\").toLowerCase().trim();\nlet contact = null, ambiguous = false;\ntry {\n  const parts = [];\n  if (phone) parts.push(\"phone.eq.\" + encodeURIComponent(phone));\n  if (email) parts.push(\"email.eq.\" + encodeURIComponent(email));\n  if (parts.length) {\n    const found = await H.httpRequest({ url: CONFIG.CRM_URL + \"/rest/v1/\" + CONFIG.CONTACTS_TABLE + \"?or=(\" + parts.join(\",\") + \")&select=id,name,email,phone&limit=3\", headers: HDRS, json: true });\n    if (Array.isArray(found)) { if (found.length === 1) contact = found[0]; if (found.length > 1) ambiguous = true; }\n  }\n} catch (e) { return [{ json: { route: \"human_task\", reason: \"crm_unavailable\", error: String(e.message||e).slice(0,120), lead } }]; }\nif (ambiguous) return [{ json: { route: \"human_task\", reason: \"ambiguous_match\", lead } }];\n\n// 3. Create or update. NEVER overwrite authoritative fields with low-confidence AI text.\ntry {\n  if (!contact) {\n    const created = await H.httpRequest({ method: \"POST\", url: CONFIG.CRM_URL + \"/rest/v1/\" + CONFIG.CONTACTS_TABLE, headers: HDRS,\n      body: { name: lead.name || \"Unknown\", phone, email, source: lead.source || \"lead_recovery\" }, json: true });\n    contact = Array.isArray(created) ? created[0] : created;\n  }\n  // 4. Opportunity with summary + correlation\n  await H.httpRequest({ method: \"POST\", url: CONFIG.CRM_URL + \"/rest/v1/\" + CONFIG.OPPS_TABLE, headers: HDRS,\n    body: { contact_id: contact.id, service: lead.serviceCategory, urgency: lead.urgency,\n            summary: lead.summary, status: \"new\", correlation_id: j.correlation || null }, json: true });\n} catch (e) { return [{ json: { route: \"human_task\", reason: \"crm_write_failed\", error: String(e.message||e).slice(0,120), lead } }]; }\n\n// 5. Booking vs human follow-up\nconst route = (lead.intent === \"schedule\" && lead.urgency !== \"urgent\") ? \"booking\" : \"human_task\";\nreturn [{ json: { route, contact_id: contact.id, booking_url: CONFIG.BOOKING_URL,\n  team_summary: \"New qualified lead: \" + (lead.name||\"?\") + \" | \" + (lead.serviceCategory||\"?\") + \" | \" + lead.urgency + \"\\n\" + lead.summary } }];"
+      },
+      "id": "222965ec-5aed-43f6-8311-7eb1ada6ee15",
+      "name": "Validate + Upsert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "you@yourdomain.com",
+        "toEmail": "you@yourdomain.com",
+        "subject": "={{ 'LEAD ' + $json.route + ': ' + ($json.team_summary || '').split('\\n')[0] }}",
+        "emailFormat": "text",
+        "text": "={{ $json.team_summary || JSON.stringify($json, null, 2) }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "77f924bf-5a02-4cd3-9313-02f1d4371316",
+      "name": "Notify Team",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        460,
+        0
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_WITH_YOUR_SMTP_CREDENTIAL_ID",
+          "name": "your-smtp"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Lead Object In": {
+      "main": [
+        [
+          {
+            "node": "Validate + Upsert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate + Upsert": {
+      "main": [
+        [
+          {
+            "node": "Notify Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

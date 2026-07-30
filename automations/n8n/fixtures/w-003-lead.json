@@ -1,0 +1,21 @@
+{
+  "lead": {
+    "intent": "schedule",
+    "serviceCategory": "AC repair",
+    "location": {
+      "city": "Little Elm",
+      "postalCode": null
+    },
+    "urgency": "soon",
+    "preferredTime": "tomorrow morning",
+    "summary": "AC stopped cooling; homeowner requests morning visit",
+    "confidence": 0.92,
+    "requiresHuman": false,
+    "reasonCodes": [],
+    "name": "James Test",
+    "phone": "+12145550139",
+    "email": "james@example.com",
+    "source": "missed_call"
+  },
+  "correlation": "la-test-0001"
+}

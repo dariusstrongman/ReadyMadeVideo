@@ -1,0 +1,15 @@
+{
+  "lead": {
+    "intent": "urgent",
+    "serviceCategory": "gas leak",
+    "urgency": "emergency_or_safety",
+    "summary": "Caller reports gas smell",
+    "confidence": 0.95,
+    "requiresHuman": true,
+    "reasonCodes": [
+      "SAFETY"
+    ],
+    "name": "Caller",
+    "phone": "+12145550140"
+  }
+}
