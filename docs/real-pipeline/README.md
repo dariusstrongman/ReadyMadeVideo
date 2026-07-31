@@ -32,6 +32,34 @@ Render backend (render-backend/, FastAPI + FFmpeg, port 8787)
 - Live job status from the `render_jobs` row (no timers)
 - Signed-URL preview + download (1 h expiry); cross-user access provably blocked
 
+## Analysis pipeline (added 2026-07-31 — implementation-order milestones 2–7)
+
+`render-backend/app/pipeline/` — a resumable, idempotent, stage-based analysis
+pipeline. Every stage writes an inspectable artifact (`asset_analysis` table in
+cloud mode, JSON files in local mode); completed stages are skipped on re-run.
+
+| Stage | Status | What it does |
+|---|---|---|
+| probe | **implemented** | full ffprobe metadata (codec/res/fps/rotation/audio/creation time) |
+| proxy | **implemented** | 720p analysis proxy + thumbnails + 16 kHz wav; originals retained |
+| scenes | **implemented** | PySceneDetect ContentDetector shot boundaries |
+| mechanical | **implemented** | deterministic per-scene: blur, exposure + clipping, black frames, frozen frames, motion energy, shake, perceptual-hash duplicate groups — each measurement stored independently, no LLMs |
+| audio | **implemented** | EBU R128 loudness, true peak, clipping, silence ranges |
+| transcript | **implemented** (provider) | `TranscriptionProvider` → OpenAI Whisper API w/ word timestamps; faster-whisper/WhisperX/pyannote/DeepFilterNet = declared optional providers, not yet built |
+| semantic | **implemented** (provider) | `VideoUnderstandingProvider` → Gemini 2.5 Flash via Files API, strict responseSchema, pydantic-validated; NOT hard-coded to one provider |
+| motion | **implemented** | dense local sampling (~12 fps OpenCV frame-diff): intensity, peak moments, stationary ranges. MediaPipe Pose = optional upgrade (Python 3.14 wheel pending) |
+| catalog | **implemented** | merges everything into canonical versioned `Segment` records + full-text-searchable `segments` table (degrades gracefully without AI providers) |
+
+Run it: `python -m app.pipeline.runner --file video.mp4 --out outdir` (local) or
+`--asset <media_asset_id>` (cloud). Live-verified: Gemini correctly described the
+repo's real test clip; Whisper transcribed via API; 9 pipeline tests green.
+
+**Not yet built (next in order):** story planner + fitness template (8), candidate
+selector (9), multi-clip timeline build + preview render (10), mechanical
+validator (11), critic (12), revision pass (13), conversational ops (14),
+preference history (15). See `LICENSE-AUDIT.md` for the dependency ruling
+(Crayotter = reference only, OpenChatCut AGPL = not incorporated).
+
 ## What is still MOCKED / PLANNED / UNFINISHED
 - **AI analysis and auto-editing: not built.** The v1 renderer is title + single trim.
 - v1 renderer supports exactly ONE video clip + optional ONE title clip; complex
