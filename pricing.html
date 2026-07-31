@@ -4,14 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pricing — Stromation</title>
-<meta name="description" content="Early access pricing. No public plans yet.">
+<meta name="description" content="Stromation is in early access. Pricing has not been announced.">
 <link rel="canonical" href="https://www.stromation.com/pricing.html">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <meta name="theme-color" content="#0a0a0f">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://www.stromation.com/pricing.html">
 <meta property="og:title" content="Pricing — Stromation">
-<meta property="og:description" content="Early access pricing. No public plans yet.">
+<meta property="og:description" content="Stromation is in early access. Pricing has not been announced.">
 <meta property="og:image" content="https://www.stromation.com/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,107 +19,63 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-B6Z6XV02RT"></script>
 <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-B6Z6XV02RT');</script>
+<link rel="stylesheet" href="assets/css/stromation.css">
 <style>
-:root{--bg:#0a0a0f;--bg-1:#111118;--bg-2:#16161f;--bg-3:#1c1c28;--surface:#1e1e2a;--surface-2:#252535;--border:rgba(255,255,255,0.07);--border-2:rgba(255,255,255,0.12);--cyan:#00d4ff;--cyan-dim:rgba(0,212,255,0.1);--cyan-glow:rgba(0,212,255,0.22);--violet:#7c3aed;--violet-dim:rgba(124,58,237,0.13);--text:#f0f0f5;--text-2:#a0a0b8;--text-3:#606078;--text-inv:#0a0a0f;--green:#22c55e;--amber:#f59e0b;--red:#ef4444;--sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;--mono:'JetBrains Mono','SF Mono','Cascadia Code',Menlo,Consolas,monospace;--radius:10px;--radius-lg:16px;--radius-xl:24px}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
-@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
-body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.65;-webkit-font-smoothing:antialiased}
-img,video,svg{max-width:100%;display:block}
-a{color:var(--cyan);text-decoration:none}
-a:hover{text-decoration:underline}
-:focus-visible{outline:2px solid var(--cyan);outline-offset:3px;border-radius:4px}
-button{font-family:var(--sans);cursor:pointer;border:none;background:none}
-.wrap{max-width:1140px;margin:0 auto;padding:0 24px}
-.wrap-sm{max-width:780px;margin:0 auto;padding:0 24px}
-.skip{position:absolute;left:-9999px;top:0;z-index:9999;background:var(--cyan);color:var(--text-inv);padding:10px 18px;font-weight:700;border-radius:0 0 8px 0}
-.skip:focus{left:0}
-.nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;height:64px;padding:0 32px;background:rgba(10,10,15,0.85);backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);border-bottom:1px solid var(--border);transition:background .3s}
-.nav-logo{display:flex;align-items:center;gap:10px;text-decoration:none!important}
-.nav-logo-text{font-family:var(--mono);font-weight:700;font-size:.88rem;letter-spacing:.15em;color:var(--text)}
-.nav-links{display:flex;align-items:center;gap:4px;margin-left:auto}
-.nav-links a{color:var(--text-2);font-size:.875rem;font-weight:500;padding:6px 12px;border-radius:8px;transition:color .2s,background .2s}
-.nav-links a:hover{color:var(--text);background:var(--surface);text-decoration:none}
-.nav-cta{margin-left:8px}
-.nav-menu-btn{display:none;background:none;border:1px solid var(--border-2);border-radius:8px;color:var(--text);padding:8px 12px;font-size:1.1rem;margin-left:auto;cursor:pointer}
-@media(max-width:860px){.nav-links{display:none;position:absolute;top:64px;left:0;right:0;background:var(--bg-1);flex-direction:column;align-items:stretch;padding:12px 0;border-bottom:1px solid var(--border)}.nav-links.open{display:flex}.nav-links a{padding:14px 24px;border-radius:0}.nav-cta{margin:8px 24px 4px}.nav-menu-btn{display:block}}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:600;font-size:.9rem;padding:11px 22px;border-radius:var(--radius);transition:all .2s;white-space:nowrap;text-decoration:none!important;border:none;cursor:pointer}
-.btn-primary{background:var(--cyan);color:var(--text-inv)}
-.btn-primary:hover{background:#33dcff;transform:translateY(-1px);box-shadow:0 4px 24px var(--cyan-glow)}
-.btn-secondary{background:var(--surface);color:var(--text);border:1px solid var(--border-2)}
-.btn-secondary:hover{background:var(--surface-2);transform:translateY(-1px)}
-.btn-ghost{background:transparent;color:var(--text-2);border:1px solid var(--border)}
-.btn-ghost:hover{color:var(--text);border-color:var(--border-2);background:var(--surface)}
-.btn-danger{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)}
-.btn-danger:hover{background:rgba(239,68,68,.25)}
-.btn-lg{font-size:1rem;padding:14px 28px;border-radius:var(--radius-lg)}
-.btn-sm{font-size:.8rem;padding:7px 14px;border-radius:8px}
-.btn-icon{width:36px;height:36px;padding:0;border-radius:8px;display:inline-flex;align-items:center;justify-content:center}
-section{padding:96px 0}
-.page-hero{padding:140px 0 80px;background:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(0,212,255,.06),transparent)}
-.section-label{font-family:var(--mono);font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--cyan);font-weight:600;margin-bottom:14px}
-.section-title{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:800;letter-spacing:-.03em;line-height:1.1;color:var(--text)}
-.section-sub{color:var(--text-2);font-size:1.05rem;line-height:1.7;margin-top:16px;max-width:60ch}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px}
-.card:hover{border-color:var(--border-2)}
-.grid{display:grid;gap:20px}
-.grid-2{grid-template-columns:repeat(2,1fr)}
-.grid-3{grid-template-columns:repeat(3,1fr)}
-.grid-4{grid-template-columns:repeat(4,1fr)}
-@media(max-width:900px){.grid-3,.grid-4{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:600px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}}
-.badge{display:inline-flex;align-items:center;gap:6px;font-size:.75rem;font-weight:600;padding:4px 10px;border-radius:100px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase}
-.badge-cyan{background:var(--cyan-dim);color:var(--cyan);border:1px solid rgba(0,212,255,.2)}
-.badge-green{background:rgba(34,197,94,.12);color:var(--green);border:1px solid rgba(34,197,94,.25)}
-.badge-amber{background:rgba(245,158,11,.12);color:var(--amber);border:1px solid rgba(245,158,11,.25)}
-.badge-red{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.25)}
-.badge-violet{background:var(--violet-dim);color:#a78bfa;border:1px solid rgba(124,58,237,.3)}
-.form-group{display:flex;flex-direction:column;gap:6px}
-.form-label{font-size:.85rem;font-weight:600;color:var(--text-2)}
-.form-input,.form-select,.form-textarea{background:var(--bg-2);border:1px solid var(--border-2);border-radius:var(--radius);color:var(--text);font-size:.9rem;padding:10px 14px;transition:border-color .2s,box-shadow .2s;font-family:var(--sans);width:100%}
-.form-input:focus,.form-select:focus,.form-textarea:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 0 3px var(--cyan-dim)}
-.form-input::placeholder,.form-textarea::placeholder{color:var(--text-3)}
-.form-textarea{resize:vertical;min-height:100px}
-.form-select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a0a0b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px}
-.divider{border:none;border-top:1px solid var(--border);margin:0}
-.footer{padding:64px 0 40px;border-top:1px solid var(--border);background:var(--bg)}
-.footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:48px}
-@media(max-width:860px){.footer-grid{grid-template-columns:1fr 1fr;gap:32px}}
-@media(max-width:520px){.footer-grid{grid-template-columns:1fr}}
-.footer-brand p{color:var(--text-3);font-size:.875rem;margin-top:12px;max-width:28ch;line-height:1.6}
-.footer-col h4{font-size:.78rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:16px}
-.footer-col a{display:block;color:var(--text-2);font-size:.875rem;margin-bottom:10px;transition:color .2s}
-.footer-col a:hover{color:var(--text);text-decoration:none}
-.footer-bottom{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
-.footer-bottom p{color:var(--text-3);font-size:.8rem}
-.text-center{text-align:center}
-.text-cyan{color:var(--cyan)}
-.text-muted{color:var(--text-2)}
-.mt-8{margin-top:8px}.mt-12{margin-top:12px}.mt-16{margin-top:16px}.mt-24{margin-top:24px}.mt-32{margin-top:32px}.mt-48{margin-top:48px}
-.mb-16{margin-bottom:16px}.mb-24{margin-bottom:24px}
-.flex{display:flex}.items-center{align-items:center}.justify-between{justify-content:space-between}.gap-8{gap:8px}.gap-12{gap:12px}.gap-16{gap:16px}.gap-24{gap:24px}
-.w-full{width:100%}
-.hidden{display:none!important}
-@keyframes fadeInUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
-.fade-in-up{animation:fadeInUp .6s ease both}
-.delay-1{animation-delay:.1s}.delay-2{animation-delay:.25s}
-</style>
-<style>
-.pricing-hero{padding:140px 0 80px;text-align:center;background:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(0,212,255,.06),transparent)}
-.pricing-notice{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius-lg);padding:20px 24px;text-align:center;max-width:640px;margin:0 auto 64px;font-size:.9rem;color:var(--amber)}
-.pricing-notice strong{color:var(--amber)}
-.pricing-faq{max-width:720px;margin:0 auto;padding:0 24px}
-.faq-item{border-bottom:1px solid var(--border);padding:20px 0}
-.faq-item:first-child{border-top:1px solid var(--border)}
-.faq-q{font-size:.95rem;font-weight:700;color:var(--text);cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:16px;list-style:none}
-.faq-q::after{content:'+';color:var(--cyan);font-size:1.2rem;flex-shrink:0}
-details[open] .faq-q::after{content:'&minus;'}
-.faq-a{color:var(--text-2);font-size:.875rem;line-height:1.7;margin-top:12px;max-width:64ch}
+.legal-wrap{max-width:760px;margin:0 auto;padding:120px 24px 80px}
+.legal-wrap h1{font-size:2rem;font-weight:800;margin-bottom:8px}
+.legal-wrap .updated{color:var(--text-3);font-size:.85rem;font-family:var(--mono);margin-bottom:40px}
+.legal-wrap h2{font-size:1.05rem;font-weight:700;color:var(--text);margin:36px 0 12px;padding-top:4px;border-top:1px solid var(--border)}
+.legal-wrap p,.legal-wrap li{color:var(--text-2);font-size:.9rem;line-height:1.75;margin-bottom:10px}
+.legal-wrap ul{padding-left:20px;margin-bottom:12px}
+.legal-wrap strong{color:var(--text);font-weight:600}
+.legal-wrap .notice{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:32px;font-size:.875rem;color:var(--amber)}
+.pricing-hero{padding:140px 24px 60px;text-align:center}
+.pricing-hero h1{font-size:2.2rem;font-weight:800;margin-bottom:16px}
+.pricing-hero p{color:var(--text-2);max-width:52ch;margin:0 auto 32px;font-size:.95rem;line-height:1.7}
+.pricing-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:860px;margin:0 auto 60px;padding:0 24px}
+@media(max-width:700px){.pricing-cards{grid-template-columns:1fr}}
+.pricing-card{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px 24px}
+.pricing-card.featured{border-color:rgba(0,212,255,.3);background:linear-gradient(135deg,rgba(0,212,255,.04),transparent)}
+.pricing-card .plan-name{font-size:.75rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.12em;color:var(--text-3);margin-bottom:12px}
+.pricing-card h3{font-size:1.1rem;font-weight:700;margin-bottom:8px}
+.pricing-card p{color:var(--text-2);font-size:.85rem;line-height:1.6}
+.pricing-notice{max-width:600px;margin:0 auto 48px;padding:0 24px;text-align:center}
+.pricing-notice p{color:var(--text-2);font-size:.875rem;line-height:1.7}
+.faq-section{max-width:680px;margin:0 auto;padding:0 24px 80px}
+.faq-section h2{font-size:1.4rem;font-weight:700;margin-bottom:24px;text-align:center}
+details.faq{border-bottom:1px solid var(--border);padding:16px 0}
+details.faq:first-of-type{border-top:1px solid var(--border)}
+details.faq summary{font-size:.9rem;font-weight:600;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:12px;color:var(--text)}
+details.faq summary::after{content:'+';color:var(--cyan);font-size:1.1rem;flex-shrink:0}
+details.faq[open] summary::after{content:'−'}
+details.faq p{color:var(--text-2);font-size:.875rem;line-height:1.7;margin-top:12px;max-width:60ch}
+.showcase-hero{padding:140px 24px 60px;text-align:center}
+.showcase-hero h1{font-size:2.2rem;font-weight:800;margin-bottom:16px}
+.showcase-hero p{color:var(--text-2);max-width:52ch;margin:0 auto 24px;font-size:.95rem;line-height:1.7}
+.showcase-notice{display:inline-flex;align-items:center;gap:8px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius);padding:10px 16px;font-size:.8rem;color:var(--amber);margin-bottom:48px}
+.project-zero-card{max-width:860px;margin:0 auto 80px;padding:0 24px}
+.pz-inner{background:var(--bg-2);border:1px solid rgba(0,212,255,.2);border-radius:var(--radius-xl);overflow:hidden}
+.pz-thumb{position:relative;background:#0a0a0f;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.pz-thumb img{width:100%;height:100%;object-fit:cover}
+.pz-thumb-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,rgba(10,10,15,.8))}
+.pz-thumb-title{position:absolute;bottom:20px;left:24px;font-size:1.1rem;font-weight:700;color:#fff}
+.pz-body{padding:28px 28px 32px}
+.pz-body h2{font-size:1.1rem;font-weight:700;margin-bottom:8px}
+.pz-body .pz-desc{color:var(--text-2);font-size:.875rem;line-height:1.7;margin-bottom:20px}
+.pz-meta{background:var(--bg-3);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:20px;font-size:.8rem;font-family:var(--mono);color:var(--text-3)}
+.pz-meta span{color:var(--text-2)}
+.pz-timeline{margin-bottom:24px}
+.pz-timeline h3{font-size:.75rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:10px}
+.tl-row{display:flex;align-items:center;height:32px;border-bottom:1px solid var(--border)}
+.tl-label{width:48px;flex-shrink:0;font-size:.65rem;font-family:var(--mono);color:var(--text-3);padding-right:8px;text-align:right}
+.tl-track{flex:1;position:relative;height:24px}
+.tl-clip{position:absolute;top:2px;bottom:2px;border-radius:4px;border:1px solid;display:flex;align-items:center;padding:0 6px;font-size:.6rem;font-family:var(--mono);overflow:hidden;white-space:nowrap}
+.pz-download{display:inline-flex;align-items:center;gap:8px;background:var(--cyan);color:var(--text-inv);font-weight:700;font-size:.875rem;padding:12px 24px;border-radius:var(--radius);text-decoration:none!important;transition:opacity .15s}
+.pz-download:hover{opacity:.88;text-decoration:none!important}
+.pz-disclaimer{margin-top:16px;font-size:.75rem;color:var(--text-3);line-height:1.6}
 </style>
 </head>
-<body>
-<a href="#main" class="skip">Skip to content</a>
-<nav class="nav" id="nav">
+<body><nav class="nav" id="nav">
   <a href="index.html" class="nav-logo" aria-label="Stromation home">
     <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" width="28" height="28">
       <circle cx="30" cy="8" r="5" stroke="#00d4ff" stroke-width="2"/>
@@ -143,45 +99,51 @@ details[open] .faq-q::after{content:'&minus;'}
 </nav>
 <main id="main">
   <section class="pricing-hero">
-    <div class="wrap-sm">
-      <div class="badge badge-cyan" style="margin-bottom:20px">Early access</div>
-      <h1 class="section-title">Pricing is not public yet</h1>
-      <p class="section-sub" style="margin:16px auto 0;text-align:center">Stromation is currently in a controlled early access phase. We are working with a small group of creators to finalize the product before announcing public pricing.</p>
-      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:32px">
-        <a href="index.html#waitlist" class="btn btn-primary btn-lg">Join the waitlist</a>
-        <a href="index.html#how-it-works" class="btn btn-ghost btn-lg">See how it works</a>
-      </div>
+    <div class="badge badge-cyan" style="margin-bottom:20px">Early access</div>
+    <h1>Pricing is not public yet</h1>
+    <p>Stromation is in a controlled early access phase. We are working with a small group of creators to finalise the product before announcing public pricing.</p>
+    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+      <a href="index.html#waitlist" class="btn btn-primary btn-lg">Join the waitlist</a>
+      <a href="showcase.html" class="btn btn-ghost btn-lg">See Project Zero</a>
     </div>
   </section>
-  <section style="padding:0 0 96px">
-    <div class="wrap">
-      <div class="pricing-notice">
-        <strong>&#9888; Prototype notice:</strong> Stromation is in active development. The processing pipeline, AI editing, and export features are being built. Early access members will receive founding pricing when plans are announced.
-      </div>
-      <div class="text-center" style="margin-bottom:48px">
-        <p class="section-label">What to expect</p>
-        <h2 class="section-title">What we&rsquo;re building toward</h2>
-        <p class="section-sub" style="margin:16px auto 0">Pricing will be based on the value Stromation delivers: time saved, footage processed, and exports produced. We plan to offer a usage-based model with clear, predictable costs.</p>
-      </div>
-      <div class="grid grid-3">
-        <div class="card"><div class="badge badge-cyan" style="margin-bottom:16px">Planned</div><h3 style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px">Starter</h3><p style="color:var(--text-2);font-size:.875rem">For individual creators. Limited projects per month, standard resolution exports, basic AI editing.</p></div>
-        <div class="card" style="border-color:rgba(0,212,255,.25);background:linear-gradient(135deg,rgba(0,212,255,.04),transparent)"><div class="badge badge-cyan" style="margin-bottom:16px">Planned</div><h3 style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px">Creator</h3><p style="color:var(--text-2);font-size:.875rem">For active creators. More projects, 4K exports, advanced AI editing, version history, and priority processing.</p></div>
-        <div class="card"><div class="badge badge-cyan" style="margin-bottom:16px">Planned</div><h3 style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px">Studio</h3><p style="color:var(--text-2);font-size:.875rem">For teams and agencies. Unlimited projects, collaboration, review links, custom branding, and dedicated support.</p></div>
-      </div>
+
+  <div class="pricing-notice">
+    <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius-lg);padding:18px 22px;margin-bottom:48px">
+      <p style="color:var(--amber);font-size:.875rem"><strong style="color:var(--amber)">&#9888; Prototype notice:</strong> Stromation is in active development. The AI editing pipeline, export, and processing features are being built. Early access members will receive founding pricing when plans are announced.</p>
     </div>
-  </section>
-  <section style="background:var(--bg-1);padding:80px 0">
-    <div class="pricing-faq">
-      <div class="text-center" style="margin-bottom:48px">
-        <p class="section-label">FAQ</p>
-        <h2 class="section-title">Common questions</h2>
-      </div>
-      <details class="faq-item"><summary class="faq-q">When will pricing be announced?</summary><p class="faq-a">We will announce pricing when the core product is ready for public launch. Early access members will be notified first and will receive founding pricing.</p></details>
-      <details class="faq-item"><summary class="faq-q">Will there be a free trial?</summary><p class="faq-a">We plan to offer a way to try Stromation before committing to a paid plan. Details will be announced with the public pricing release.</p></details>
-      <details class="faq-item"><summary class="faq-q">What happens to my footage if I cancel?</summary><p class="faq-a">You will have the ability to export your projects and delete all associated footage before canceling. We will not retain your files after deletion is confirmed.</p></details>
-      <details class="faq-item"><summary class="faq-q">Is there a limit on footage file size?</summary><p class="faq-a">We are designing the upload system to handle large raw video files, including 4K drone and camera footage. Specific limits will be defined per plan tier.</p></details>
-      <details class="faq-item"><summary class="faq-q">Will Stromation work for professional video editors?</summary><p class="faq-a">Stromation is designed to accelerate the editing workflow, not replace professional editors. The timeline and AI tools are built to complement existing skills and speed up the most time-consuming parts of the process.</p></details>
+  </div>
+
+  <div style="text-align:center;padding:0 24px 20px">
+    <p class="section-label">What we&rsquo;re building toward</p>
+    <h2 class="section-title">Planned tiers</h2>
+    <p style="color:var(--text-2);font-size:.875rem;max-width:52ch;margin:12px auto 40px;line-height:1.7">Pricing will be based on the value Stromation delivers: time saved, footage processed, and exports produced. These are planned — not final.</p>
+  </div>
+  <div class="pricing-cards">
+    <div class="pricing-card">
+      <div class="plan-name">Planned</div>
+      <h3>Starter</h3>
+      <p>For individual creators. Limited projects per billing period, standard resolution exports, basic AI editing.</p>
     </div>
+    <div class="pricing-card featured">
+      <div class="plan-name">Planned</div>
+      <h3>Creator</h3>
+      <p>For active creators. More projects, 4K exports, advanced AI editing, version history, and priority processing.</p>
+    </div>
+    <div class="pricing-card">
+      <div class="plan-name">Planned</div>
+      <h3>Studio</h3>
+      <p>For teams and agencies. Unlimited projects, collaboration, review links, custom branding, and dedicated support.</p>
+    </div>
+  </div>
+
+  <section class="faq-section">
+    <h2>Common questions</h2>
+    <details class="faq"><summary>When will pricing be announced?</summary><p>We will announce pricing when the core product is ready for public launch. Early access members will be notified first and will receive founding pricing.</p></details>
+    <details class="faq"><summary>Will there be a free trial?</summary><p>We plan to offer a way to try Stromation before committing to a paid plan. Details will be announced with the public pricing release.</p></details>
+    <details class="faq"><summary>What happens to my footage if I cancel?</summary><p>You will have the ability to export your projects and delete all associated footage before cancelling. We will not retain your files after deletion is confirmed.</p></details>
+    <details class="faq"><summary>Is there a limit on footage file size?</summary><p>We are designing the upload system to handle large raw video files, including 4K drone and camera footage. Specific limits will be defined per plan tier.</p></details>
+    <details class="faq"><summary>Will Stromation work for professional editors?</summary><p>Stromation is designed to accelerate the editing workflow, not replace professional editors. The timeline and AI tools are built to complement existing skills and speed up the most time-consuming parts of the process.</p></details>
   </section>
 </main>
 <footer class="footer" role="contentinfo">

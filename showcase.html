@@ -4,14 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Showcase — Stromation</title>
-<meta name="description" content="See what Stromation creates.">
+<meta name="description" content="Project Zero: the first project built with Stromation. Real structured timeline, real downloadable video.">
 <link rel="canonical" href="https://www.stromation.com/showcase.html">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <meta name="theme-color" content="#0a0a0f">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://www.stromation.com/showcase.html">
 <meta property="og:title" content="Showcase — Stromation">
-<meta property="og:description" content="See what Stromation creates.">
+<meta property="og:description" content="Project Zero: the first project built with Stromation. Real structured timeline, real downloadable video.">
 <meta property="og:image" content="https://www.stromation.com/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,113 +19,63 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-B6Z6XV02RT"></script>
 <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-B6Z6XV02RT');</script>
+<link rel="stylesheet" href="assets/css/stromation.css">
 <style>
-:root{--bg:#0a0a0f;--bg-1:#111118;--bg-2:#16161f;--bg-3:#1c1c28;--surface:#1e1e2a;--surface-2:#252535;--border:rgba(255,255,255,0.07);--border-2:rgba(255,255,255,0.12);--cyan:#00d4ff;--cyan-dim:rgba(0,212,255,0.1);--cyan-glow:rgba(0,212,255,0.22);--violet:#7c3aed;--violet-dim:rgba(124,58,237,0.13);--text:#f0f0f5;--text-2:#a0a0b8;--text-3:#606078;--text-inv:#0a0a0f;--green:#22c55e;--amber:#f59e0b;--red:#ef4444;--sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;--mono:'JetBrains Mono','SF Mono','Cascadia Code',Menlo,Consolas,monospace;--radius:10px;--radius-lg:16px;--radius-xl:24px}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
-@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
-body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.65;-webkit-font-smoothing:antialiased}
-img,video,svg{max-width:100%;display:block}
-a{color:var(--cyan);text-decoration:none}
-a:hover{text-decoration:underline}
-:focus-visible{outline:2px solid var(--cyan);outline-offset:3px;border-radius:4px}
-button{font-family:var(--sans);cursor:pointer;border:none;background:none}
-.wrap{max-width:1140px;margin:0 auto;padding:0 24px}
-.wrap-sm{max-width:780px;margin:0 auto;padding:0 24px}
-.skip{position:absolute;left:-9999px;top:0;z-index:9999;background:var(--cyan);color:var(--text-inv);padding:10px 18px;font-weight:700;border-radius:0 0 8px 0}
-.skip:focus{left:0}
-.nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;height:64px;padding:0 32px;background:rgba(10,10,15,0.85);backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);border-bottom:1px solid var(--border);transition:background .3s}
-.nav-logo{display:flex;align-items:center;gap:10px;text-decoration:none!important}
-.nav-logo-text{font-family:var(--mono);font-weight:700;font-size:.88rem;letter-spacing:.15em;color:var(--text)}
-.nav-links{display:flex;align-items:center;gap:4px;margin-left:auto}
-.nav-links a{color:var(--text-2);font-size:.875rem;font-weight:500;padding:6px 12px;border-radius:8px;transition:color .2s,background .2s}
-.nav-links a:hover{color:var(--text);background:var(--surface);text-decoration:none}
-.nav-cta{margin-left:8px}
-.nav-menu-btn{display:none;background:none;border:1px solid var(--border-2);border-radius:8px;color:var(--text);padding:8px 12px;font-size:1.1rem;margin-left:auto;cursor:pointer}
-@media(max-width:860px){.nav-links{display:none;position:absolute;top:64px;left:0;right:0;background:var(--bg-1);flex-direction:column;align-items:stretch;padding:12px 0;border-bottom:1px solid var(--border)}.nav-links.open{display:flex}.nav-links a{padding:14px 24px;border-radius:0}.nav-cta{margin:8px 24px 4px}.nav-menu-btn{display:block}}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:600;font-size:.9rem;padding:11px 22px;border-radius:var(--radius);transition:all .2s;white-space:nowrap;text-decoration:none!important;border:none;cursor:pointer}
-.btn-primary{background:var(--cyan);color:var(--text-inv)}
-.btn-primary:hover{background:#33dcff;transform:translateY(-1px);box-shadow:0 4px 24px var(--cyan-glow)}
-.btn-secondary{background:var(--surface);color:var(--text);border:1px solid var(--border-2)}
-.btn-secondary:hover{background:var(--surface-2);transform:translateY(-1px)}
-.btn-ghost{background:transparent;color:var(--text-2);border:1px solid var(--border)}
-.btn-ghost:hover{color:var(--text);border-color:var(--border-2);background:var(--surface)}
-.btn-danger{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)}
-.btn-danger:hover{background:rgba(239,68,68,.25)}
-.btn-lg{font-size:1rem;padding:14px 28px;border-radius:var(--radius-lg)}
-.btn-sm{font-size:.8rem;padding:7px 14px;border-radius:8px}
-.btn-icon{width:36px;height:36px;padding:0;border-radius:8px;display:inline-flex;align-items:center;justify-content:center}
-section{padding:96px 0}
-.page-hero{padding:140px 0 80px;background:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(0,212,255,.06),transparent)}
-.section-label{font-family:var(--mono);font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--cyan);font-weight:600;margin-bottom:14px}
-.section-title{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:800;letter-spacing:-.03em;line-height:1.1;color:var(--text)}
-.section-sub{color:var(--text-2);font-size:1.05rem;line-height:1.7;margin-top:16px;max-width:60ch}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px}
-.card:hover{border-color:var(--border-2)}
-.grid{display:grid;gap:20px}
-.grid-2{grid-template-columns:repeat(2,1fr)}
-.grid-3{grid-template-columns:repeat(3,1fr)}
-.grid-4{grid-template-columns:repeat(4,1fr)}
-@media(max-width:900px){.grid-3,.grid-4{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:600px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}}
-.badge{display:inline-flex;align-items:center;gap:6px;font-size:.75rem;font-weight:600;padding:4px 10px;border-radius:100px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase}
-.badge-cyan{background:var(--cyan-dim);color:var(--cyan);border:1px solid rgba(0,212,255,.2)}
-.badge-green{background:rgba(34,197,94,.12);color:var(--green);border:1px solid rgba(34,197,94,.25)}
-.badge-amber{background:rgba(245,158,11,.12);color:var(--amber);border:1px solid rgba(245,158,11,.25)}
-.badge-red{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.25)}
-.badge-violet{background:var(--violet-dim);color:#a78bfa;border:1px solid rgba(124,58,237,.3)}
-.form-group{display:flex;flex-direction:column;gap:6px}
-.form-label{font-size:.85rem;font-weight:600;color:var(--text-2)}
-.form-input,.form-select,.form-textarea{background:var(--bg-2);border:1px solid var(--border-2);border-radius:var(--radius);color:var(--text);font-size:.9rem;padding:10px 14px;transition:border-color .2s,box-shadow .2s;font-family:var(--sans);width:100%}
-.form-input:focus,.form-select:focus,.form-textarea:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 0 3px var(--cyan-dim)}
-.form-input::placeholder,.form-textarea::placeholder{color:var(--text-3)}
-.form-textarea{resize:vertical;min-height:100px}
-.form-select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a0a0b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px}
-.divider{border:none;border-top:1px solid var(--border);margin:0}
-.footer{padding:64px 0 40px;border-top:1px solid var(--border);background:var(--bg)}
-.footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:48px}
-@media(max-width:860px){.footer-grid{grid-template-columns:1fr 1fr;gap:32px}}
-@media(max-width:520px){.footer-grid{grid-template-columns:1fr}}
-.footer-brand p{color:var(--text-3);font-size:.875rem;margin-top:12px;max-width:28ch;line-height:1.6}
-.footer-col h4{font-size:.78rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:16px}
-.footer-col a{display:block;color:var(--text-2);font-size:.875rem;margin-bottom:10px;transition:color .2s}
-.footer-col a:hover{color:var(--text);text-decoration:none}
-.footer-bottom{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
-.footer-bottom p{color:var(--text-3);font-size:.8rem}
-.text-center{text-align:center}
-.text-cyan{color:var(--cyan)}
-.text-muted{color:var(--text-2)}
-.mt-8{margin-top:8px}.mt-12{margin-top:12px}.mt-16{margin-top:16px}.mt-24{margin-top:24px}.mt-32{margin-top:32px}.mt-48{margin-top:48px}
-.mb-16{margin-bottom:16px}.mb-24{margin-bottom:24px}
-.flex{display:flex}.items-center{align-items:center}.justify-between{justify-content:space-between}.gap-8{gap:8px}.gap-12{gap:12px}.gap-16{gap:16px}.gap-24{gap:24px}
-.w-full{width:100%}
-.hidden{display:none!important}
-@keyframes fadeInUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
-.fade-in-up{animation:fadeInUp .6s ease both}
-.delay-1{animation-delay:.1s}.delay-2{animation-delay:.25s}
-</style>
-<style>
-.showcase-hero{padding:140px 0 80px;text-align:center;background:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(0,212,255,.06),transparent)}
-.showcase-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:48px}
-@media(max-width:900px){.showcase-grid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:540px){.showcase-grid{grid-template-columns:1fr}}
-.showcase-card{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;transition:border-color .2s,transform .2s;cursor:pointer}
-.showcase-card:hover{border-color:var(--border-2);transform:translateY(-3px)}
-.showcase-thumb{height:160px;background:linear-gradient(135deg,var(--bg-3),var(--surface));position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.showcase-thumb::after{content:'';position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,rgba(10,10,15,.7))}
-.showcase-play{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;position:relative;z-index:1;backdrop-filter:blur(8px)}
-.showcase-play svg{width:16px;height:16px;fill:white;margin-left:2px}
-.showcase-body{padding:16px}
-.showcase-title{font-size:.9rem;font-weight:700;color:var(--text);margin-bottom:6px}
-.showcase-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.showcase-meta span{font-size:.72rem;color:var(--text-3)}
-.coming-soon-overlay{position:absolute;inset:0;background:rgba(10,10,15,.7);display:flex;align-items:center;justify-content:center;z-index:2;backdrop-filter:blur(4px)}
-.coming-soon-overlay span{font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-2);background:var(--bg-2);border:1px solid var(--border-2);border-radius:100px;padding:6px 14px}
+.legal-wrap{max-width:760px;margin:0 auto;padding:120px 24px 80px}
+.legal-wrap h1{font-size:2rem;font-weight:800;margin-bottom:8px}
+.legal-wrap .updated{color:var(--text-3);font-size:.85rem;font-family:var(--mono);margin-bottom:40px}
+.legal-wrap h2{font-size:1.05rem;font-weight:700;color:var(--text);margin:36px 0 12px;padding-top:4px;border-top:1px solid var(--border)}
+.legal-wrap p,.legal-wrap li{color:var(--text-2);font-size:.9rem;line-height:1.75;margin-bottom:10px}
+.legal-wrap ul{padding-left:20px;margin-bottom:12px}
+.legal-wrap strong{color:var(--text);font-weight:600}
+.legal-wrap .notice{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:32px;font-size:.875rem;color:var(--amber)}
+.pricing-hero{padding:140px 24px 60px;text-align:center}
+.pricing-hero h1{font-size:2.2rem;font-weight:800;margin-bottom:16px}
+.pricing-hero p{color:var(--text-2);max-width:52ch;margin:0 auto 32px;font-size:.95rem;line-height:1.7}
+.pricing-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:860px;margin:0 auto 60px;padding:0 24px}
+@media(max-width:700px){.pricing-cards{grid-template-columns:1fr}}
+.pricing-card{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px 24px}
+.pricing-card.featured{border-color:rgba(0,212,255,.3);background:linear-gradient(135deg,rgba(0,212,255,.04),transparent)}
+.pricing-card .plan-name{font-size:.75rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.12em;color:var(--text-3);margin-bottom:12px}
+.pricing-card h3{font-size:1.1rem;font-weight:700;margin-bottom:8px}
+.pricing-card p{color:var(--text-2);font-size:.85rem;line-height:1.6}
+.pricing-notice{max-width:600px;margin:0 auto 48px;padding:0 24px;text-align:center}
+.pricing-notice p{color:var(--text-2);font-size:.875rem;line-height:1.7}
+.faq-section{max-width:680px;margin:0 auto;padding:0 24px 80px}
+.faq-section h2{font-size:1.4rem;font-weight:700;margin-bottom:24px;text-align:center}
+details.faq{border-bottom:1px solid var(--border);padding:16px 0}
+details.faq:first-of-type{border-top:1px solid var(--border)}
+details.faq summary{font-size:.9rem;font-weight:600;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:12px;color:var(--text)}
+details.faq summary::after{content:'+';color:var(--cyan);font-size:1.1rem;flex-shrink:0}
+details.faq[open] summary::after{content:'−'}
+details.faq p{color:var(--text-2);font-size:.875rem;line-height:1.7;margin-top:12px;max-width:60ch}
+.showcase-hero{padding:140px 24px 60px;text-align:center}
+.showcase-hero h1{font-size:2.2rem;font-weight:800;margin-bottom:16px}
+.showcase-hero p{color:var(--text-2);max-width:52ch;margin:0 auto 24px;font-size:.95rem;line-height:1.7}
+.showcase-notice{display:inline-flex;align-items:center;gap:8px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius);padding:10px 16px;font-size:.8rem;color:var(--amber);margin-bottom:48px}
+.project-zero-card{max-width:860px;margin:0 auto 80px;padding:0 24px}
+.pz-inner{background:var(--bg-2);border:1px solid rgba(0,212,255,.2);border-radius:var(--radius-xl);overflow:hidden}
+.pz-thumb{position:relative;background:#0a0a0f;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.pz-thumb img{width:100%;height:100%;object-fit:cover}
+.pz-thumb-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,rgba(10,10,15,.8))}
+.pz-thumb-title{position:absolute;bottom:20px;left:24px;font-size:1.1rem;font-weight:700;color:#fff}
+.pz-body{padding:28px 28px 32px}
+.pz-body h2{font-size:1.1rem;font-weight:700;margin-bottom:8px}
+.pz-body .pz-desc{color:var(--text-2);font-size:.875rem;line-height:1.7;margin-bottom:20px}
+.pz-meta{background:var(--bg-3);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:20px;font-size:.8rem;font-family:var(--mono);color:var(--text-3)}
+.pz-meta span{color:var(--text-2)}
+.pz-timeline{margin-bottom:24px}
+.pz-timeline h3{font-size:.75rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:10px}
+.tl-row{display:flex;align-items:center;height:32px;border-bottom:1px solid var(--border)}
+.tl-label{width:48px;flex-shrink:0;font-size:.65rem;font-family:var(--mono);color:var(--text-3);padding-right:8px;text-align:right}
+.tl-track{flex:1;position:relative;height:24px}
+.tl-clip{position:absolute;top:2px;bottom:2px;border-radius:4px;border:1px solid;display:flex;align-items:center;padding:0 6px;font-size:.6rem;font-family:var(--mono);overflow:hidden;white-space:nowrap}
+.pz-download{display:inline-flex;align-items:center;gap:8px;background:var(--cyan);color:var(--text-inv);font-weight:700;font-size:.875rem;padding:12px 24px;border-radius:var(--radius);text-decoration:none!important;transition:opacity .15s}
+.pz-download:hover{opacity:.88;text-decoration:none!important}
+.pz-disclaimer{margin-top:16px;font-size:.75rem;color:var(--text-3);line-height:1.6}
 </style>
 </head>
-<body>
-<a href="#main" class="skip">Skip to content</a>
-<nav class="nav" id="nav">
+<body><nav class="nav" id="nav">
   <a href="index.html" class="nav-logo" aria-label="Stromation home">
     <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" width="28" height="28">
       <circle cx="30" cy="8" r="5" stroke="#00d4ff" stroke-width="2"/>
@@ -149,64 +99,85 @@ section{padding:96px 0}
 </nav>
 <main id="main">
   <section class="showcase-hero">
-    <div class="wrap-sm">
-      <div class="badge badge-cyan" style="margin-bottom:20px">Showcase</div>
-      <h1 class="section-title">What Stromation creates</h1>
-      <p class="section-sub" style="margin:16px auto 0;text-align:center">Examples of the type of edits Stromation is designed to produce. Real project examples will be added as early access creators complete their first edits.</p>
+    <div class="badge badge-cyan" style="margin-bottom:16px">Showcase</div>
+    <h1>Project Zero</h1>
+    <p>The first project built with Stromation. Structured manually from workout footage metadata. AI-assisted steps are clearly labelled.</p>
+    <div class="showcase-notice">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Timeline and clip data were structured manually. AI scene detection is a prototype and was not used to produce this project.
     </div>
   </section>
-  <section style="padding:0 0 96px">
-    <div class="wrap">
-      <div class="showcase-grid">
-        <div class="showcase-card">
-          <div class="showcase-thumb" style="background:linear-gradient(135deg,#0d1a0d,#1a2a1a)">
-            <div class="showcase-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
-            <div class="coming-soon-overlay"><span>Example coming soon</span></div>
-          </div>
-          <div class="showcase-body"><div class="showcase-title">Trail Run — Morning Light</div><div class="showcase-meta"><span class="badge badge-cyan">Fitness</span><span>1:42</span><span>16:9</span></div></div>
-        </div>
-        <div class="showcase-card">
-          <div class="showcase-thumb" style="background:linear-gradient(135deg,#0d0d1a,#1a1a2a)">
-            <div class="showcase-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
-            <div class="coming-soon-overlay"><span>Example coming soon</span></div>
-          </div>
-          <div class="showcase-body"><div class="showcase-title">Cinematic Workout Edit</div><div class="showcase-meta"><span class="badge badge-cyan">Fitness</span><span>2:15</span><span>16:9</span></div></div>
-        </div>
-        <div class="showcase-card">
-          <div class="showcase-thumb" style="background:linear-gradient(135deg,#1a0d0d,#2a1a1a)">
-            <div class="showcase-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
-            <div class="coming-soon-overlay"><span>Example coming soon</span></div>
-          </div>
-          <div class="showcase-body"><div class="showcase-title">Lifestyle Vlog — Week in Review</div><div class="showcase-meta"><span class="badge badge-violet">Lifestyle</span><span>4:30</span><span>16:9</span></div></div>
-        </div>
-        <div class="showcase-card">
-          <div class="showcase-thumb" style="background:linear-gradient(135deg,#0d1a1a,#1a2a2a)">
-            <div class="showcase-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
-            <div class="coming-soon-overlay"><span>Example coming soon</span></div>
-          </div>
-          <div class="showcase-body"><div class="showcase-title">Transformation — 90 Days</div><div class="showcase-meta"><span class="badge badge-cyan">Fitness</span><span>3:00</span><span>9:16</span></div></div>
-        </div>
-        <div class="showcase-card">
-          <div class="showcase-thumb" style="background:linear-gradient(135deg,#1a1a0d,#2a2a1a)">
-            <div class="showcase-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
-            <div class="coming-soon-overlay"><span>Example coming soon</span></div>
-          </div>
-          <div class="showcase-body"><div class="showcase-title">Race Day — Half Marathon</div><div class="showcase-meta"><span class="badge badge-cyan">Running</span><span>2:45</span><span>16:9</span></div></div>
-        </div>
-        <div class="showcase-card">
-          <div class="showcase-thumb" style="background:linear-gradient(135deg,#1a0d1a,#2a1a2a)">
-            <div class="showcase-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
-            <div class="coming-soon-overlay"><span>Example coming soon</span></div>
-          </div>
-          <div class="showcase-body"><div class="showcase-title">Drone + Ground — Cinematic Personal</div><div class="showcase-meta"><span class="badge badge-violet">Cinematic</span><span>1:55</span><span>16:9</span></div></div>
-        </div>
+
+  <div class="project-zero-card">
+    <div class="pz-inner">
+      <!-- Thumbnail -->
+      <div class="pz-thumb">
+        <img src="assets/media/project-zero-thumb.jpg" alt="Project Zero — Morning Workout Edit timeline thumbnail" loading="lazy">
+        <div class="pz-thumb-overlay"></div>
+        <div class="pz-thumb-title">Project Zero &mdash; Morning Workout Edit</div>
       </div>
-      <div style="text-align:center;margin-top:48px">
-        <p style="color:var(--text-2);font-size:.9rem;margin-bottom:20px">Real examples will be added as early access creators complete their first projects.</p>
-        <a href="index.html#waitlist" class="btn btn-primary">Join the waitlist</a>
+
+      <div class="pz-body">
+        <h2>Project Zero &mdash; Morning Workout Edit</h2>
+        <p class="pz-desc">Project Zero was assembled manually from structured clip metadata &mdash; not by AI. It demonstrates the timeline data model, S3 storage system, and downloadable export. AI editing features are prototypes and were not used to produce this project.</p>
+
+        <!-- Metadata -->
+        <div class="pz-meta">
+          <span>9 clips</span> &nbsp;&middot;&nbsp;
+          <span>2:15 total</span> &nbsp;&middot;&nbsp;
+          <span>V1, A1, MUS, TXT tracks</span> &nbsp;&middot;&nbsp;
+          <span>30 fps</span> &nbsp;&middot;&nbsp;
+          <span>Structured manually</span>
+        </div>
+
+        <!-- Visual timeline from structured data -->
+        <div class="pz-timeline">
+          <h3>Timeline structure</h3>
+          <!-- V1 track: 5 clips across 135s, pxPerSec=4 → 540px total -->
+          <div class="tl-row">
+            <div class="tl-label">V1</div>
+            <div class="tl-track" style="width:540px">
+              <div class="tl-clip" style="left:0;width:120px;background:rgba(0,180,220,.25);border-color:rgba(0,180,220,.5);color:#7ee8fa">Warm-up</div>
+              <div class="tl-clip" style="left:120px;width:120px;background:rgba(0,180,220,.25);border-color:rgba(0,180,220,.5);color:#7ee8fa">Sprint 1</div>
+              <div class="tl-clip" style="left:240px;width:80px;background:rgba(0,140,180,.2);border-color:rgba(0,140,180,.4);color:#7ee8fa">Rest</div>
+              <div class="tl-clip" style="left:320px;width:120px;background:rgba(0,180,220,.25);border-color:rgba(0,180,220,.5);color:#7ee8fa">Sprint 2</div>
+              <div class="tl-clip" style="left:440px;width:100px;background:rgba(0,180,220,.25);border-color:rgba(0,180,220,.5);color:#7ee8fa">Finish</div>
+            </div>
+          </div>
+          <div class="tl-row">
+            <div class="tl-label">A1</div>
+            <div class="tl-track" style="width:540px">
+              <div class="tl-clip" style="left:0;width:540px;background:rgba(34,197,94,.15);border-color:rgba(34,197,94,.35);color:#86efac">Nat. audio</div>
+            </div>
+          </div>
+          <div class="tl-row">
+            <div class="tl-label">MUS</div>
+            <div class="tl-track" style="width:540px">
+              <div class="tl-clip" style="left:0;width:540px;background:rgba(139,92,246,.2);border-color:rgba(139,92,246,.4);color:#c4b5fd">Music</div>
+            </div>
+          </div>
+          <div class="tl-row">
+            <div class="tl-label">TXT</div>
+            <div class="tl-track" style="width:540px">
+              <div class="tl-clip" style="left:0;width:20px;background:rgba(245,158,11,.2);border-color:rgba(245,158,11,.4);color:#fcd34d">T</div>
+              <div class="tl-clip" style="left:508px;width:32px;background:rgba(245,158,11,.2);border-color:rgba(245,158,11,.4);color:#fcd34d">E</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Download button — real S3 asset -->
+        <a href="assets/media/project-zero.mp4" download="project-zero-morning-workout.mp4" class="pz-download">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download video (MP4, 188 KB)
+        </a>
+
+        <p class="pz-disclaimer">
+          This video was produced with ffmpeg from structured metadata &mdash; it is a demonstration of the export pipeline, not an AI-generated edit. The file contains title cards and clip labels corresponding to the timeline above.
+          Real creator projects will replace this placeholder as early access progresses.
+        </p>
       </div>
     </div>
-  </section>
+  </div>
 </main>
 <footer class="footer" role="contentinfo">
   <div class="wrap">

@@ -150,6 +150,47 @@ section{padding:96px 0}
 </style>
 </head>
 <body>
+<script>
+// Auth gate: block dashboard/app pages from unauthenticated visitors.
+// stromation_session is set to "1" when a user completes sign-in.
+// On this static site, sign-in is handled via the waitlist/early-access flow.
+(function(){
+  var session = localStorage.getItem('stromation_session');
+  if (!session) {
+    // Hide page body until we render the gate
+    document.documentElement.style.visibility = 'hidden';
+    window.addEventListener('DOMContentLoaded', function() {
+      document.documentElement.style.visibility = '';
+      var body = document.body;
+      // Overlay the entire page with a sign-in wall
+      var gate = document.createElement('div');
+      gate.id = 'auth-gate';
+      gate.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#0a0a0f;display:flex;align-items:center;justify-content:center;padding:24px';
+      gate.innerHTML = '<div style="max-width:400px;width:100%;text-align:center">'
+        + '<svg viewBox="0 0 40 40" fill="none" width="40" height="40" style="margin:0 auto 20px" aria-hidden="true"><circle cx="30" cy="8" r="5" stroke="#00d4ff" stroke-width="2"/><circle cx="20" cy="22" r="4" stroke="#00d4ff" stroke-width="2"/><circle cx="10" cy="34" r="5" stroke="#00d4ff" stroke-width="2"/><path d="M27 11 C24 14, 22 18, 22 20" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/><path d="M18 25 C16 28, 13 30, 13 32" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/></svg>'
+        + '<p style="font-family:monospace;font-size:.75rem;letter-spacing:.15em;color:#606078;text-transform:uppercase;margin-bottom:16px">Stromation</p>'
+        + '<h1 style="font-size:1.4rem;font-weight:700;color:#f0f0f5;margin-bottom:10px">Sign in to continue</h1>'
+        + '<p style="color:#a0a0b8;font-size:.875rem;line-height:1.6;margin-bottom:28px">Your projects are private to your account. Early access is required to use the dashboard.</p>'
+        + '<a href="index.html#waitlist" style="display:inline-block;background:#00d4ff;color:#0a0a0f;font-weight:700;font-size:.875rem;padding:12px 28px;border-radius:10px;text-decoration:none">Request early access</a>'
+        + '<p style="margin-top:16px;font-size:.75rem;color:#606078">Already have access? <a href="#" id="gate-signin" style="color:#00d4ff">Enter access code</a></p>'
+        + '</div>';
+      document.body.insertBefore(gate, document.body.firstChild);
+      // Simple access-code flow for early access members
+      document.getElementById('gate-signin').addEventListener('click', function(e){
+        e.preventDefault();
+        var code = prompt('Enter your early access code:');
+        if (code && code.trim().length > 3) {
+          localStorage.setItem('stromation_session', '1');
+          localStorage.setItem('stromation_access_code', code.trim());
+          gate.remove();
+        } else if (code !== null) {
+          alert('Invalid access code. Request access at stromation.com/#waitlist');
+        }
+      });
+    });
+  }
+})();
+</script>
 <a href="#main" class="skip">Skip to content</a>
 <nav class="nav" id="nav">
   <a href="index.html" class="nav-logo" aria-label="Stromation home">
