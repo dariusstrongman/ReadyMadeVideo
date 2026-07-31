@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import ResetPassword from './pages/ResetPassword'
 import Dashboard from './pages/Dashboard'
 import Project from './pages/Project'
+import Operator from './pages/Operator'
 
 const AuthCtx = createContext(null)
 export const useAuth = () => useContext(AuthCtx)
@@ -28,6 +29,7 @@ export default function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/" element={<Protected><Dashboard /></Protected>} />
         <Route path="/project/:id" element={<Protected><Project /></Protected>} />
+        <Route path="/operator" element={<Protected><Operator /></Protected>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthCtx.Provider>

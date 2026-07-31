@@ -1,4 +1,14 @@
-# Stromation Real Video Pipeline — v1 vertical slice
+# Stromation Real Video Pipeline
+
+## Current status — the honest version
+| Claim | Status |
+|---|---|
+| Authenticated upload → single-clip render flow | **Implemented and live-tested** |
+| Advanced analysis + autonomous-edit modules (planner/selector/critic/revision) | **Implemented, experimental** — tested on synthetic + demo footage only |
+| Advanced engine connected to the web application | **Implemented via the operator job system** (operator-triggered; the CUSTOMER app does not expose these controls yet) |
+| Professional quality on real fitness footage | **Unproven** — no real fitness footage has been processed |
+| Production deployment | **Not completed** — everything runs locally / on the feature branch |
+| Human quality control | **Still required** — the operator console exists precisely for this |
 
 Branch: `feature/real-video-pipeline`. This replaces the simulated app pages with a
 **real, working** upload → project data → structured timeline → FFmpeg render → download
@@ -81,6 +91,45 @@ critic score calibration; MediaPipe pose pending a Python-3.14 wheel.
 
 See `LICENSE-AUDIT.md` for the dependency ruling (Crayotter = reference only,
 OpenChatCut AGPL = not incorporated).
+
+## Hardening + operations layer (P1–P7, added 2026-08-01)
+- **DB boundary (migration 0005):** relational-ownership TRIGGERS (not just RLS) —
+  child rows must match their project's owner; render jobs must reference a
+  timeline of the same project/user; analysis/segments must reference an asset of
+  the same project. Proven by `scripts/test_db_integrity.py` (11 live checks,
+  service-role bypass attempts rejected).
+- **Project states:** draft/uploading/ready/analyzing/analysis_failed/draft_ready/
+  rendering/render_failed/completed + `status_reason` + `project_status_events`
+  transition log (DB trigger). `completed` only after a successful final render.
+- **Provider hygiene:** Gemini Files API uploads (semantic + critic) are deleted in
+  `finally`; failed deletion degrades to Google's ~48 h auto-expiry (documented);
+  no separate reconciliation job yet (accepted risk at this scale).
+- **Secrets:** all scripts read env only (`SECRETS_ENV_FILE` optional); startup
+  config validation (`app/config.py`); frontend secret guard
+  (`app/scripts/check-secrets.mjs`) blocks service-role material from src+bundle;
+  gitleaks in CI.
+- **Jobs (P4):** `pipeline_jobs` (kinds analysis/autoedit/revision/final_render) +
+  DB-backed worker thread — survives restarts, stale-recovery, idempotent via a
+  partial unique index, attempt caps, heartbeats, temp cleanup, per-stage
+  telemetry. Operator-only endpoints: analyze / generate-draft / revise /
+  render-final / jobs get-retry-cancel / timeline-ops / sign / coverage /
+  evaluation / segment-flag.
+- **Operator console (P3):** `/operator` route; access enforced server-side
+  (operators table) + operator RLS read policies; every action audited
+  (`operator_audit`). Covers projects, owner+brief, assets w/ private previews,
+  jobs, all analysis artifacts, segment search, blueprint + per-beat candidate
+  ranking with reasons, timeline comparison + constrained edits, approve-final,
+  coverage checks, evaluation recording.
+- **Evaluation (P5):** `draft_evaluations` — auto metrics filled by the draft job,
+  manual correction/rating fields recorded by the operator. No improvement claims
+  without these measurements.
+- **Telemetry (P6):** `stage_metrics` with configurable `pricing.json` estimates.
+- **Capture system (P7):** `CAPTURE-GUIDE.md` + rules-based coverage validator
+  reporting likely-missing categories (never inventing footage).
+- **Live proof:** `scripts/e2e_operator_flow.py` — 23/23 checks: upload → worker
+  analysis → coverage → autoedit draft (critic) → evaluation → operator metrics →
+  final render → completed-with-reason → audit trail → cost telemetry, plus
+  authorization negatives.
 
 ## What is still MOCKED / PLANNED / UNFINISHED
 - **AI analysis and auto-editing: not built.** The v1 renderer is title + single trim.
