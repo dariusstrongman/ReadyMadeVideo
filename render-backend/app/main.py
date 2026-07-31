@@ -27,6 +27,10 @@ from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ValidationError
 
+from . import config
+
+config.validate()          # fail fast with clear errors before anything imports supa
+
 from . import supa
 from .renderer import RenderError, render
 from .timeline import Timeline, plan_render
@@ -100,6 +104,290 @@ def _run_render_job(job_id: str, plan_dict: dict, asset_path: str) -> None:
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
+
+
+# ==================== operator API (P3/P4) ====================
+# Operator access is enforced SERVER-SIDE (operators table lookup with the
+# service role) — never by a hidden frontend route. Every action is audited.
+
+@app.on_event("startup")
+def _start_worker():
+    if os.environ.get("WORKER_ENABLED", "1") == "1":
+        from . import jobs
+        jobs.start_worker()
+
+
+def _auth_user(authorization: str) -> dict:
+    token = authorization.removeprefix("Bearer ").strip()
+    try:
+        return supa.verify_user(token)
+    except supa.AuthError as e:
+        raise HTTPException(401, str(e))
+
+
+def _require_operator(authorization: str) -> dict:
+    user = _auth_user(authorization)
+    rows = supa.db_select("operators", f"user_id=eq.{user['id']}")
+    if not rows:
+        raise HTTPException(403, "operator access required")
+    return user
+
+
+def _audit(operator: dict, action: str, project_id=None, details=None):
+    import httpx as _hx
+    _hx.post(f"{supa.SUPABASE_URL}/rest/v1/operator_audit",
+             headers={"apikey": supa.SERVICE_KEY,
+                      "Authorization": f"Bearer {supa.SERVICE_KEY}",
+                      "Content-Type": "application/json",
+                      "Prefer": "return=minimal"},
+             json={"operator_user_id": operator["id"], "action": action,
+                   "project_id": project_id, "details": details or {}},
+             timeout=15)
+
+
+def _get_project(project_id: str) -> dict:
+    rows = supa.db_select("projects", f"id=eq.{project_id}")
+    if not rows:
+        raise HTTPException(404, "project not found")
+    return rows[0]
+
+
+class JobParams(BaseModel):
+    params: dict = {}
+
+
+def _enqueue(kind: str, project_id: str, body: JobParams, authorization: str):
+    from . import jobs
+    op = _require_operator(authorization)
+    project = _get_project(project_id)
+    job = jobs.enqueue_job(project_id, project["user_id"], kind, body.params)
+    _audit(op, f"enqueue_{kind}", project_id, {"job_id": job.get("id"),
+                                               "params": body.params})
+    return job
+
+
+@app.post("/projects/{project_id}/analyze")
+def op_analyze(project_id: str, body: JobParams = JobParams(),
+               authorization: str = Header(default="")):
+    return _enqueue("analysis", project_id, body, authorization)
+
+
+@app.post("/projects/{project_id}/generate-draft")
+def op_generate_draft(project_id: str, body: JobParams = JobParams(),
+                      authorization: str = Header(default="")):
+    return _enqueue("autoedit", project_id, body, authorization)
+
+
+@app.post("/projects/{project_id}/revise")
+def op_revise(project_id: str, body: JobParams = JobParams(),
+              authorization: str = Header(default="")):
+    return _enqueue("revision", project_id, body, authorization)
+
+
+@app.post("/projects/{project_id}/render-final")
+def op_render_final(project_id: str, body: JobParams = JobParams(),
+                    authorization: str = Header(default="")):
+    return _enqueue("final_render", project_id, body, authorization)
+
+
+@app.get("/jobs/{job_id}")
+def op_get_job(job_id: str, authorization: str = Header(default="")):
+    user = _auth_user(authorization)
+    rows = supa.db_select("pipeline_jobs", f"id=eq.{job_id}")
+    if not rows:
+        raise HTTPException(404, "job not found")
+    job = rows[0]
+    if job["user_id"] != user["id"]:
+        _require_operator(authorization)   # owners or operators only
+    return job
+
+
+@app.post("/jobs/{job_id}/retry")
+def op_retry_job(job_id: str, authorization: str = Header(default="")):
+    from . import jobs
+    op = _require_operator(authorization)
+    rows = supa.db_select("pipeline_jobs", f"id=eq.{job_id}")
+    if not rows:
+        raise HTTPException(404, "job not found")
+    job = rows[0]
+    if job["status"] != "failed":
+        raise HTTPException(409, f"job is {job['status']}, only failed jobs retry")
+    if job["attempt_count"] >= job["max_attempts"]:
+        raise HTTPException(409, "max attempts exhausted")
+    jobs.update_job(job_id, {"status": "queued", "error_message": None})
+    _audit(op, "retry_job", job["project_id"], {"job_id": job_id})
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.post("/jobs/{job_id}/cancel")
+def op_cancel_job(job_id: str, authorization: str = Header(default="")):
+    from . import jobs
+    op = _require_operator(authorization)
+    rows = supa.db_select("pipeline_jobs", f"id=eq.{job_id}")
+    if not rows:
+        raise HTTPException(404, "job not found")
+    job = rows[0]
+    if job["status"] not in ("queued", "processing"):
+        raise HTTPException(409, f"job is {job['status']}")
+    jobs.update_job(job_id, {"status": "cancelled", "completed_at":
+                             jobs._now()})
+    _audit(op, "cancel_job", job["project_id"], {"job_id": job_id})
+    return {"job_id": job_id, "status": "cancelled"}
+
+
+class TimelineOpsBody(BaseModel):
+    base_timeline_id: str
+    operations: list[dict]
+    protected_ranges: list[list[float]] = []
+
+
+@app.post("/projects/{project_id}/timeline-ops")
+def op_timeline_ops(project_id: str, body: TimelineOpsBody,
+                    authorization: str = Header(default="")):
+    """Operator edits the timeline through CONSTRAINED operations only."""
+    import httpx as _hx
+
+    from .timeline_ops import OpError, apply_operations, parse_operations
+    op = _require_operator(authorization)
+    project = _get_project(project_id)
+    rows = supa.db_select("timelines", f"id=eq.{body.base_timeline_id}")
+    if not rows or rows[0]["project_id"] != project_id:
+        raise HTTPException(404, "timeline not found in this project")
+    tl = rows[0]["timeline_json"]
+    if isinstance(tl, str):
+        tl = json.loads(tl)
+    try:
+        ops = parse_operations(body.operations)
+        result = apply_operations(tl, ops, actor="user",
+                                  protected=[tuple(r) for r in
+                                             body.protected_ranges if len(r) == 2])
+    except OpError as e:
+        raise HTTPException(422, str(e))
+    r = _hx.post(f"{supa.SUPABASE_URL}/rest/v1/timelines",
+                 headers={"apikey": supa.SERVICE_KEY,
+                          "Authorization": f"Bearer {supa.SERVICE_KEY}",
+                          "Content-Type": "application/json",
+                          "Prefer": "return=representation"},
+                 json={"project_id": project_id, "user_id": project["user_id"],
+                       "version": rows[0]["version"] + 1,
+                       "timeline_json": result.timeline}, timeout=30)
+    r.raise_for_status()
+    new_tl = r.json()[0]
+    _audit(op, "timeline_ops", project_id,
+           {"base": body.base_timeline_id, "new": new_tl["id"],
+            "applied": result.applied, "rejected": result.rejected})
+    return {"timeline_id": new_tl["id"], "version": new_tl["version"],
+            "applied": result.applied, "rejected": result.rejected}
+
+
+class SegmentFlagBody(BaseModel):
+    unusable: bool = True
+    reason: str = ""
+
+
+@app.post("/segments/{segment_id}/flag")
+def op_flag_segment(segment_id: str, body: SegmentFlagBody,
+                    authorization: str = Header(default="")):
+    import httpx as _hx
+    op = _require_operator(authorization)
+    rows = supa.db_select("segments", f"id=eq.{segment_id}")
+    if not rows:
+        raise HTTPException(404, "segment not found")
+    seg = rows[0]
+    data = seg["data"]
+    problems = set(data.get("problems", []))
+    if body.unusable:
+        problems.add("operator_unusable")
+    else:
+        problems.discard("operator_unusable")
+    data["problems"] = sorted(problems)
+    _hx.patch(f"{supa.SUPABASE_URL}/rest/v1/segments?id=eq.{segment_id}",
+              headers={"apikey": supa.SERVICE_KEY,
+                       "Authorization": f"Bearer {supa.SERVICE_KEY}",
+                       "Content-Type": "application/json",
+                       "Prefer": "return=minimal"},
+              json={"data": data}, timeout=30).raise_for_status()
+    _audit(op, "flag_segment", seg["project_id"],
+           {"segment": segment_id, "unusable": body.unusable,
+            "reason": body.reason})
+    return {"segment_id": segment_id, "problems": data["problems"]}
+
+
+@app.get("/projects/{project_id}/coverage")
+def op_coverage(project_id: str, authorization: str = Header(default="")):
+    from .pipeline.coverage import validate_coverage
+    from .pipeline.schemas import Segment as Seg
+    _require_operator(authorization)
+    _get_project(project_id)
+    rows = supa.db_select("segments", f"project_id=eq.{project_id}")
+    segs = [Seg(**r["data"]) for r in rows]
+    return validate_coverage(segs).model_dump()
+
+
+class SignBody(BaseModel):
+    bucket: str
+    path: str
+    expires_in: int = 900
+
+
+@app.post("/projects/{project_id}/sign")
+def op_sign_url(project_id: str, body: SignBody,
+                authorization: str = Header(default="")):
+    """Temporary private preview URLs for operators. Storage RLS scopes users to
+    their own paths, so operator previews must be signed server-side — after
+    verifying the object belongs to THIS project."""
+    import httpx as _hx
+    op = _require_operator(authorization)
+    project = _get_project(project_id)
+    if body.bucket not in ("raw-footage", "exports"):
+        raise HTTPException(422, "unknown bucket")
+    prefix = f"users/{project['user_id']}/projects/{project_id}/"
+    if not body.path.startswith(prefix):
+        raise HTTPException(403, "path does not belong to this project")
+    r = _hx.post(f"{supa.SUPABASE_URL}/storage/v1/object/sign/{body.bucket}/{body.path}",
+                 headers={"apikey": supa.SERVICE_KEY,
+                          "Authorization": f"Bearer {supa.SERVICE_KEY}",
+                          "Content-Type": "application/json"},
+                 json={"expiresIn": max(60, min(3600, body.expires_in))},
+                 timeout=30)
+    if r.status_code != 200:
+        raise HTTPException(404, f"could not sign: {r.text[:200]}")
+    _audit(op, "sign_preview", project_id, {"bucket": body.bucket,
+                                            "path": body.path})
+    return {"url": f"{supa.SUPABASE_URL}/storage/v1{r.json()['signedURL']}"}
+
+
+class EvalPatch(BaseModel):
+    fields: dict
+
+
+@app.post("/projects/{project_id}/evaluation")
+def op_patch_evaluation(project_id: str, body: EvalPatch,
+                        authorization: str = Header(default="")):
+    """Operator records manual metrics: correction minutes, ratings, etc."""
+    import httpx as _hx
+    op = _require_operator(authorization)
+    _get_project(project_id)
+    ALLOWED = {"clips_manually_replaced", "clips_manually_trimmed",
+               "captions_manually_changed", "music_adjustments",
+               "human_correction_minutes", "first_draft_rating", "final_rating",
+               "user_satisfaction", "user_would_pay", "user_would_return",
+               "notes"}
+    patch = {k: v for k, v in body.fields.items() if k in ALLOWED}
+    if not patch:
+        raise HTTPException(422, f"no allowed fields; allowed: {sorted(ALLOWED)}")
+    rows = supa.db_select("draft_evaluations",
+                          f"project_id=eq.{project_id}&order=created_at.desc&limit=1")
+    if not rows:
+        raise HTTPException(404, "no evaluation row yet — run generate-draft first")
+    _hx.patch(f"{supa.SUPABASE_URL}/rest/v1/draft_evaluations?id=eq.{rows[0]['id']}",
+              headers={"apikey": supa.SERVICE_KEY,
+                       "Authorization": f"Bearer {supa.SERVICE_KEY}",
+                       "Content-Type": "application/json",
+                       "Prefer": "return=minimal"},
+              json=patch, timeout=30).raise_for_status()
+    _audit(op, "record_evaluation", project_id, patch)
+    return {"updated": sorted(patch)}
 
 
 @app.post("/render")
