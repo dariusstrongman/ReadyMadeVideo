@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pricing — Stromation</title>
-<meta name="description" content="Early access pricing. No public plans yet.">
-<link rel="canonical" href="https://www.stromation.com/pricing.html">
+<title>New Project — Stromation</title>
+<meta name="description" content="Start a new video project.">
+<link rel="canonical" href="https://www.stromation.com/new-project.html">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <meta name="theme-color" content="#0a0a0f">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://www.stromation.com/pricing.html">
-<meta property="og:title" content="Pricing — Stromation">
-<meta property="og:description" content="Early access pricing. No public plans yet.">
+<meta property="og:url" content="https://www.stromation.com/new-project.html">
+<meta property="og:title" content="New Project — Stromation">
+<meta property="og:description" content="Start a new video project.">
 <meta property="og:image" content="https://www.stromation.com/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -105,16 +105,27 @@ section{padding:96px 0}
 .delay-1{animation-delay:.1s}.delay-2{animation-delay:.25s}
 </style>
 <style>
-.pricing-hero{padding:140px 0 80px;text-align:center;background:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(0,212,255,.06),transparent)}
-.pricing-notice{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius-lg);padding:20px 24px;text-align:center;max-width:640px;margin:0 auto 64px;font-size:.9rem;color:var(--amber)}
-.pricing-notice strong{color:var(--amber)}
-.pricing-faq{max-width:720px;margin:0 auto;padding:0 24px}
-.faq-item{border-bottom:1px solid var(--border);padding:20px 0}
-.faq-item:first-child{border-top:1px solid var(--border)}
-.faq-q{font-size:.95rem;font-weight:700;color:var(--text);cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:16px;list-style:none}
-.faq-q::after{content:'+';color:var(--cyan);font-size:1.2rem;flex-shrink:0}
-details[open] .faq-q::after{content:'&minus;'}
-.faq-a{color:var(--text-2);font-size:.875rem;line-height:1.7;margin-top:12px;max-width:64ch}
+.project-setup{padding-top:96px;padding-bottom:80px;min-height:100vh}
+.setup-container{max-width:760px;margin:0 auto;padding:0 24px}
+.setup-header{margin-bottom:48px}
+.setup-header h1{font-size:clamp(1.6rem,3.5vw,2.4rem);font-weight:800;letter-spacing:-.03em;color:var(--text)}
+.setup-header p{color:var(--text-2);margin-top:10px;font-size:1rem}
+.setup-steps{display:flex;align-items:center;gap:0;margin-bottom:48px;overflow-x:auto;padding-bottom:4px}
+.setup-step-item{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.setup-step-item:not(:last-child)::after{content:'';display:block;width:32px;height:1px;background:var(--border-2);margin:0 4px}
+.setup-step-num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:.72rem;font-weight:700;flex-shrink:0}
+.setup-step-num.active{background:var(--cyan);color:var(--text-inv)}
+.setup-step-num.done{background:rgba(34,197,94,.2);color:var(--green);border:1px solid rgba(34,197,94,.3)}
+.setup-step-num.pending{background:var(--bg-2);color:var(--text-3);border:1px solid var(--border)}
+.setup-step-label{font-size:.78rem;font-weight:600;color:var(--text-3)}
+.setup-step-item.active .setup-step-label{color:var(--text)}
+.form-section{background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius-xl);padding:32px;margin-bottom:24px}
+.form-section h2{font-size:1.1rem;font-weight:700;color:var(--text);margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:600px){.form-grid{grid-template-columns:1fr}}
+.form-actions{display:flex;justify-content:space-between;align-items:center;margin-top:32px;flex-wrap:wrap;gap:12px}
+.prompt-example{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-top:10px;font-size:.82rem;color:var(--text-3);font-style:italic;line-height:1.5}
+.prompt-example strong{color:var(--text-2);font-style:normal}
 </style>
 </head>
 <body>
@@ -141,48 +152,139 @@ details[open] .faq-q::after{content:'&minus;'}
   </div>
   <button class="nav-menu-btn" id="menu-btn" aria-label="Toggle navigation" aria-expanded="false">&#9776;</button>
 </nav>
-<main id="main">
-  <section class="pricing-hero">
-    <div class="wrap-sm">
-      <div class="badge badge-cyan" style="margin-bottom:20px">Early access</div>
-      <h1 class="section-title">Pricing is not public yet</h1>
-      <p class="section-sub" style="margin:16px auto 0;text-align:center">Stromation is currently in a controlled early access phase. We are working with a small group of creators to finalize the product before announcing public pricing.</p>
-      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:32px">
-        <a href="index.html#waitlist" class="btn btn-primary btn-lg">Join the waitlist</a>
-        <a href="index.html#how-it-works" class="btn btn-ghost btn-lg">See how it works</a>
-      </div>
+<main class="project-setup" id="main">
+  <div class="setup-container">
+    <div class="setup-header">
+      <p class="section-label">New project</p>
+      <h1>Tell Stromation what you want to create</h1>
+      <p>Fill in the details below. The more context you provide, the better the first edit will be.</p>
     </div>
-  </section>
-  <section style="padding:0 0 96px">
-    <div class="wrap">
-      <div class="pricing-notice">
-        <strong>&#9888; Prototype notice:</strong> Stromation is in active development. The processing pipeline, AI editing, and export features are being built. Early access members will receive founding pricing when plans are announced.
-      </div>
-      <div class="text-center" style="margin-bottom:48px">
-        <p class="section-label">What to expect</p>
-        <h2 class="section-title">What we&rsquo;re building toward</h2>
-        <p class="section-sub" style="margin:16px auto 0">Pricing will be based on the value Stromation delivers: time saved, footage processed, and exports produced. We plan to offer a usage-based model with clear, predictable costs.</p>
-      </div>
-      <div class="grid grid-3">
-        <div class="card"><div class="badge badge-cyan" style="margin-bottom:16px">Planned</div><h3 style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px">Starter</h3><p style="color:var(--text-2);font-size:.875rem">For individual creators. Limited projects per month, standard resolution exports, basic AI editing.</p></div>
-        <div class="card" style="border-color:rgba(0,212,255,.25);background:linear-gradient(135deg,rgba(0,212,255,.04),transparent)"><div class="badge badge-cyan" style="margin-bottom:16px">Planned</div><h3 style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px">Creator</h3><p style="color:var(--text-2);font-size:.875rem">For active creators. More projects, 4K exports, advanced AI editing, version history, and priority processing.</p></div>
-        <div class="card"><div class="badge badge-cyan" style="margin-bottom:16px">Planned</div><h3 style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px">Studio</h3><p style="color:var(--text-2);font-size:.875rem">For teams and agencies. Unlimited projects, collaboration, review links, custom branding, and dedicated support.</p></div>
-      </div>
+    <div class="setup-steps" aria-label="Setup progress">
+      <div class="setup-step-item active"><div class="setup-step-num active">1</div><span class="setup-step-label active">Brief</span></div>
+      <div class="setup-step-item"><div class="setup-step-num pending">2</div><span class="setup-step-label">Upload</span></div>
+      <div class="setup-step-item"><div class="setup-step-num pending">3</div><span class="setup-step-label">Processing</span></div>
+      <div class="setup-step-item"><div class="setup-step-num pending">4</div><span class="setup-step-label">Review</span></div>
     </div>
-  </section>
-  <section style="background:var(--bg-1);padding:80px 0">
-    <div class="pricing-faq">
-      <div class="text-center" style="margin-bottom:48px">
-        <p class="section-label">FAQ</p>
-        <h2 class="section-title">Common questions</h2>
+    <form id="project-form" novalidate>
+      <div class="form-section">
+        <h2>Project basics</h2>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label" for="project-name">Project name <span style="color:var(--red)">*</span></label>
+            <input class="form-input" id="project-name" type="text" placeholder="e.g. Trail Run — June 2026" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="category">Video category</label>
+            <select class="form-select" id="category">
+              <option value="">Select a category</option>
+              <option>Fitness / Workout</option>
+              <option>Running / Trail</option>
+              <option>Lifestyle</option>
+              <option>Transformation</option>
+              <option>Cinematic personal</option>
+              <option>Vlog</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="platform">Intended platform</label>
+            <select class="form-select" id="platform">
+              <option value="">Select a platform</option>
+              <option>YouTube</option>
+              <option>Instagram Reels</option>
+              <option>TikTok</option>
+              <option>YouTube Shorts</option>
+              <option>Personal / Archive</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="aspect">Aspect ratio</label>
+            <select class="form-select" id="aspect">
+              <option>16:9 (Landscape)</option>
+              <option>9:16 (Vertical)</option>
+              <option>1:1 (Square)</option>
+              <option>4:5 (Portrait)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="duration">Target duration</label>
+            <select class="form-select" id="duration">
+              <option>Under 60 seconds</option>
+              <option>1&ndash;3 minutes</option>
+              <option>3&ndash;7 minutes</option>
+              <option>7&ndash;15 minutes</option>
+              <option>15+ minutes</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="pace">Editing pace</label>
+            <select class="form-select" id="pace">
+              <option>Fast / High energy</option>
+              <option>Medium / Balanced</option>
+              <option>Slow / Cinematic</option>
+              <option>Mixed (fast open, slow close)</option>
+            </select>
+          </div>
+        </div>
       </div>
-      <details class="faq-item"><summary class="faq-q">When will pricing be announced?</summary><p class="faq-a">We will announce pricing when the core product is ready for public launch. Early access members will be notified first and will receive founding pricing.</p></details>
-      <details class="faq-item"><summary class="faq-q">Will there be a free trial?</summary><p class="faq-a">We plan to offer a way to try Stromation before committing to a paid plan. Details will be announced with the public pricing release.</p></details>
-      <details class="faq-item"><summary class="faq-q">What happens to my footage if I cancel?</summary><p class="faq-a">You will have the ability to export your projects and delete all associated footage before canceling. We will not retain your files after deletion is confirmed.</p></details>
-      <details class="faq-item"><summary class="faq-q">Is there a limit on footage file size?</summary><p class="faq-a">We are designing the upload system to handle large raw video files, including 4K drone and camera footage. Specific limits will be defined per plan tier.</p></details>
-      <details class="faq-item"><summary class="faq-q">Will Stromation work for professional video editors?</summary><p class="faq-a">Stromation is designed to accelerate the editing workflow, not replace professional editors. The timeline and AI tools are built to complement existing skills and speed up the most time-consuming parts of the process.</p></details>
-    </div>
-  </section>
+      <div class="form-section">
+        <h2>Style and direction</h2>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label" for="tone">Tone</label>
+            <select class="form-select" id="tone">
+              <option>Serious / Cinematic</option>
+              <option>Motivational / Energetic</option>
+              <option>Calm / Reflective</option>
+              <option>Fun / Casual</option>
+              <option>Raw / Authentic</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="music">Music direction</label>
+            <select class="form-select" id="music">
+              <option>Cinematic / Orchestral</option>
+              <option>Electronic / Upbeat</option>
+              <option>Hip-hop / Trap</option>
+              <option>Ambient / Minimal</option>
+              <option>No music (natural sound only)</option>
+              <option>I will provide music</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="captions">Captions</label>
+            <select class="form-select" id="captions">
+              <option>No captions</option>
+              <option>Burned-in captions</option>
+              <option>Separate caption file</option>
+              <option>Both</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="natural-sound">Natural sound</label>
+            <select class="form-select" id="natural-sound">
+              <option>Use natural sound where strong</option>
+              <option>Emphasize natural sound throughout</option>
+              <option>Minimize natural sound</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:20px">
+          <label class="form-label" for="reference">Reference video links (optional)</label>
+          <input class="form-input" id="reference" type="text" placeholder="YouTube or Vimeo URLs, comma-separated">
+        </div>
+        <div class="form-group" style="margin-top:20px">
+          <label class="form-label" for="brief-text">Describe the video you want <span style="color:var(--red)">*</span></label>
+          <textarea class="form-textarea" id="brief-text" rows="5" placeholder="Describe the result you want in as much detail as you like..." required style="min-height:120px"></textarea>
+          <div class="prompt-example"><strong>Example:</strong> &ldquo;Create a serious cinematic outdoor fitness video. Start with high energy, slow down during the reflection, use natural breathing and footstep sounds, and avoid corny motivational text.&rdquo;</div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <a href="dashboard.html" class="btn btn-ghost">Cancel</a>
+        <button type="submit" class="btn btn-primary btn-lg">Continue to upload &rarr;</button>
+      </div>
+    </form>
+  </div>
 </main>
 <footer class="footer" role="contentinfo">
   <div class="wrap">
@@ -206,6 +308,16 @@ const mb=document.getElementById('menu-btn'),nl=document.getElementById('nav-lin
 if(mb&&nl){mb.addEventListener('click',()=>{const o=nl.classList.toggle('open');mb.setAttribute('aria-expanded',o)});nl.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>{nl.classList.remove('open');mb.setAttribute('aria-expanded','false')}));}
 const nav=document.getElementById('nav');
 if(nav)window.addEventListener('scroll',()=>{nav.style.background=window.scrollY>20?'rgba(10,10,15,0.97)':'rgba(10,10,15,0.85)';},{passive:true});
+</script>
+<script>
+document.getElementById('project-form').addEventListener('submit',(e)=>{
+  e.preventDefault();
+  const name=document.getElementById('project-name').value.trim();
+  const brief=document.getElementById('brief-text').value.trim();
+  if(!name||!brief){alert('Please fill in the project name and description.');return;}
+  // In production: POST to API, then redirect to upload page
+  window.location.href='upload.html?project='+encodeURIComponent(name);
+});
 </script>
 </body>
 </html>

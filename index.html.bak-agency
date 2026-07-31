@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stromation | AI Lead Response for North Texas Service Businesses</title>
+<meta name="description" content="Stromation installs AI-powered lead-response systems for North Texas service companies. Every missed call answered, every lead followed up. Book a 20-minute Lead Leak Audit.">
+<link rel="canonical" href="https://www.stromation.com/">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<meta name="theme-color" content="#0B132B">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://www.stromation.com/">
+<meta property="og:title" content="Stromation | AI Lead Response for North Texas Service Businesses">
+<meta property="og:description" content="Stromation installs AI-powered lead-response systems for North Texas service companies. Every missed call answered, every lead followed up. Book a 20-minute Lead Leak Audit.">
+<meta property="og:image" content="https://www.stromation.com/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"ProfessionalService","name":"Stromation","url":"https://www.stromation.com/","description":"Stromation installs AI-powered lead-response and business-automation systems for North Texas service companies.","email":"contact@stromation.com","founder":{"@type":"Person","name":"Darius Stroman"},"areaServed":["Aubrey TX","Little Elm TX","Oak Point TX","Cross Roads TX","Denton TX","Prosper TX","Frisco TX","McKinney TX","The Colony TX","Lewisville TX","Carrollton TX","Plano TX","Dallas-Fort Worth"],"knowsAbout":["business automation","missed call text back","lead response","CRM integration","n8n workflow automation"]}
+</script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-B6Z6XV02RT"></script>
+<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-B6Z6XV02RT');</script>
+<style>
+
+:root{
+  --navy:#0B132B; --navy-2:#152142; --blue:#1C5D99; --blue-d:#164a7b; --cyan:#16C2D5;
+  --amber:#F59E0B; --surface:#F4F7FB; --white:#ffffff; --text:#1F2937; --text-dim:#4B5563;
+  --text-faint:#6B7280; --line:#E2E8F0; --line-2:#CBD5E1; --ok:#0E9F6E;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+body{background:var(--white);color:var(--text);font-family:var(--sans);line-height:1.65;-webkit-font-smoothing:antialiased}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+:focus-visible{outline:3px solid var(--blue);outline-offset:2px;border-radius:3px}
+img,svg{max-width:100%}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+.skip{position:absolute;left:-9999px;top:0;z-index:200;background:var(--amber);color:var(--navy);padding:10px 16px;font-weight:700;border-radius:0 0 8px 0}
+.skip:focus{left:0}
+/* header */
+header.top{background:var(--navy);position:sticky;top:0;z-index:60;border-bottom:3px solid var(--cyan)}
+header.top .row{max-width:1080px;margin:0 auto;padding:0 24px;display:flex;align-items:center;gap:12px;min-height:64px}
+.bmark{width:20px;height:24px;flex:0 0 auto}
+.mark{font-family:var(--mono);font-weight:700;letter-spacing:0.2em;font-size:0.86rem;color:#fff}
+.mark .dot{color:var(--cyan)}
+header.top nav.main{margin-left:auto;display:flex;gap:22px;align-items:center;font-size:0.86rem}
+header.top nav.main a{color:#C7D2E1;font-weight:500}
+header.top nav.main a:hover{color:#fff;text-decoration:none}
+header.top nav.main a[aria-current="page"]{color:var(--cyan)}
+header.top nav.main a.cta{background:var(--cyan);color:var(--navy);font-weight:700;padding:9px 16px;border-radius:8px}
+header.top nav.main a.cta:hover{background:#3fd3e4;color:var(--navy)}
+/* mobile nav */
+.menu-btn{display:none;margin-left:auto;background:none;border:1px solid #33415C;border-radius:8px;color:#fff;font-size:1.2rem;line-height:1;padding:8px 12px;cursor:pointer}
+@media(max-width:880px){
+  header.top nav.main{display:none;position:absolute;top:100%;left:0;right:0;background:var(--navy-2);flex-direction:column;align-items:stretch;gap:0;padding:10px 0;border-bottom:3px solid var(--cyan)}
+  header.top nav.main a{padding:13px 24px}
+  header.top nav.main a.cta{margin:10px 24px 6px;text-align:center}
+  header.top.open nav.main{display:flex}
+  .menu-btn{display:block}
+}
+/* hero */
+.hero{background:linear-gradient(180deg,var(--navy) 0%,var(--navy-2) 100%);color:#fff;padding:72px 0 64px}
+.eyebrow{font-family:var(--mono);font-size:0.74rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--cyan);font-weight:600}
+.hero h1{font-size:clamp(2rem,5vw,3.1rem);font-weight:800;letter-spacing:-0.02em;line-height:1.12;margin-top:16px;max-width:19ch;text-wrap:balance}
+.hero .lead{color:#C7D2E1;font-size:1.13rem;margin-top:20px;max-width:58ch}
+.hero .lead b{color:#fff;font-weight:600}
+.cta-row{display:flex;gap:14px;flex-wrap:wrap;margin-top:30px}
+.btn{display:inline-block;font-weight:700;font-size:0.98rem;padding:14px 26px;border-radius:10px;border:0;cursor:pointer;font-family:var(--sans)}
+.btn.primary{background:var(--cyan);color:var(--navy)}
+.btn.primary:hover{background:#3fd3e4;text-decoration:none}
+.btn.ghost{background:transparent;color:#fff;border:1.5px solid #4A5B7C}
+.btn.ghost:hover{border-color:var(--cyan);color:var(--cyan);text-decoration:none}
+.btn.blue{background:var(--blue);color:#fff}
+.btn.blue:hover{background:var(--blue-d);text-decoration:none}
+.hero .fine{font-family:var(--mono);font-size:0.72rem;color:#8FA3BF;margin-top:18px}
+/* sections */
+section.blk{padding:72px 0}
+section.blk.alt{background:var(--surface)}
+.nodetag{font-family:var(--mono);font-size:0.72rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--blue);font-weight:700}
+h2.sh{font-size:clamp(1.5rem,3.4vw,2.15rem);font-weight:800;letter-spacing:-0.02em;color:var(--navy);margin-top:8px;text-wrap:balance}
+.snote{color:var(--text-dim);font-size:1.04rem;margin-top:12px;max-width:64ch}
+/* cards */
+.grid{display:grid;gap:18px;margin-top:30px}
+.grid.c2{grid-template-columns:repeat(2,1fr)}
+.grid.c3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:820px){.grid.c2,.grid.c3{grid-template-columns:1fr}}
+.card{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:26px;box-shadow:0 1px 3px rgba(11,19,43,0.06)}
+.alt .card{box-shadow:0 1px 3px rgba(11,19,43,0.05)}
+.card h3{font-size:1.12rem;font-weight:700;color:var(--navy);letter-spacing:-0.01em}
+.card p{color:var(--text-dim);font-size:0.95rem;margin-top:9px}
+.card .ic{font-family:var(--mono);font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--cyan);font-weight:700;margin-bottom:10px}
+/* flow diagram */
+.flow{display:flex;align-items:stretch;gap:10px;flex-wrap:wrap;margin-top:30px}
+.fnode{flex:1;min-width:130px;background:var(--white);border:1.5px solid var(--line-2);border-radius:12px;padding:16px 14px;text-align:center}
+.fnode .fk{display:block;font-family:var(--mono);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--blue);font-weight:700}
+.fnode .fn{display:block;font-weight:600;font-size:0.92rem;color:var(--navy);margin-top:7px}
+.fnode.hot{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan)}
+.farr{display:flex;align-items:center;color:var(--text-faint);font-size:1.1rem}
+@media(max-width:760px){.flow{flex-direction:column}.farr{transform:rotate(90deg);justify-content:center}.fnode{min-width:0}}
+/* badges */
+.badge{display:inline-block;font-family:var(--mono);font-size:0.66rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;padding:5px 10px;border-radius:6px}
+.badge.demo{background:#FEF3C7;color:#92400E;border:1px solid #FCD34D}
+.badge.pilot{background:#DBEAFE;color:#1E40AF;border:1px solid #93C5FD}
+.badge.verified{background:#D1FAE5;color:#065F46;border:1px solid #6EE7B7}
+.badge.soon{background:#EEF2F7;color:#4B5563;border:1px solid var(--line-2)}
+/* notice */
+.notice{border:1px solid #FCD34D;background:#FFFBEB;border-radius:12px;padding:16px 20px;margin-top:24px;color:#92400E;font-size:0.92rem}
+.notice b{color:#78350F}
+/* steps */
+.steps{counter-reset:s;display:grid;gap:14px;margin-top:30px}
+.step{background:var(--white);border:1px solid var(--line);border-radius:12px;padding:20px 22px;display:flex;gap:18px;align-items:flex-start}
+.step .sn{flex:0 0 auto;width:38px;height:38px;border-radius:50%;background:var(--navy);color:var(--cyan);font-family:var(--mono);font-weight:700;display:flex;align-items:center;justify-content:center;font-size:0.95rem}
+.step h4{font-size:1.04rem;font-weight:700;color:var(--navy)}
+.step p{color:var(--text-dim);font-size:0.93rem;margin-top:6px}
+/* tables */
+table.tbl{width:100%;border-collapse:collapse;margin-top:26px;font-size:0.94rem;background:var(--white);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.tbl th{background:var(--navy);color:#fff;text-align:left;padding:12px 16px;font-weight:600;font-size:0.88rem}
+.tbl td{padding:12px 16px;border-top:1px solid var(--line);color:var(--text-dim);vertical-align:top}
+.tbl td b{color:var(--navy)}
+.tblwrap{overflow-x:auto;margin-top:26px}
+.tblwrap table.tbl{margin-top:0;min-width:640px}
+/* faq */
+.faq{margin-top:26px;border-top:1px solid var(--line)}
+.faq details{border-bottom:1px solid var(--line);padding:18px 0}
+.faq summary{cursor:pointer;font-weight:600;font-size:1.02rem;color:var(--navy);list-style:none;display:flex;justify-content:space-between;gap:16px}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:'+';color:var(--blue);font-weight:700}
+.faq details[open] summary::after{content:'\2013'}
+.faq .a{color:var(--text-dim);font-size:0.95rem;margin-top:10px;line-height:1.6;max-width:70ch}
+/* forms */
+form.lead label{display:block;font-weight:600;font-size:0.9rem;color:var(--navy);margin-top:18px}
+form.lead label .req{color:var(--amber)}
+form.lead input[type=text],form.lead input[type=email],form.lead input[type=tel],form.lead select,form.lead textarea{
+  width:100%;margin-top:7px;padding:12px 14px;border:1.5px solid var(--line-2);border-radius:9px;font-family:var(--sans);font-size:0.96rem;color:var(--text);background:#fff}
+form.lead input:focus,form.lead select:focus,form.lead textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(28,93,153,0.15)}
+form.lead .err{color:#B91C1C;font-size:0.84rem;margin-top:5px;display:none}
+form.lead .invalid input,form.lead .invalid select,form.lead .invalid textarea{border-color:#DC2626}
+form.lead .invalid .err{display:block}
+form.lead .consent{display:flex;gap:10px;align-items:flex-start;margin-top:18px;font-size:0.88rem;color:var(--text-dim)}
+form.lead .consent input{margin-top:4px;width:16px;height:16px}
+/* final cta band */
+.finband{background:var(--navy);color:#fff;border-radius:18px;padding:clamp(32px,5vw,52px);text-align:center;margin:0 0 8px}
+.finband h2{font-size:clamp(1.5rem,3.6vw,2.2rem);font-weight:800;letter-spacing:-0.02em;text-wrap:balance}
+.finband p{color:#C7D2E1;margin:14px auto 0;max-width:52ch}
+.finband .btn{margin-top:26px}
+.finband .fine{font-family:var(--mono);font-size:0.7rem;color:#8FA3BF;margin-top:16px}
+/* footer */
+footer.ft{background:var(--navy);color:#8FA3BF;margin-top:72px;padding:44px 0 56px;font-size:0.86rem}
+footer.ft .cols{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:28px}
+@media(max-width:820px){footer.ft .cols{grid-template-columns:1fr 1fr}}
+footer.ft h5{color:#fff;font-size:0.8rem;letter-spacing:0.08em;text-transform:uppercase;font-family:var(--mono);margin-bottom:12px}
+footer.ft a{color:#C7D2E1;display:block;margin-top:8px}
+footer.ft a:hover{color:var(--cyan)}
+footer.ft .mark{font-size:0.8rem}
+footer.ft .base{border-top:1px solid #24304F;margin-top:34px;padding-top:20px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:0.78rem;color:#68799B}
+/* misc */
+.check{list-style:none;margin-top:20px}
+.check li{padding-left:28px;position:relative;margin-top:10px;color:var(--text-dim);font-size:0.96rem}
+.check li::before{content:'\2713';position:absolute;left:0;color:var(--ok);font-weight:800}
+.xlist li::before{content:'\2715';color:#B91C1C;font-weight:700}
+.crumb{font-family:var(--mono);font-size:0.72rem;color:var(--text-faint);padding-top:26px}
+.crumb a{color:var(--text-faint)}
+
+</style>
+</head>
+<body>
+<a href="#main" class="skip">Skip to content</a>
+<header class="top" id="siteTop">
+  <div class="row">
+    <svg class="bmark" viewBox="0 0 500 600" aria-hidden="true"><path d="M333,108 C240,100 125,162 124,252 C123,312 194,328 232,332" fill="none" stroke="#16C2D5" stroke-width="16" stroke-linecap="round"/><path d="M268,344 C366,362 394,444 368,506 C346,558 262,572 168,568" fill="none" stroke="#16C2D5" stroke-width="16" stroke-linecap="round"/><circle cx="355" cy="100" r="22" fill="#16C2D5"/><circle cx="250" cy="338" r="18" fill="#16C2D5"/><circle cx="145" cy="572" r="22" fill="#16C2D5"/></svg>
+    <a href="/" aria-label="Stromation home"><span class="mark">STROMATION<span class="dot">.</span></span></a>
+    <button class="menu-btn" aria-label="Menu" aria-expanded="false" onclick="var t=document.getElementById('siteTop');var o=t.classList.toggle('open');this.setAttribute('aria-expanded',o)">&#9776;</button>
+    <nav class="main" aria-label="Primary">
+      <a href="/" aria-current="page">Home</a>
+      <a href="solutions.html">Solutions</a>
+      <a href="how-it-works.html">How It Works</a>
+      <a href="case-studies.html">Case Studies</a>
+      <a href="pricing.html">Pricing</a>
+      <a href="library.html">DIY Library</a>
+      <a href="about.html">About</a>
+      <a href="book-a-call.html" class="cta">Book a Call</a>
+    </nav>
+  </div>
+</header>
+<main id="main">
+
+<section class="hero">
+  <div class="wrap">
+    <div class="eyebrow">AI lead response for North Texas service businesses</div>
+    <h1>Respond to new leads before they move on.</h1>
+    <p class="lead">Stromation connects your <b>lead sources, inbox, CRM and calendar</b> so new inquiries are acknowledged, organized and routed to the right person quickly. Missed-call recovery can be added after phone-system and messaging review.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="book-a-call.html" onclick="try{gtag('event','cta_click',{label:'hero_audit'});}catch(e){}">Book a 20-Minute Lead Leak Audit</a>
+      <a class="btn ghost" href="lead-recovery.html#demo" onclick="try{gtag('event','cta_click',{label:'hero_demo'});}catch(e){}">See the system in action</a>
+    </div>
+    <p class="fine">Built with proven automation platforms and the systems you already use. Your workflows stay portable and documented.</p>
+  </div>
+</section>
+
+<section class="blk">
+  <div class="wrap">
+    <div class="nodetag">the problem</div>
+    <h2 class="sh">What happens when a new customer calls or submits a request and your team cannot respond immediately?</h2>
+    <p class="snote">Most service businesses do not have a lead problem. They have a response problem. New inquiries come in by phone, form and ad; whoever answers first tends to win the job.</p>
+    <p class="snote" style="font-size:0.92rem;margin-top:14px">The data backs it up: only about <b style="color:var(--navy)">52% of callers to home-services businesses reach a live person</b> (<a href="https://www.invoca.com/reports/the-invoca-home-services-lead-conversion-benchmarks-report-2026" target="_blank" rel="noopener">Invoca 2026 benchmarks</a>), and trades book only about <b style="color:var(--navy)">42% of the calls they do answer</b> (<a href="https://www.servicetitan.com/blog/data-call-booking-rates" target="_blank" rel="noopener">ServiceTitan data</a>).</p>
+    <div class="grid c2">
+      <div class="card"><div class="ic">missed calls</div><h3>The caller does not leave a voicemail</h3><p>They call the next company on the list. The ad money that produced that call is already spent, and there is no record the lead ever existed.</p></div>
+      <div class="card"><div class="ic">slow web leads</div><h3>Website forms sit unanswered for hours</h3><p>A lead that gets a response in minutes behaves very differently from one that waits until tomorrow. Speed decides who wins the job.</p></div>
+      <div class="card"><div class="ic">no follow-up</div><h3>Estimates go out and nothing comes back</h3><p>Quotes sit in inboxes with no reminder, no follow-up and no owner. Deals that were close to won quietly expire.</p></div>
+      <div class="card"><div class="ic">scattered systems</div><h3>Phone, calendar and CRM do not talk</h3><p>Customer information lives in texts, sticky notes and three different apps. Nobody can see what actually happened with a lead.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="blk alt">
+  <div class="wrap">
+    <div class="nodetag">the system</div>
+    <h2 class="sh">How a new lead gets handled.</h2>
+    <p class="snote">The Lead Response System watches your lead sources and inbox, responds quickly, collects what your team needs, and hands off to a human the moment one is needed.</p>
+    <div class="flow" aria-label="Lead response process flow">
+      <div class="fnode"><span class="fk">event</span><span class="fn">New lead: form, ad or call</span></div>
+      <span class="farr" aria-hidden="true">&rarr;</span>
+      <div class="fnode hot"><span class="fk">seconds later</span><span class="fn">Immediate branded response</span></div>
+      <span class="farr" aria-hidden="true">&rarr;</span>
+      <div class="fnode"><span class="fk">structured</span><span class="fn">Name, job, location, urgency</span></div>
+      <span class="farr" aria-hidden="true">&rarr;</span>
+      <div class="fnode"><span class="fk">your systems</span><span class="fn">CRM record + booking</span></div>
+      <span class="farr" aria-hidden="true">&rarr;</span>
+      <div class="fnode"><span class="fk">always</span><span class="fn">Human takeover any time</span></div>
+    </div>
+    <p class="snote" style="font-size:0.92rem;margin-top:22px">Urgent or sensitive situations go straight to a person. The AI collects information and routes it; your team makes the commitments.</p>
+    <div class="cta-row" style="margin-top:26px"><a class="btn blue" href="lead-recovery.html">Explore the Lead Response System</a></div>
+  </div>
+</section>
+
+<section class="blk">
+  <div class="wrap">
+    <div class="nodetag">proof, honestly labeled</div>
+    <h2 class="sh">See it working before you buy anything.</h2>
+    <p class="snote">Stromation is a new agency and we will not pretend otherwise. There are no invented client logos here. What we can show you today is the real system running on test data, clearly labeled, plus the engineering standards behind it.</p>
+    <div class="grid c2">
+      <div class="card">
+        <span class="badge demo">Demonstration &middot; not a client result</span>
+        <h3 style="margin-top:12px">Missed-call response, end to end</h3>
+        <p>A simulated missed call triggers the real workflow: instant text response, structured qualification, a CRM record and a booking path. Watch the interactive walkthrough on the Lead Response page.</p>
+        <p style="margin-top:12px"><a href="lead-recovery.html#demo">View the demonstration &rarr;</a></p>
+      </div>
+      <div class="card">
+        <span class="badge pilot">Founding client pilots &middot; 3 slots</span>
+        <h3 style="margin-top:12px">Reduced-rate pilots, measured results</h3>
+        <p>The first three suitable North Texas businesses get pilot pricing in exchange for honest baseline and result measurement. Every claim we publish later will come from real, customer-approved data.</p>
+        <p style="margin-top:12px"><a href="pricing.html">See pilot pricing &rarr;</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="blk alt">
+  <div class="wrap">
+    <div class="nodetag">the process</div>
+    <h2 class="sh">Controlled installation, not a science project.</h2>
+    <div class="steps">
+      <div class="step"><div class="sn">1</div><div><h4>Lead Leak Audit</h4><p>A 20-minute call. We map where leads reach you, where they stall, and what a fix is worth. No obligation and no hard sell.</p></div></div>
+      <div class="step"><div class="sn">2</div><div><h4>System mapping</h4><p>We document your phone, website, calendar and CRM, and design the exact response flow your team approves before anything is built.</p></div></div>
+      <div class="step"><div class="sn">3</div><div><h4>Implementation and testing</h4><p>We build the workflows, connect your systems, and test every path with safe data. Nothing goes live until it passes acceptance testing with you.</p></div></div>
+      <div class="step"><div class="sn">4</div><div><h4>Launch, training and monitoring</h4><p>Your team learns the handoff points. We monitor the running system, respond to errors, and send you a weekly performance report.</p></div></div>
+    </div>
+    <div class="cta-row" style="margin-top:28px"><a class="btn blue" href="how-it-works.html">See the full process</a></div>
+  </div>
+</section>
+
+<section class="blk">
+  <div class="wrap">
+    <div class="nodetag">pricing</div>
+    <h2 class="sh">Clear starting prices. No mystery quotes.</h2>
+    <div class="grid c3">
+      <div class="card"><div class="ic">founding pilot</div><h3>$1,000 setup + $500/mo</h3><p>First three suitable customers. One location, defined scope, measured results. Rate locked for the 90-day pilot term, then month-to-month.</p></div>
+      <div class="card"><div class="ic">standard</div><h3>From $2,500 setup + $750/mo</h3><p>The full Lead Response System: digital lead response, CRM and booking handoff, monitoring and reporting. Missed-call recovery available as an add-on. Final scope set at the audit.</p></div>
+      <div class="card"><div class="ic">diy library</div><h3>Free and low-cost workflows</h3><p>Prefer to build it yourself? Our template library and guides are free to start. Third-party usage costs still apply.</p></div>
+    </div>
+    <p class="snote" style="font-size:0.9rem">Third-party services your system uses, such as telephony, hosting and AI usage, are billed separately at cost. We show you the estimate before anything is installed. <a href="pricing.html">Full pricing details</a>.</p>
+  </div>
+</section>
+
+<section class="blk alt">
+  <div class="wrap">
+    <div class="nodetag">who is behind this</div>
+    <h2 class="sh">Built by an infrastructure engineer, not a marketing funnel.</h2>
+    <div class="grid c2" style="align-items:start">
+      <div>
+        <p class="snote">Stromation is founded and run by <b style="color:var(--navy)">Darius Stroman</b>, a North Texas technology professional with more than six years of enterprise IT and data-center operations experience, a Master of Science in Software Engineering, a bachelor's degree in Data Analytics and an AWS Cloud Practitioner certification.</p>
+        <p class="snote">The background that matters here is not AI hype. It is years of keeping high-availability systems running, documenting them properly, and being accountable when something breaks at 2am. That is the standard your automations get.</p>
+        <p style="margin-top:18px"><a href="about.html">More about Darius and why Stromation exists &rarr;</a></p>
+      </div>
+      <div class="card">
+        <div class="ic">operating standards</div>
+        <ul class="check">
+          <li>Every workflow documented and portable. You are never locked in.</li>
+          <li>Humans keep authority over pricing, commitments and emergencies.</li>
+          <li>Monitoring, error alerts and a documented fallback built into every installation before launch.</li>
+          <li>No fabricated case studies, statistics or testimonials. Ever.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="blk">
+  <div class="wrap">
+    <div class="nodetag">questions</div>
+    <h2 class="sh">Straight answers.</h2>
+    <div class="faq">
+      <details><summary>Do I have to replace my current phone system or CRM?</summary><div class="a">No. The system connects to what you already use where an integration is available. Part of the audit is confirming what your current tools support before we propose anything.</div></details>
+      <details><summary>Will customers know they are texting an automated system?</summary><div class="a">Yes. The response identifies your business, behaves politely and honestly, and hands off to a real person the moment the conversation needs one. We do not build bots that pretend to be humans.</div></details>
+      <details><summary>What does it cost to run each month?</summary><div class="a">Your monthly Stromation fee covers monitoring, support, reporting and minor changes. Third-party usage such as text messaging, hosting and AI processing is billed separately at cost, typically modest for a single location, and we estimate it for you up front.</div></details>
+      <details><summary>What happens if the automation breaks?</summary><div class="a">Every installation is built with error monitoring, alerting and a documented manual fallback before it goes live, so a failure pages us, not you, and leads route to a manual queue instead of vanishing. Known limitations are documented, not hidden.</div></details>
+      <details><summary>Do I own the system?</summary><div class="a">The workflows installed for you are documented and exportable. If you leave Stromation, you receive your workflow exports, documentation and data. Third-party accounts, such as your phone number and CRM, were always yours.</div></details>
+      <details><summary>Can the AI make quotes or promises to my customers?</summary><div class="a">No. The AI collects information, answers basic questions from approved content and routes conversations. Pricing, scheduling commitments beyond approved booking rules, and anything sensitive go to your team.</div></details>
+    </div>
+  </div>
+</section>
+
+<section class="blk" style="padding-top:0">
+  <div class="wrap">
+    <div class="finband">
+      <h2>Find out where your leads are leaking.</h2>
+      <p>A 20-minute call. We look at your missed-call handling, response speed and follow-up, and tell you honestly whether automation would pay for itself.</p>
+      <a class="btn primary" href="book-a-call.html" onclick="try{gtag('event','cta_click',{label:'final_audit'});}catch(e){}">Book a 20-Minute Lead Leak Audit</a>
+      <div class="fine">No obligation. If your setup is already solid, we will tell you that too.</div>
+    </div>
+  </div>
+</section>
+
+</main>
+<footer class="ft">
+  <div class="wrap">
+    <div class="cols">
+      <div>
+        <span class="mark">STROMATION<span style="color:var(--cyan)">.</span></span>
+        <p style="margin-top:12px;max-width:34ch">AI-powered lead response and business automation for North Texas service companies.</p>
+        <p style="margin-top:10px"><a href="mailto:contact@stromation.com">contact@stromation.com</a></p>
+        <!-- TODO(darius): add business phone once confirmed -->
+      </div>
+      <div>
+        <h5>Services</h5>
+        <a href="lead-recovery.html">Lead Response</a>
+        <a href="solutions.html">All solutions</a>
+        <a href="how-it-works.html">How it works</a>
+        <a href="pricing.html">Pricing</a>
+      </div>
+      <div>
+        <h5>Company</h5>
+        <a href="about.html">About</a>
+        <a href="case-studies.html">Case studies</a>
+        <a href="book-a-call.html">Book a call</a>
+      </div>
+      <div>
+        <h5>DIY Library</h5>
+        <a href="library.html">Library home</a>
+        <a href="starter-pack.html">Free Starter Pack</a>
+        <a href="pro-pack.html">Pro Pack</a>
+        <a href="guides.html">Guides</a>
+      </div>
+    </div>
+    <div class="base">
+      <span>Stromation. Serving Aubrey, Little Elm, Denton, Frisco, McKinney, Prosper and the greater DFW area.</span>
+      <span><a href="privacy.html" style="display:inline">Privacy</a> &nbsp;&middot;&nbsp; <a href="terms.html" style="display:inline">Terms</a> &nbsp;&middot;&nbsp; <a href="refund-policy.html" style="display:inline">Refunds</a> &nbsp;&middot;&nbsp; <a href="product-license.html" style="display:inline">License</a></span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

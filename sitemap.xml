@@ -1,37 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://www.stromation.com/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
-  <url><loc>https://www.stromation.com/lead-recovery.html</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
-  <url><loc>https://www.stromation.com/solutions.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://www.stromation.com/how-it-works.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://www.stromation.com/pricing.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://www.stromation.com/case-studies.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://www.stromation.com/book-a-call.html</loc><changefreq>monthly</changefreq><priority>0.9</priority></url>
-  <url><loc>https://www.stromation.com/about.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://www.stromation.com/library.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://www.stromation.com/templates.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://www.stromation.com/starter-pack.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://www.stromation.com/pro-pack.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://www.stromation.com/guides.html</loc><changefreq>weekly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://www.stromation.com/guides/first-n8n-automation.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://www.stromation.com/guides/automations-every-solopreneur-needs.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://www.stromation.com/guides/missed-call-text-back.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://www.stromation.com/guides/ai-lead-follow-up.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://www.stromation.com/guides/one-idea-a-week-of-content.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://www.stromation.com/guides/automate-client-onboarding.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://www.stromation.com/guides/morning-business-digest.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://www.stromation.com/guides/recover-failed-payments-automatically.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://www.stromation.com/guides/n8n-vs-zapier-vs-make.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://www.stromation.com/guides/automate-invoicing-and-reminders.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://www.stromation.com/guides/ai-website-chatbot-no-code.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://www.stromation.com/guides/reduce-no-shows-appointment-reminders.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://www.stromation.com/guides/collect-customer-reviews-automatically.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://www.stromation.com/guides/self-host-n8n-free.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://www.stromation.com/guides/ai-inbox-triage.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://www.stromation.com/privacy.html</loc><changefreq>yearly</changefreq><priority>0.2</priority></url>
-  <url><loc>https://www.stromation.com/terms.html</loc><changefreq>yearly</changefreq><priority>0.2</priority></url>
-  <url><loc>https://www.stromation.com/refund-policy.html</loc><changefreq>yearly</changefreq><priority>0.2</priority></url>
-  <url><loc>https://www.stromation.com/product-license.html</loc><changefreq>yearly</changefreq><priority>0.2</priority></url>
-  <url><loc>https://www.stromation.com/guides/what-happens-after-a-missed-call.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://www.stromation.com/guides/cost-of-slow-lead-response.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://www.stromation.com/showcase.html</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://www.stromation.com/dashboard.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://www.stromation.com/privacy.html</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://www.stromation.com/terms.html</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
 </urlset>

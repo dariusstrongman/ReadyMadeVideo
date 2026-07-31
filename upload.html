@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pricing — Stromation</title>
-<meta name="description" content="Early access pricing. No public plans yet.">
-<link rel="canonical" href="https://www.stromation.com/pricing.html">
+<title>Upload Footage — Stromation</title>
+<meta name="description" content="Upload your raw footage.">
+<link rel="canonical" href="https://www.stromation.com/upload.html">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <meta name="theme-color" content="#0a0a0f">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://www.stromation.com/pricing.html">
-<meta property="og:title" content="Pricing — Stromation">
-<meta property="og:description" content="Early access pricing. No public plans yet.">
+<meta property="og:url" content="https://www.stromation.com/upload.html">
+<meta property="og:title" content="Upload Footage — Stromation">
+<meta property="og:description" content="Upload your raw footage.">
 <meta property="og:image" content="https://www.stromation.com/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -105,16 +105,32 @@ section{padding:96px 0}
 .delay-1{animation-delay:.1s}.delay-2{animation-delay:.25s}
 </style>
 <style>
-.pricing-hero{padding:140px 0 80px;text-align:center;background:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(0,212,255,.06),transparent)}
-.pricing-notice{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius-lg);padding:20px 24px;text-align:center;max-width:640px;margin:0 auto 64px;font-size:.9rem;color:var(--amber)}
-.pricing-notice strong{color:var(--amber)}
-.pricing-faq{max-width:720px;margin:0 auto;padding:0 24px}
-.faq-item{border-bottom:1px solid var(--border);padding:20px 0}
-.faq-item:first-child{border-top:1px solid var(--border)}
-.faq-q{font-size:.95rem;font-weight:700;color:var(--text);cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:16px;list-style:none}
-.faq-q::after{content:'+';color:var(--cyan);font-size:1.2rem;flex-shrink:0}
-details[open] .faq-q::after{content:'&minus;'}
-.faq-a{color:var(--text-2);font-size:.875rem;line-height:1.7;margin-top:12px;max-width:64ch}
+.upload-page{padding-top:96px;padding-bottom:80px;min-height:100vh}
+.upload-container{max-width:860px;margin:0 auto;padding:0 24px}
+.dropzone{border:2px dashed var(--border-2);border-radius:var(--radius-xl);padding:64px 32px;text-align:center;transition:all .2s;cursor:pointer;background:var(--bg-1);position:relative}
+.dropzone.drag-over{border-color:var(--cyan);background:var(--cyan-dim)}
+.dropzone-icon{font-size:2.5rem;margin-bottom:16px}
+.dropzone h3{font-size:1.1rem;font-weight:700;color:var(--text);margin-bottom:8px}
+.dropzone p{color:var(--text-2);font-size:.9rem;max-width:44ch;margin:0 auto}
+.dropzone-types{font-family:var(--mono);font-size:.7rem;color:var(--text-3);margin-top:14px}
+.dropzone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.file-list{margin-top:24px;display:flex;flex-direction:column;gap:10px}
+.file-item{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;display:flex;align-items:center;gap:14px}
+.file-icon{width:36px;height:36px;border-radius:8px;background:var(--bg-3);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:1rem}
+.file-info{flex:1;min-width:0}
+.file-name{font-size:.875rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-meta{font-size:.75rem;color:var(--text-3);margin-top:2px}
+.file-progress{height:3px;background:var(--bg-3);border-radius:100px;margin-top:8px;overflow:hidden}
+.file-progress-fill{height:100%;background:linear-gradient(90deg,var(--cyan),#7c3aed);border-radius:100px;transition:width .3s}
+.file-status{font-family:var(--mono);font-size:.65rem;color:var(--text-3);flex-shrink:0}
+.file-remove{color:var(--text-3);font-size:1rem;cursor:pointer;flex-shrink:0;padding:4px;border-radius:4px;transition:color .15s}
+.file-remove:hover{color:var(--red)}
+.upload-summary{background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-top:24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.upload-summary-stat{text-align:center}
+.upload-summary-stat .val{font-size:1.2rem;font-weight:700;color:var(--text)}
+.upload-summary-stat .lbl{font-size:.72rem;color:var(--text-3);margin-top:2px}
+.upload-actions{display:flex;justify-content:space-between;align-items:center;margin-top:24px;flex-wrap:wrap;gap:12px}
+.storage-note{font-size:.78rem;color:var(--text-3);display:flex;align-items:center;gap:6px}
 </style>
 </head>
 <body>
@@ -141,48 +157,38 @@ details[open] .faq-q::after{content:'&minus;'}
   </div>
   <button class="nav-menu-btn" id="menu-btn" aria-label="Toggle navigation" aria-expanded="false">&#9776;</button>
 </nav>
-<main id="main">
-  <section class="pricing-hero">
-    <div class="wrap-sm">
-      <div class="badge badge-cyan" style="margin-bottom:20px">Early access</div>
-      <h1 class="section-title">Pricing is not public yet</h1>
-      <p class="section-sub" style="margin:16px auto 0;text-align:center">Stromation is currently in a controlled early access phase. We are working with a small group of creators to finalize the product before announcing public pricing.</p>
-      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:32px">
-        <a href="index.html#waitlist" class="btn btn-primary btn-lg">Join the waitlist</a>
-        <a href="index.html#how-it-works" class="btn btn-ghost btn-lg">See how it works</a>
+<main class="upload-page" id="main">
+  <div class="upload-container">
+    <div style="margin-bottom:40px">
+      <p class="section-label">Step 2 of 4</p>
+      <h1 style="font-size:clamp(1.6rem,3.5vw,2.4rem);font-weight:800;letter-spacing:-.03em">Upload your footage</h1>
+      <p style="color:var(--text-2);margin-top:10px">Add all your raw clips, audio, music, and reference files. Large files upload directly to secure storage.</p>
+    </div>
+    <div class="dropzone" id="dropzone" role="button" aria-label="Drop files here or click to browse">
+      <input type="file" id="file-input" multiple accept="video/*,audio/*,image/*" aria-label="Select files">
+      <div class="dropzone-icon" aria-hidden="true">&#128247;</div>
+      <h3>Drop your footage here</h3>
+      <p>Or click to browse. You can add multiple files at once.</p>
+      <div class="dropzone-types">MP4 &middot; MOV &middot; MKV &middot; AVI &middot; MP3 &middot; WAV &middot; JPG &middot; PNG</div>
+    </div>
+    <div class="file-list" id="file-list"></div>
+    <div class="upload-summary" id="upload-summary" style="display:none">
+      <div class="upload-summary-stat"><div class="val" id="summary-count">0</div><div class="lbl">Files</div></div>
+      <div class="upload-summary-stat"><div class="val" id="summary-size">0 MB</div><div class="lbl">Total size</div></div>
+      <div class="upload-summary-stat"><div class="val" id="summary-duration">—</div><div class="lbl">Est. duration</div></div>
+      <div class="upload-summary-stat"><div class="val" id="summary-status" style="color:var(--amber)">Pending</div><div class="lbl">Status</div></div>
+    </div>
+    <div class="upload-actions">
+      <a href="new-project.html" class="btn btn-ghost">&larr; Back</a>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <span class="storage-note">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6" cy="6" r="5"/><path d="M6 4v3M6 8.5v.5"/></svg>
+          Files are encrypted in transit and at rest
+        </span>
+        <button class="btn btn-primary btn-lg" id="start-upload-btn" disabled>Start upload &rarr;</button>
       </div>
     </div>
-  </section>
-  <section style="padding:0 0 96px">
-    <div class="wrap">
-      <div class="pricing-notice">
-        <strong>&#9888; Prototype notice:</strong> Stromation is in active development. The processing pipeline, AI editing, and export features are being built. Early access members will receive founding pricing when plans are announced.
-      </div>
-      <div class="text-center" style="margin-bottom:48px">
-        <p class="section-label">What to expect</p>
-        <h2 class="section-title">What we&rsquo;re building toward</h2>
-        <p class="section-sub" style="margin:16px auto 0">Pricing will be based on the value Stromation delivers: time saved, footage processed, and exports produced. We plan to offer a usage-based model with clear, predictable costs.</p>
-      </div>
-      <div class="grid grid-3">
-        <div class="card"><div class="badge badge-cyan" style="margin-bottom:16px">Planned</div><h3 style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px">Starter</h3><p style="color:var(--text-2);font-size:.875rem">For individual creators. Limited projects per month, standard resolution exports, basic AI editing.</p></div>
-        <div class="card" style="border-color:rgba(0,212,255,.25);background:linear-gradient(135deg,rgba(0,212,255,.04),transparent)"><div class="badge badge-cyan" style="margin-bottom:16px">Planned</div><h3 style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px">Creator</h3><p style="color:var(--text-2);font-size:.875rem">For active creators. More projects, 4K exports, advanced AI editing, version history, and priority processing.</p></div>
-        <div class="card"><div class="badge badge-cyan" style="margin-bottom:16px">Planned</div><h3 style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px">Studio</h3><p style="color:var(--text-2);font-size:.875rem">For teams and agencies. Unlimited projects, collaboration, review links, custom branding, and dedicated support.</p></div>
-      </div>
-    </div>
-  </section>
-  <section style="background:var(--bg-1);padding:80px 0">
-    <div class="pricing-faq">
-      <div class="text-center" style="margin-bottom:48px">
-        <p class="section-label">FAQ</p>
-        <h2 class="section-title">Common questions</h2>
-      </div>
-      <details class="faq-item"><summary class="faq-q">When will pricing be announced?</summary><p class="faq-a">We will announce pricing when the core product is ready for public launch. Early access members will be notified first and will receive founding pricing.</p></details>
-      <details class="faq-item"><summary class="faq-q">Will there be a free trial?</summary><p class="faq-a">We plan to offer a way to try Stromation before committing to a paid plan. Details will be announced with the public pricing release.</p></details>
-      <details class="faq-item"><summary class="faq-q">What happens to my footage if I cancel?</summary><p class="faq-a">You will have the ability to export your projects and delete all associated footage before canceling. We will not retain your files after deletion is confirmed.</p></details>
-      <details class="faq-item"><summary class="faq-q">Is there a limit on footage file size?</summary><p class="faq-a">We are designing the upload system to handle large raw video files, including 4K drone and camera footage. Specific limits will be defined per plan tier.</p></details>
-      <details class="faq-item"><summary class="faq-q">Will Stromation work for professional video editors?</summary><p class="faq-a">Stromation is designed to accelerate the editing workflow, not replace professional editors. The timeline and AI tools are built to complement existing skills and speed up the most time-consuming parts of the process.</p></details>
-    </div>
-  </section>
+  </div>
 </main>
 <footer class="footer" role="contentinfo">
   <div class="wrap">
@@ -206,6 +212,72 @@ const mb=document.getElementById('menu-btn'),nl=document.getElementById('nav-lin
 if(mb&&nl){mb.addEventListener('click',()=>{const o=nl.classList.toggle('open');mb.setAttribute('aria-expanded',o)});nl.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>{nl.classList.remove('open');mb.setAttribute('aria-expanded','false')}));}
 const nav=document.getElementById('nav');
 if(nav)window.addEventListener('scroll',()=>{nav.style.background=window.scrollY>20?'rgba(10,10,15,0.97)':'rgba(10,10,15,0.85)';},{passive:true});
+</script>
+<script>
+const dropzone=document.getElementById('dropzone');
+const fileInput=document.getElementById('file-input');
+const fileList=document.getElementById('file-list');
+const uploadSummary=document.getElementById('upload-summary');
+const startBtn=document.getElementById('start-upload-btn');
+let files=[];
+
+function formatBytes(b){if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB';}
+
+function renderFiles(){
+  fileList.innerHTML='';
+  if(files.length===0){uploadSummary.style.display='none';startBtn.disabled=true;return;}
+  uploadSummary.style.display='flex';startBtn.disabled=false;
+  let totalSize=0;
+  files.forEach((f,i)=>{
+    totalSize+=f.size;
+    const item=document.createElement('div');
+    item.className='file-item';
+    const ext=f.name.split('.').pop().toUpperCase();
+    item.innerHTML=`
+      <div class="file-icon" aria-hidden="true">${ext==='MP4'||ext==='MOV'||ext==='MKV'?'&#127909;':ext==='MP3'||ext==='WAV'?'&#127925;':'&#128196;'}</div>
+      <div class="file-info">
+        <div class="file-name">${f.name}</div>
+        <div class="file-meta">${formatBytes(f.size)}</div>
+        <div class="file-progress"><div class="file-progress-fill" style="width:0%" id="prog-${i}"></div></div>
+      </div>
+      <span class="file-status" id="status-${i}">Ready</span>
+      <button class="file-remove" onclick="removeFile(${i})" aria-label="Remove ${f.name}">&#10005;</button>`;
+    fileList.appendChild(item);
+  });
+  document.getElementById('summary-count').textContent=files.length;
+  document.getElementById('summary-size').textContent=formatBytes(totalSize);
+}
+
+function removeFile(i){files.splice(i,1);renderFiles();}
+
+fileInput.addEventListener('change',()=>{files=[...files,...Array.from(fileInput.files)];renderFiles();fileInput.value='';});
+dropzone.addEventListener('dragover',(e)=>{e.preventDefault();dropzone.classList.add('drag-over');});
+dropzone.addEventListener('dragleave',()=>dropzone.classList.remove('drag-over'));
+dropzone.addEventListener('drop',(e)=>{e.preventDefault();dropzone.classList.remove('drag-over');files=[...files,...Array.from(e.dataTransfer.files)];renderFiles();});
+
+startBtn.addEventListener('click',()=>{
+  if(files.length===0)return;
+  startBtn.disabled=true;startBtn.textContent='Uploading...';
+  document.getElementById('summary-status').textContent='Uploading';
+  document.getElementById('summary-status').style.color='var(--cyan)';
+  // Simulate upload progress
+  files.forEach((_,i)=>{
+    let p=0;
+    const iv=setInterval(()=>{
+      p+=Math.random()*15+5;
+      if(p>=100){p=100;clearInterval(iv);document.getElementById('status-'+i).textContent='Done';document.getElementById('status-'+i).style.color='var(--green)';}
+      const el=document.getElementById('prog-'+i);
+      if(el)el.style.width=Math.min(p,100)+'%';
+    },200+Math.random()*300);
+  });
+  setTimeout(()=>{
+    document.getElementById('summary-status').textContent='Complete';
+    document.getElementById('summary-status').style.color='var(--green)';
+    startBtn.textContent='Continue to processing';
+    startBtn.disabled=false;
+    startBtn.onclick=()=>{window.location.href='processing.html';};
+  },files.length*800+1200);
+});
 </script>
 </body>
 </html>

@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pricing — Stromation</title>
-<meta name="description" content="Early access pricing. No public plans yet.">
-<link rel="canonical" href="https://www.stromation.com/pricing.html">
+<title>Processing — Stromation</title>
+<meta name="description" content="Stromation is analyzing your footage.">
+<link rel="canonical" href="https://www.stromation.com/processing.html">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <meta name="theme-color" content="#0a0a0f">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://www.stromation.com/pricing.html">
-<meta property="og:title" content="Pricing — Stromation">
-<meta property="og:description" content="Early access pricing. No public plans yet.">
+<meta property="og:url" content="https://www.stromation.com/processing.html">
+<meta property="og:title" content="Processing — Stromation">
+<meta property="og:description" content="Stromation is analyzing your footage.">
 <meta property="og:image" content="https://www.stromation.com/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -105,16 +105,35 @@ section{padding:96px 0}
 .delay-1{animation-delay:.1s}.delay-2{animation-delay:.25s}
 </style>
 <style>
-.pricing-hero{padding:140px 0 80px;text-align:center;background:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(0,212,255,.06),transparent)}
-.pricing-notice{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius-lg);padding:20px 24px;text-align:center;max-width:640px;margin:0 auto 64px;font-size:.9rem;color:var(--amber)}
-.pricing-notice strong{color:var(--amber)}
-.pricing-faq{max-width:720px;margin:0 auto;padding:0 24px}
-.faq-item{border-bottom:1px solid var(--border);padding:20px 0}
-.faq-item:first-child{border-top:1px solid var(--border)}
-.faq-q{font-size:.95rem;font-weight:700;color:var(--text);cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:16px;list-style:none}
-.faq-q::after{content:'+';color:var(--cyan);font-size:1.2rem;flex-shrink:0}
-details[open] .faq-q::after{content:'&minus;'}
-.faq-a{color:var(--text-2);font-size:.875rem;line-height:1.7;margin-top:12px;max-width:64ch}
+.processing-page{padding-top:120px;padding-bottom:80px;min-height:100vh;display:flex;align-items:center}
+.processing-container{max-width:640px;margin:0 auto;padding:0 24px;width:100%}
+.processing-header{text-align:center;margin-bottom:48px}
+.processing-header h1{font-size:clamp(1.6rem,3.5vw,2.2rem);font-weight:800;letter-spacing:-.03em}
+.processing-header p{color:var(--text-2);margin-top:10px}
+.processing-steps{display:flex;flex-direction:column;gap:0;background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius-xl);overflow:hidden}
+.proc-step{display:flex;align-items:center;gap:16px;padding:18px 24px;border-bottom:1px solid var(--border);transition:background .3s}
+.proc-step:last-child{border-bottom:none}
+.proc-step.active{background:rgba(0,212,255,.04)}
+.proc-step.done{background:rgba(34,197,94,.03)}
+.proc-icon{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.85rem}
+.proc-step.pending .proc-icon{background:var(--bg-2);border:1px solid var(--border);color:var(--text-3)}
+.proc-step.active .proc-icon{background:var(--cyan-dim);border:1px solid rgba(0,212,255,.3);color:var(--cyan);animation:spin 1.5s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.proc-step.done .proc-icon{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:var(--green)}
+.proc-info{flex:1}
+.proc-name{font-size:.9rem;font-weight:600;color:var(--text)}
+.proc-step.pending .proc-name{color:var(--text-3)}
+.proc-desc{font-size:.78rem;color:var(--text-3);margin-top:2px}
+.proc-step.active .proc-desc{color:var(--text-2)}
+.proc-badge{font-family:var(--mono);font-size:.65rem;flex-shrink:0}
+.overall-progress{margin-top:32px;background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px 24px}
+.overall-progress .label{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.overall-progress .label span{font-size:.85rem;color:var(--text-2)}
+.overall-progress .label strong{font-family:var(--mono);font-size:.85rem;color:var(--cyan)}
+.progress-bar{height:6px;background:var(--bg-3);border-radius:100px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--cyan),#7c3aed);border-radius:100px;transition:width .5s ease}
+.processing-note{text-align:center;margin-top:24px;font-size:.8rem;color:var(--text-3)}
+.prototype-notice{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius);padding:12px 16px;text-align:center;font-size:.8rem;color:var(--amber);margin-top:16px}
 </style>
 </head>
 <body>
@@ -141,48 +160,30 @@ details[open] .faq-q::after{content:'&minus;'}
   </div>
   <button class="nav-menu-btn" id="menu-btn" aria-label="Toggle navigation" aria-expanded="false">&#9776;</button>
 </nav>
-<main id="main">
-  <section class="pricing-hero">
-    <div class="wrap-sm">
-      <div class="badge badge-cyan" style="margin-bottom:20px">Early access</div>
-      <h1 class="section-title">Pricing is not public yet</h1>
-      <p class="section-sub" style="margin:16px auto 0;text-align:center">Stromation is currently in a controlled early access phase. We are working with a small group of creators to finalize the product before announcing public pricing.</p>
-      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:32px">
-        <a href="index.html#waitlist" class="btn btn-primary btn-lg">Join the waitlist</a>
-        <a href="index.html#how-it-works" class="btn btn-ghost btn-lg">See how it works</a>
-      </div>
+<main class="processing-page" id="main">
+  <div class="processing-container">
+    <div class="processing-header">
+      <p class="section-label">Processing</p>
+      <h1>Stromation is analyzing your footage</h1>
+      <p>This usually takes a few minutes. You can close this tab and return later &mdash; we&rsquo;ll notify you when the edit is ready.</p>
     </div>
-  </section>
-  <section style="padding:0 0 96px">
-    <div class="wrap">
-      <div class="pricing-notice">
-        <strong>&#9888; Prototype notice:</strong> Stromation is in active development. The processing pipeline, AI editing, and export features are being built. Early access members will receive founding pricing when plans are announced.
-      </div>
-      <div class="text-center" style="margin-bottom:48px">
-        <p class="section-label">What to expect</p>
-        <h2 class="section-title">What we&rsquo;re building toward</h2>
-        <p class="section-sub" style="margin:16px auto 0">Pricing will be based on the value Stromation delivers: time saved, footage processed, and exports produced. We plan to offer a usage-based model with clear, predictable costs.</p>
-      </div>
-      <div class="grid grid-3">
-        <div class="card"><div class="badge badge-cyan" style="margin-bottom:16px">Planned</div><h3 style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px">Starter</h3><p style="color:var(--text-2);font-size:.875rem">For individual creators. Limited projects per month, standard resolution exports, basic AI editing.</p></div>
-        <div class="card" style="border-color:rgba(0,212,255,.25);background:linear-gradient(135deg,rgba(0,212,255,.04),transparent)"><div class="badge badge-cyan" style="margin-bottom:16px">Planned</div><h3 style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px">Creator</h3><p style="color:var(--text-2);font-size:.875rem">For active creators. More projects, 4K exports, advanced AI editing, version history, and priority processing.</p></div>
-        <div class="card"><div class="badge badge-cyan" style="margin-bottom:16px">Planned</div><h3 style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px">Studio</h3><p style="color:var(--text-2);font-size:.875rem">For teams and agencies. Unlimited projects, collaboration, review links, custom branding, and dedicated support.</p></div>
-      </div>
+    <div class="processing-steps" id="proc-steps">
+      <div class="proc-step done" id="step-0"><div class="proc-icon">&#10003;</div><div class="proc-info"><div class="proc-name">Validating files</div><div class="proc-desc">Checking file integrity and formats</div></div><span class="proc-badge badge badge-green">Done</span></div>
+      <div class="proc-step active" id="step-1"><div class="proc-icon">&#8635;</div><div class="proc-info"><div class="proc-name">Creating editing proxies</div><div class="proc-desc">Generating optimized preview files</div></div><span class="proc-badge badge badge-cyan">In progress</span></div>
+      <div class="proc-step pending" id="step-2"><div class="proc-icon">3</div><div class="proc-info"><div class="proc-name">Transcribing speech</div><div class="proc-desc">Extracting dialogue and narration</div></div><span class="proc-badge" style="color:var(--text-3);font-family:var(--mono);font-size:.65rem">Pending</span></div>
+      <div class="proc-step pending" id="step-3"><div class="proc-icon">4</div><div class="proc-info"><div class="proc-name">Analyzing footage</div><div class="proc-desc">Scoring shot quality, motion, and audio</div></div><span class="proc-badge" style="color:var(--text-3);font-family:var(--mono);font-size:.65rem">Pending</span></div>
+      <div class="proc-step pending" id="step-4"><div class="proc-icon">5</div><div class="proc-info"><div class="proc-name">Identifying scenes and best moments</div><div class="proc-desc">Selecting the strongest clips</div></div><span class="proc-badge" style="color:var(--text-3);font-family:var(--mono);font-size:.65rem">Pending</span></div>
+      <div class="proc-step pending" id="step-5"><div class="proc-icon">6</div><div class="proc-info"><div class="proc-name">Planning the story</div><div class="proc-desc">Structuring the narrative arc</div></div><span class="proc-badge" style="color:var(--text-3);font-family:var(--mono);font-size:.65rem">Pending</span></div>
+      <div class="proc-step pending" id="step-6"><div class="proc-icon">7</div><div class="proc-info"><div class="proc-name">Building the timeline</div><div class="proc-desc">Assembling clips, audio, and text</div></div><span class="proc-badge" style="color:var(--text-3);font-family:var(--mono);font-size:.65rem">Pending</span></div>
+      <div class="proc-step pending" id="step-7"><div class="proc-icon">8</div><div class="proc-info"><div class="proc-name">Creating the first preview</div><div class="proc-desc">Rendering the draft for review</div></div><span class="proc-badge" style="color:var(--text-3);font-family:var(--mono);font-size:.65rem">Pending</span></div>
     </div>
-  </section>
-  <section style="background:var(--bg-1);padding:80px 0">
-    <div class="pricing-faq">
-      <div class="text-center" style="margin-bottom:48px">
-        <p class="section-label">FAQ</p>
-        <h2 class="section-title">Common questions</h2>
-      </div>
-      <details class="faq-item"><summary class="faq-q">When will pricing be announced?</summary><p class="faq-a">We will announce pricing when the core product is ready for public launch. Early access members will be notified first and will receive founding pricing.</p></details>
-      <details class="faq-item"><summary class="faq-q">Will there be a free trial?</summary><p class="faq-a">We plan to offer a way to try Stromation before committing to a paid plan. Details will be announced with the public pricing release.</p></details>
-      <details class="faq-item"><summary class="faq-q">What happens to my footage if I cancel?</summary><p class="faq-a">You will have the ability to export your projects and delete all associated footage before canceling. We will not retain your files after deletion is confirmed.</p></details>
-      <details class="faq-item"><summary class="faq-q">Is there a limit on footage file size?</summary><p class="faq-a">We are designing the upload system to handle large raw video files, including 4K drone and camera footage. Specific limits will be defined per plan tier.</p></details>
-      <details class="faq-item"><summary class="faq-q">Will Stromation work for professional video editors?</summary><p class="faq-a">Stromation is designed to accelerate the editing workflow, not replace professional editors. The timeline and AI tools are built to complement existing skills and speed up the most time-consuming parts of the process.</p></details>
+    <div class="overall-progress">
+      <div class="label"><span>Overall progress</span><strong id="pct">12%</strong></div>
+      <div class="progress-bar"><div class="progress-fill" id="prog-fill" style="width:12%"></div></div>
     </div>
-  </section>
+    <p class="processing-note">Estimated time remaining: <strong id="eta">4&ndash;6 minutes</strong></p>
+    <div class="prototype-notice">&#9888; This is a prototype. Processing steps are simulated. Real AI analysis is coming in the next release.</div>
+  </div>
 </main>
 <footer class="footer" role="contentinfo">
   <div class="wrap">
@@ -206,6 +207,42 @@ const mb=document.getElementById('menu-btn'),nl=document.getElementById('nav-lin
 if(mb&&nl){mb.addEventListener('click',()=>{const o=nl.classList.toggle('open');mb.setAttribute('aria-expanded',o)});nl.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>{nl.classList.remove('open');mb.setAttribute('aria-expanded','false')}));}
 const nav=document.getElementById('nav');
 if(nav)window.addEventListener('scroll',()=>{nav.style.background=window.scrollY>20?'rgba(10,10,15,0.97)':'rgba(10,10,15,0.85)';},{passive:true});
+</script>
+<script>
+// Simulate processing progress
+const steps=[0,1,2,3,4,5,6,7];
+const pcts=[12,22,35,50,62,74,88,100];
+const etas=['4-6 min','3-5 min','3-4 min','2-3 min','2 min','1-2 min','~1 min','Almost done...'];
+let current=1;
+function advance(){
+  if(current>=steps.length)return;
+  const prev=document.getElementById('step-'+(current-1));
+  if(prev&&prev.classList.contains('active')){
+    prev.classList.remove('active');prev.classList.add('done');
+    prev.querySelector('.proc-icon').textContent='✓';
+    const badge=prev.querySelector('.proc-badge');
+    if(badge){badge.className='proc-badge badge badge-green';badge.textContent='Done';}
+  }
+  if(current<steps.length){
+    const cur=document.getElementById('step-'+current);
+    if(cur){
+      cur.classList.remove('pending');cur.classList.add('active');
+      cur.querySelector('.proc-icon').textContent='⟳';
+      const badge=cur.querySelector('.proc-badge');
+      if(badge){badge.className='proc-badge badge badge-cyan';badge.textContent='In progress';}
+    }
+    document.getElementById('pct').textContent=pcts[current]+'%';
+    document.getElementById('prog-fill').style.width=pcts[current]+'%';
+    document.getElementById('eta').textContent=etas[current];
+    current++;
+    if(current===steps.length){
+      setTimeout(()=>{window.location.href='editor.html';},1500);
+    } else {
+      setTimeout(advance,2200+Math.random()*1800);
+    }
+  }
+}
+setTimeout(advance,2000);
 </script>
 </body>
 </html>
