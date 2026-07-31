@@ -33,3 +33,10 @@ docs-internal/
 # scratch screenshots
 shot*.png
 thankyou-pro-verified.png
+
+# real-video-pipeline build artifacts (never commit)
+app/node_modules/
+app/dist/
+render-backend/.env
+render-backend/**/__pycache__/
+render-backend/.pytest_cache/
