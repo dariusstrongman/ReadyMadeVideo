@@ -109,6 +109,17 @@ class GeminiVideoProvider(VideoUnderstandingProvider):
     def analyze(self, proxy_path: str, scenes: ScenesArtifact,
                 context: str = "") -> SemanticArtifact:
         file = self._upload(proxy_path)
+        try:
+            return self._analyze_uploaded(file, scenes, context)
+        finally:
+            # provider hygiene: delete the uploaded proxy whether analysis
+            # succeeded or failed. Google auto-expires files after ~48 h if
+            # deletion fails, so a failed delete degrades to retention, not leak.
+            from . import gemini_common
+            gemini_common.delete_file(file["name"], self.api_key)
+
+    def _analyze_uploaded(self, file: dict, scenes: ScenesArtifact,
+                          context: str = "") -> SemanticArtifact:
         scene_desc = "\n".join(
             f"scene {s.index}: {s.start:.2f}s to {s.end:.2f}s" for s in scenes.scenes)
         prompt = (

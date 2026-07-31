@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Apply video-pipeline migrations to the Stromation Supabase project.
 
-Reads credentials from C:/Users/Darius/.stromation-secrets/.env (never committed):
-  SUPABASE_STROMATION_PAT  -> Management API (DDL)
-  SUPABASE_MAIN_URL        -> https://iadzcnzgbtuigyodeqas.supabase.co
-  SUPABASE_MAIN_SERVICE_KEY-> service role (bucket creation)
+Reads configuration from the ENVIRONMENT only (never commit secrets):
+  SUPABASE_STROMATION_PAT   -> Management API (DDL)         [required]
+  SUPABASE_URL              -> project REST url             [required]
+  SUPABASE_SERVICE_ROLE_KEY -> service role (buckets)       [required]
+Optionally set SECRETS_ENV_FILE to a local .env file to source them from.
 
 Safety: verifies the project name is "Stromation" before running anything.
 Idempotent: migrations use IF NOT EXISTS / drop-policy-then-create.
@@ -15,19 +16,24 @@ import sys
 import urllib.request
 import urllib.error
 
-ENV_FILE = r"C:\Users\Darius\.stromation-secrets\.env"
 PROJECT_REF = "iadzcnzgbtuigyodeqas"
 MIGRATIONS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                               "supabase", "migrations")
 
 def env():
-    vals = {}
-    with open(ENV_FILE, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                vals[k.strip()] = v.strip().strip('"').strip("'")
+    vals = dict(os.environ)
+    env_file = os.environ.get("SECRETS_ENV_FILE")
+    if env_file and os.path.exists(env_file):
+        with open(env_file, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    vals.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    missing = [k for k in ("SUPABASE_STROMATION_PAT",) if not vals.get(k)]
+    if missing:
+        sys.exit(f"missing required env: {', '.join(missing)} "
+                 f"(set directly or via SECRETS_ENV_FILE)")
     return vals
 
 def call(url, method="GET", headers=None, body=None):
@@ -46,8 +52,10 @@ def call(url, method="GET", headers=None, body=None):
 def main():
     e = env()
     pat = e["SUPABASE_STROMATION_PAT"]
-    sb_url = e["SUPABASE_MAIN_URL"]
-    service = e["SUPABASE_MAIN_SERVICE_KEY"]
+    sb_url = (e.get("SUPABASE_URL") or e.get("SUPABASE_MAIN_URL", "")).rstrip("/")
+    service = e.get("SUPABASE_SERVICE_ROLE_KEY") or e.get("SUPABASE_MAIN_SERVICE_KEY", "")
+    if not sb_url or not service:
+        sys.exit("missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY")
     mgmt = {"Authorization": f"Bearer {pat}"}
 
     # 1. identity guard

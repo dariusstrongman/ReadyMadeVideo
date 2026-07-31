@@ -91,6 +91,13 @@ class GeminiCritic(CriticProvider):
     def critique(self, preview_path: str, blueprint: StoryBlueprint,
                  timeline: dict) -> CriticVerdict:
         file = gemini_common.upload_file(preview_path, self.api_key)
+        try:
+            return self._critique_uploaded(file, blueprint, timeline)
+        finally:
+            gemini_common.delete_file(file["name"], self.api_key)
+
+    def _critique_uploaded(self, file: dict, blueprint: StoryBlueprint,
+                           timeline: dict) -> CriticVerdict:
         beats = "\n".join(
             f"- {c['meta'].get('beat', '?')}: {c['timelineStart']:.1f}-"
             f"{c['timelineEnd']:.1f}s"
@@ -111,6 +118,14 @@ class GeminiCritic(CriticProvider):
             [{"file_data": {"file_uri": file["uri"], "mime_type": "video/mp4"}},
              {"text": prompt}],
             _SCHEMA, self.api_key)
+        # normalize provider score drift: models sometimes answer 0-10 or 0-100
+        s = raw.get("overallScore")
+        if isinstance(s, (int, float)):
+            if s > 1 and s <= 10:
+                raw["overallScore"] = round(s / 10, 3)
+            elif s > 10:
+                raw["overallScore"] = round(min(1.0, s / 100), 3)
+            raw["overallScore"] = max(0.0, min(1.0, raw["overallScore"]))
         try:
             v = CriticVerdict(**raw)
         except ValidationError as e:

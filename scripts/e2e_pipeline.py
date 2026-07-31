@@ -30,13 +30,19 @@ import uuid
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-ENV_FILE = r"C:\Users\Darius\.stromation-secrets\.env"
-ANON = "sb_publishable_8qa-nssfdtEkCz-42wOSWQ_2P7S4Zj7"
+# All configuration from the environment — no hardcoded secrets or fixed
+# credentials. ANON (publishable) key is browser-safe but still overridable.
+ANON = os.environ.get("SUPABASE_ANON_KEY",
+                      "sb_publishable_8qa-nssfdtEkCz-42wOSWQ_2P7S4Zj7")
 RENDER_API = os.environ.get("RENDER_API", "http://localhost:8787")
-VIDEO = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                     "assets", "media", "project-zero.mp4")
-USER_A = ("e2e-usera@stromation.com", "E2e-test-passw0rd-A!")
-USER_B = ("e2e-userb@stromation.com", "E2e-test-passw0rd-B!")
+VIDEO = os.environ.get("E2E_VIDEO", os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "assets", "media", "project-zero.mp4"))
+_SUFFIX = os.environ.get("E2E_SUFFIX", uuid.uuid4().hex[:8])
+USER_A = (os.environ.get("E2E_USER_A", f"e2e-a-{_SUFFIX}@stromation.com"),
+          os.environ.get("E2E_PASS_A", uuid.uuid4().hex + "Aa1!"))
+USER_B = (os.environ.get("E2E_USER_B", f"e2e-b-{_SUFFIX}@stromation.com"),
+          os.environ.get("E2E_PASS_B", uuid.uuid4().hex + "Bb2!"))
 
 PASS, FAIL = "PASS", "FAIL"
 results = []
@@ -57,12 +63,15 @@ def summary():
 
 
 def env():
-    vals = {}
-    for line in open(ENV_FILE, encoding="utf-8"):
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, v = line.split("=", 1)
-            vals[k.strip()] = v.strip().strip('"')
+    """Environment only; SECRETS_ENV_FILE optionally sources a local .env."""
+    vals = dict(os.environ)
+    env_file = os.environ.get("SECRETS_ENV_FILE")
+    if env_file and os.path.exists(env_file):
+        for line in open(env_file, encoding="utf-8"):
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                vals.setdefault(k.strip(), v.strip().strip('"'))
     return vals
 
 
@@ -90,8 +99,11 @@ def main():
     args = ap.parse_args()
 
     e = env()
-    SB = e["SUPABASE_MAIN_URL"].rstrip("/")
-    SERVICE = e["SUPABASE_MAIN_SERVICE_KEY"]
+    SB = (e.get("SUPABASE_URL") or e.get("SUPABASE_MAIN_URL", "")).rstrip("/")
+    SERVICE = e.get("SUPABASE_SERVICE_ROLE_KEY") or e.get("SUPABASE_MAIN_SERVICE_KEY", "")
+    if not SB or not SERVICE:
+        sys.exit("set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY "
+                 "(or SECRETS_ENV_FILE pointing at a local .env)")
     admin_h = {"apikey": SERVICE, "Authorization": f"Bearer {SERVICE}",
                "Content-Type": "application/json"}
 

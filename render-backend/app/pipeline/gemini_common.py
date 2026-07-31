@@ -44,6 +44,16 @@ def upload_file(path: str, api_key: str, mime: str = "video/mp4") -> dict:
     raise RuntimeError(f"Gemini file stuck in state {file.get('state')}")
 
 
+def delete_file(file_name: str, api_key: str) -> bool:
+    """Delete an uploaded Files API object. Returns False on failure (callers
+    log but do not raise — Google auto-expires files after ~48 h regardless)."""
+    try:
+        http("DELETE", f"{BASE}/v1beta/{file_name}?key={api_key}")
+        return True
+    except Exception:
+        return False
+
+
 def generate_json(model: str, parts: list[dict], schema: dict, api_key: str,
                   temperature: float = 0.2, timeout: int = 600):
     body = {"contents": [{"parts": parts}],

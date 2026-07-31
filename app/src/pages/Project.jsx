@@ -302,14 +302,23 @@ function RenderPanel({ projectId, session, timeline }) {
         const detail = await r.json().catch(() => ({}))
         throw new Error(detail.detail || `render request failed (${r.status})`)
       }
-      await supabase.from('projects').update({ status: 'rendering' }).eq('id', projectId)
+      await supabase.from('projects')
+        .update({ status: 'rendering', status_reason: 'user triggered render' })
+        .eq('id', projectId)
       await loadJobs()
       clearInterval(pollRef.current)
       pollRef.current = setInterval(async () => {
         const js = await loadJobs()
         if (!js.some((j) => ['queued', 'processing'].includes(j.status))) {
           clearInterval(pollRef.current)
-          await supabase.from('projects').update({ status: 'complete' }).eq('id', projectId)
+          // completed ONLY on a successful most-recent render; failure is explicit
+          const latest = js[0]
+          const ok = latest && latest.status === 'completed'
+          await supabase.from('projects').update({
+            status: ok ? 'completed' : 'render_failed',
+            status_reason: ok ? `render job ${latest.id.slice(0, 8)} completed`
+              : `render job ${latest ? latest.id.slice(0, 8) : '?'} ${latest?.status || 'missing'}: ${latest?.error_message || ''}`.slice(0, 300),
+          }).eq('id', projectId)
         }
       }, 2500)
     } catch (err) {
