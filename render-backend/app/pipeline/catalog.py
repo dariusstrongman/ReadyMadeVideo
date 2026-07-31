@@ -2,21 +2,25 @@
 into canonical, searchable Segment records (one per detected scene)."""
 from __future__ import annotations
 
-from typing import Optional
+from .schemas import (
+    AudioArtifact,
+    MechanicalArtifact,
+    MotionArtifact,
+    ScenesArtifact,
+    Segment,
+    SemanticArtifact,
+    TranscriptArtifact,
+)
 
-from .schemas import (AudioArtifact, MechanicalArtifact, MotionArtifact,
-                      ScenesArtifact, Segment, SemanticArtifact,
-                      TranscriptArtifact)
 
-
-def _transcript_in(tr: Optional[TranscriptArtifact], start: float, end: float) -> Optional[str]:
+def _transcript_in(tr: TranscriptArtifact | None, start: float, end: float) -> str | None:
     if not tr or not tr.sentences:
         return None
     hits = [s.text for s in tr.sentences if s.start < end and s.end > start]
     return " ".join(hits) or None
 
 
-def _audio_score(audio: Optional[AudioArtifact], start: float, end: float) -> float:
+def _audio_score(audio: AudioArtifact | None, start: float, end: float) -> float:
     if not audio or not audio.has_audio:
         return 0.0
     score = 0.7
@@ -37,10 +41,10 @@ def _audio_score(audio: Optional[AudioArtifact], start: float, end: float) -> fl
 def build_catalog(asset_id: str,
                   scenes: ScenesArtifact,
                   mech: MechanicalArtifact,
-                  audio: Optional[AudioArtifact] = None,
-                  transcript: Optional[TranscriptArtifact] = None,
-                  semantic: Optional[SemanticArtifact] = None,
-                  motion: Optional[MotionArtifact] = None) -> list[Segment]:
+                  audio: AudioArtifact | None = None,
+                  transcript: TranscriptArtifact | None = None,
+                  semantic: SemanticArtifact | None = None,
+                  motion: MotionArtifact | None = None) -> list[Segment]:
     mech_by = {m.index: m for m in mech.scenes}
     sem_by = {s.scene_index: s for s in (semantic.segments if semantic else [])}
     mot_by = {m.index: m for m in (motion.scenes if motion else [])}

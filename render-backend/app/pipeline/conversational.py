@@ -11,7 +11,7 @@ import json
 import os
 from abc import ABC, abstractmethod
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ValidationError
 
 from ..timeline_ops import OpError, apply_operations, parse_operations
 from . import gemini_common

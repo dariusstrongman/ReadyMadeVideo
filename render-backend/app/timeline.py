@@ -7,7 +7,7 @@ contract; renderer-specific constraints are checked in plan_render().
 """
 from __future__ import annotations
 
-from typing import Literal, Optional, Union
+from typing import Literal, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -85,7 +85,7 @@ class RenderPlan(BaseModel):
     asset_id: str
     source_start: float
     source_end: float
-    title_text: Optional[str] = None
+    title_text: str | None = None
     title_duration: float = 0.0
     title_font_size: int = 72
     title_position: str = "center"

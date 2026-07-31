@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Optional
 
 import httpx
 
@@ -59,8 +58,7 @@ def storage_download(bucket: str, path: str, dest_file: str) -> None:
                       headers=_service_headers, timeout=300) as r:
         r.raise_for_status()
         with open(dest_file, "wb") as f:
-            for chunk in r.iter_bytes(1024 * 1024):
-                f.write(chunk)
+            f.writelines(r.iter_bytes(1024 * 1024))
 
 
 def storage_upload(bucket: str, path: str, src_file: str,

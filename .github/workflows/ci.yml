@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [feature/real-video-pipeline]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: app } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm, cache-dependency-path: app/package-lock.json }
+      - name: Install
+        run: npm ci
+      - name: Production build
+        run: npm run build
+      - name: Frontend secret guard (no service keys in source or bundle)
+        run: node scripts/check-secrets.mjs
+      - name: License report (frontend)
+        run: npx license-checker --summary --production > ../frontend-licenses.txt || true
+      - uses: actions/upload-artifact@v4
+        with: { name: frontend-licenses, path: frontend-licenses.txt }
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: render-backend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12', cache: pip }
+      - name: System deps (real ffmpeg + fonts)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Python deps
+        run: pip install -r requirements.txt pytest-cov ruff pip-licenses
+      - name: Static analysis (ruff)
+        run: ruff check app/ --output-format=github
+      - name: Unit + fixture-render + timeline/op tests (real FFmpeg)
+        run: python -m pytest tests/ -v --cov=app --cov-report=xml --cov-report=term --junitxml=test-report.xml
+      - name: Render CI artifact videos (preview + final)
+        run: python ../scripts/ci_render_artifact.py
+        env: { CI_ARTIFACT_DIR: ci-artifacts }
+      - name: License report (python)
+        run: pip-licenses --format=markdown > python-licenses.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-artifacts
+          path: |
+            render-backend/test-report.xml
+            render-backend/coverage.xml
+            render-backend/ci-artifacts/*.mp4
+            render-backend/python-licenses.md
+
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: ci, POSTGRES_DB: ci }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate migrations against real Postgres
+        env: { PGPASSWORD: ci }
+        run: |
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/bootstrap.sql
+          for f in supabase/migrations/*.sql; do
+            echo "== applying $f"
+            psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f "$f"
+          done
+          echo "all migrations applied cleanly"
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

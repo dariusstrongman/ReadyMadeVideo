@@ -11,7 +11,6 @@ import os
 import platform
 import subprocess
 from dataclasses import dataclass
-from typing import Optional
 
 from .timeline import RenderPlan
 

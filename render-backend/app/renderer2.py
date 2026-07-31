@@ -39,9 +39,11 @@ def _atempo_chain(speed: float) -> str:
     chain = []
     s = speed
     while s > 2.0:
-        chain.append("atempo=2.0"); s /= 2.0
+        chain.append("atempo=2.0")
+        s /= 2.0
     while s < 0.5:
-        chain.append("atempo=0.5"); s /= 0.5
+        chain.append("atempo=0.5")
+        s /= 0.5
     chain.append(f"atempo={s:.4f}")
     return ",".join(chain)
 
@@ -158,7 +160,7 @@ def compile_timeline(timeline: dict, sources: dict[str, str], out_path: str,
         parts.append(f"[{midx}:a]aloop=loop=-1:size=2e9,atrim=duration={total:.3f},"
                      f"volume={duck_db}dB,aresample=48000,"
                      f"aformat=channel_layouts=stereo[mus]")
-        parts.append(f"[ca][mus]amix=inputs=2:duration=first:normalize=0[amix]")
+        parts.append("[ca][mus]amix=inputs=2:duration=first:normalize=0[amix]")
         aout = "[amix]"
     parts.append(f"{aout}afade=t=out:st={max(0, total - fade):.2f}:d={fade:.2f},"
                  f"loudnorm=I=-16:TP=-1.5:LRA=11[afinal]")

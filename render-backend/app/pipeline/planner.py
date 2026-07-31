@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -48,7 +47,7 @@ def load_template(template_id: str = "fitness_v1") -> dict:
 
 def plan_story(brief: str,
                segments: list[Segment],
-               target_duration: Optional[float] = None,
+               target_duration: float | None = None,
                platform: str = "vertical",
                template_id: str = "fitness_v1") -> StoryBlueprint:
     tpl = load_template(template_id)

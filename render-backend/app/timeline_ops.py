@@ -8,11 +8,9 @@ attribution record; the previous version is untouched (undo = restore_version).
 from __future__ import annotations
 
 import copy
-from typing import Literal, Optional, Union
+from typing import Literal, Union
 
 from pydantic import BaseModel, Field, ValidationError
-
-from .timeline import Timeline
 
 Actor = Literal["user", "editor_agent", "critic", "revision_agent", "system_rule"]
 
@@ -50,8 +48,8 @@ class MoveClip(OpBase):
 class TrimClip(OpBase):
     op: Literal["trim_clip"]
     clipId: str
-    sourceStart: Optional[float] = None
-    sourceEnd: Optional[float] = None
+    sourceStart: float | None = None
+    sourceEnd: float | None = None
 
 
 class SplitClip(OpBase):
@@ -208,7 +206,6 @@ def parse_operations(raw_ops: list[dict]) -> list[Operation]:
 def apply_operations(timeline: dict, ops: list[Operation], actor: Actor,
                      protected: list[tuple[float, float]] | None = None) -> OpResult:
     tl = copy.deepcopy(timeline)
-    before = copy.deepcopy(timeline)
     applied, rejected = [], []
 
     for op in ops:

@@ -16,8 +16,13 @@ import cv2
 import numpy as np
 
 from ..renderer import FFMPEG
-from .schemas import (AudioArtifact, MechanicalArtifact, SceneMechanical,
-                      ScenesArtifact, SilenceRange)
+from .schemas import (
+    AudioArtifact,
+    MechanicalArtifact,
+    SceneMechanical,
+    ScenesArtifact,
+    SilenceRange,
+)
 
 SAMPLE_FPS = 4.0          # frames per second sampled for analysis
 ANALYSIS_WIDTH = 320      # downscale width for motion/exposure math

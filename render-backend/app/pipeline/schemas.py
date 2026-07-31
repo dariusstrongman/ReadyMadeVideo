@@ -6,7 +6,7 @@ free-form prose is never stored as analysis data.
 """
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -15,22 +15,22 @@ SCHEMA_VERSION = 1
 
 # ---------- probe ----------
 class StreamInfo(BaseModel):
-    codec: Optional[str] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-    fps: Optional[float] = None
-    sample_rate: Optional[int] = None
-    channels: Optional[int] = None
+    codec: str | None = None
+    width: int | None = None
+    height: int | None = None
+    fps: float | None = None
+    sample_rate: int | None = None
+    channels: int | None = None
 
 
 class ProbeArtifact(BaseModel):
     duration: float
     size_bytes: int
-    container: Optional[str] = None
-    video: Optional[StreamInfo] = None
-    audio: Optional[StreamInfo] = None
+    container: str | None = None
+    video: StreamInfo | None = None
+    audio: StreamInfo | None = None
     rotation: int = 0
-    creation_time: Optional[str] = None
+    creation_time: str | None = None
     has_audio: bool = False
 
 
@@ -64,7 +64,7 @@ class SceneMechanical(BaseModel):
     motion_energy_peak: float
     shake_score: float = Field(ge=0, le=1)   # 1 = stable
     phash: str                         # perceptual hash of representative frame
-    duplicate_group: Optional[int] = None
+    duplicate_group: int | None = None
 
 
 class MechanicalArtifact(BaseModel):
@@ -80,11 +80,11 @@ class SilenceRange(BaseModel):
 
 class AudioArtifact(BaseModel):
     has_audio: bool
-    integrated_lufs: Optional[float] = None
-    true_peak_db: Optional[float] = None
+    integrated_lufs: float | None = None
+    true_peak_db: float | None = None
     clipped: bool = False
     silence_ranges: list[SilenceRange] = []
-    speech_like: Optional[bool] = None
+    speech_like: bool | None = None
 
 
 # ---------- transcript ----------
@@ -102,7 +102,7 @@ class Sentence(BaseModel):
 
 class TranscriptArtifact(BaseModel):
     provider: str
-    language: Optional[str] = None
+    language: str | None = None
     text: str = ""
     words: list[Word] = []
     sentences: list[Sentence] = []
@@ -125,8 +125,8 @@ class SemanticSegment(BaseModel):
     emotion: str = ""
     emotional_intensity: float = Field(default=0, ge=0, le=1)
     physical_intensity: float = Field(default=0, ge=0, le=1)
-    usable_start: Optional[float] = None
-    usable_end: Optional[float] = None
+    usable_start: float | None = None
+    usable_end: float | None = None
     story_uses: list[StoryUse] = []
     continuity: str = ""
     problems: list[str] = []
@@ -168,7 +168,7 @@ class Segment(BaseModel):
     shotType: str = ""
     cameraMovement: str = ""
     location: str = ""
-    transcript: Optional[str] = None
+    transcript: str | None = None
     storyUses: list[str] = []
     emotion: str = ""
     motionIntensity: float = 0
@@ -177,6 +177,6 @@ class Segment(BaseModel):
     stabilityScore: float = 0
     audioScore: float = 0
     semanticRelevance: float = 0
-    duplicateGroupId: Optional[str] = None
+    duplicateGroupId: str | None = None
     problems: list[str] = []
     searchText: str = ""

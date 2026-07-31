@@ -29,7 +29,6 @@ def validate_timeline(timeline: dict,
                       asset_durations: dict[str, float] | None = None,
                       preview_path: str | None = None) -> ValidationReport:
     issues: list[ValidationIssue] = []
-    seg_by_id = {s.segmentId: s for s in segments}
     problems_by_asset: dict[str, list[Segment]] = {}
     for s in segments:
         problems_by_asset.setdefault(s.assetId, []).append(s)

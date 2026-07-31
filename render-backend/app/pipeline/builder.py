@@ -21,7 +21,7 @@ def build_timeline(blueprint: StoryBlueprint, selection: SelectionReport,
     t = 0.0
     title_dur = 2.0 if title_text else 0.0
     t = title_dur
-    for i, b in enumerate(selection.beats):
+    for b in selection.beats:
         if b.unfilled or not b.chosen:
             continue
         dur = b.sourceEnd - b.sourceStart
