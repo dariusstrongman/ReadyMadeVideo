@@ -29,53 +29,13 @@
 .legal-wrap ul{padding-left:20px;margin-bottom:12px}
 .legal-wrap strong{color:var(--text);font-weight:600}
 .legal-wrap .notice{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:32px;font-size:.875rem;color:var(--amber)}
-.pricing-hero{padding:140px 24px 60px;text-align:center}
-.pricing-hero h1{font-size:2.2rem;font-weight:800;margin-bottom:16px}
-.pricing-hero p{color:var(--text-2);max-width:52ch;margin:0 auto 32px;font-size:.95rem;line-height:1.7}
-.pricing-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:860px;margin:0 auto 60px;padding:0 24px}
-@media(max-width:700px){.pricing-cards{grid-template-columns:1fr}}
-.pricing-card{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px 24px}
-.pricing-card.featured{border-color:rgba(0,212,255,.3);background:linear-gradient(135deg,rgba(0,212,255,.04),transparent)}
-.pricing-card .plan-name{font-size:.75rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.12em;color:var(--text-3);margin-bottom:12px}
-.pricing-card h3{font-size:1.1rem;font-weight:700;margin-bottom:8px}
-.pricing-card p{color:var(--text-2);font-size:.85rem;line-height:1.6}
-.pricing-notice{max-width:600px;margin:0 auto 48px;padding:0 24px;text-align:center}
-.pricing-notice p{color:var(--text-2);font-size:.875rem;line-height:1.7}
-.faq-section{max-width:680px;margin:0 auto;padding:0 24px 80px}
-.faq-section h2{font-size:1.4rem;font-weight:700;margin-bottom:24px;text-align:center}
-details.faq{border-bottom:1px solid var(--border);padding:16px 0}
-details.faq:first-of-type{border-top:1px solid var(--border)}
-details.faq summary{font-size:.9rem;font-weight:600;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:12px;color:var(--text)}
-details.faq summary::after{content:'+';color:var(--cyan);font-size:1.1rem;flex-shrink:0}
-details.faq[open] summary::after{content:'−'}
-details.faq p{color:var(--text-2);font-size:.875rem;line-height:1.7;margin-top:12px;max-width:60ch}
-.showcase-hero{padding:140px 24px 60px;text-align:center}
-.showcase-hero h1{font-size:2.2rem;font-weight:800;margin-bottom:16px}
-.showcase-hero p{color:var(--text-2);max-width:52ch;margin:0 auto 24px;font-size:.95rem;line-height:1.7}
-.showcase-notice{display:inline-flex;align-items:center;gap:8px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius);padding:10px 16px;font-size:.8rem;color:var(--amber);margin-bottom:48px}
-.project-zero-card{max-width:860px;margin:0 auto 80px;padding:0 24px}
-.pz-inner{background:var(--bg-2);border:1px solid rgba(0,212,255,.2);border-radius:var(--radius-xl);overflow:hidden}
-.pz-thumb{position:relative;background:#0a0a0f;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.pz-thumb img{width:100%;height:100%;object-fit:cover}
-.pz-thumb-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,rgba(10,10,15,.8))}
-.pz-thumb-title{position:absolute;bottom:20px;left:24px;font-size:1.1rem;font-weight:700;color:#fff}
-.pz-body{padding:28px 28px 32px}
-.pz-body h2{font-size:1.1rem;font-weight:700;margin-bottom:8px}
-.pz-body .pz-desc{color:var(--text-2);font-size:.875rem;line-height:1.7;margin-bottom:20px}
-.pz-meta{background:var(--bg-3);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:20px;font-size:.8rem;font-family:var(--mono);color:var(--text-3)}
-.pz-meta span{color:var(--text-2)}
-.pz-timeline{margin-bottom:24px}
-.pz-timeline h3{font-size:.75rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:10px}
-.tl-row{display:flex;align-items:center;height:32px;border-bottom:1px solid var(--border)}
-.tl-label{width:48px;flex-shrink:0;font-size:.65rem;font-family:var(--mono);color:var(--text-3);padding-right:8px;text-align:right}
-.tl-track{flex:1;position:relative;height:24px}
-.tl-clip{position:absolute;top:2px;bottom:2px;border-radius:4px;border:1px solid;display:flex;align-items:center;padding:0 6px;font-size:.6rem;font-family:var(--mono);overflow:hidden;white-space:nowrap}
-.pz-download{display:inline-flex;align-items:center;gap:8px;background:var(--cyan);color:var(--text-inv);font-weight:700;font-size:.875rem;padding:12px 24px;border-radius:var(--radius);text-decoration:none!important;transition:opacity .15s}
-.pz-download:hover{opacity:.88;text-decoration:none!important}
-.pz-disclaimer{margin-top:16px;font-size:.75rem;color:var(--text-3);line-height:1.6}
+.legal-wrap table{width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:16px}
+.legal-wrap th{text-align:left;font-weight:600;color:var(--text);padding:8px 10px;border-bottom:1px solid var(--border-2);background:var(--bg-2)}
+.legal-wrap td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
 </style>
 </head>
-<body><nav class="nav" id="nav">
+<body><a href="#main" class="skip">Skip to content</a>
+<nav class="nav" id="nav">
   <a href="index.html" class="nav-logo" aria-label="Stromation home">
     <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" width="28" height="28">
       <circle cx="30" cy="8" r="5" stroke="#00d4ff" stroke-width="2"/>
@@ -91,40 +51,65 @@ details.faq p{color:var(--text-2);font-size:.875rem;line-height:1.7;margin-top:1
     <a href="index.html#how-it-works">How it works</a>
     <a href="index.html#features">Features</a>
     <a href="showcase.html">Showcase</a>
-    <a href="pricing.html">Pricing</a>
+    <a href="pricing.html">Early access</a>
     <a href="dashboard.html" class="btn btn-secondary btn-sm nav-cta">Dashboard</a>
-    <a href="index.html#waitlist" class="btn btn-primary btn-sm nav-cta">Get early access</a>
   </div>
   <button class="nav-menu-btn" id="menu-btn" aria-label="Toggle navigation" aria-expanded="false">&#9776;</button>
-</nav>
-<main id="main">
+</nav><main id="main">
   <div class="legal-wrap">
     <h1>Privacy Policy</h1>
     <p class="updated">Last updated: July 31, 2026</p>
 
+    <div class="notice">&#9888; This policy describes the actual current implementation. Where a feature is not yet built, this is stated explicitly. This document will be updated as the product evolves.</div>
+
     <h2>1. What Stromation is</h2>
-    <p>Stromation is an early-access video project tool. It allows authenticated users to upload video footage, structure a timeline, and download an edited video. AI-assisted features are prototypes and are clearly labelled throughout the product.</p>
+    <p>Stromation is an early-access video project tool. Authenticated users can upload video footage, structure a timeline, and download an edited video. AI-assisted features are prototypes and are clearly labelled throughout the product.</p>
 
-    <h2>2. Data we collect</h2>
-    <p>We collect your Manus OAuth identity (name, email, and open ID) when you sign in. We store metadata about projects you create (title, description, category) and references to files you upload. We do not collect payment information at this time.</p>
+    <h2>2. Authentication</h2>
+    <p>Authentication is handled by Manus OAuth. When you sign in, we receive your Manus identity (name, email, and open ID). We store this in our database to associate your projects with your account. We do not store passwords. Manus&rsquo;s own privacy policy governs the OAuth interaction.</p>
 
-    <h2>3. Your footage</h2>
-    <p>Files you upload are stored in a private S3 bucket. Each file is stored under a path scoped to your user ID. No other user can access your files. Access to stored files is provided only via time-limited signed URLs — files are never publicly accessible by direct URL.</p>
+    <h2>3. Data we collect</h2>
+    <p>We collect:</p>
+    <ul>
+      <li>Your Manus OAuth identity (name, email, open ID)</li>
+      <li>Project metadata you create (title, description, category)</li>
+      <li>References to files you upload (storage key, file name, size, MIME type)</li>
+      <li>Timeline version data (structured JSON describing clip arrangement)</li>
+      <li>Processing job records (export status, render duration)</li>
+    </ul>
+    <p>We do not collect payment information.</p>
 
-    <h2>4. AI processing</h2>
-    <p>Stromation includes prototype AI features for scene detection and clip analysis. These features are clearly labelled &ldquo;prototype&rdquo; throughout the product. <strong>We do not use your footage to train AI models without your explicit written consent.</strong> Prototype AI steps may send clip metadata (not raw video) to a third-party inference API for analysis. We will update this policy with specific provider names before any AI feature leaves prototype status.</p>
+    <h2>4. Your footage</h2>
+    <p>Files you upload are stored in a private S3 bucket operated by Manus. Each file is stored under a path scoped to your user ID: <code>users/{your_user_id}/projects/{project_id}/{filename}</code>. No other user can access your files.</p>
+    <p>Access to stored files is provided only via time-limited signed URLs generated by the Manus storage proxy. Files are never publicly accessible by direct URL. Signed URLs expire after approximately one hour.</p>
+    <p><strong>What we do not currently have:</strong> per-project access logs. Access logging is planned but not yet implemented. We cannot currently provide a history of who accessed a specific file.</p>
 
-    <h2>5. Data retention and deletion</h2>
-    <p>You can delete any project from your dashboard at any time. Deleting a project removes the project record and all associated metadata from our database. Storage references are removed; the underlying files become inaccessible. We do not retain deleted footage. If you wish to delete your account entirely, contact us and we will remove all data associated with your user ID within 30 days.</p>
+    <h2>5. External services that may receive your data</h2>
+    <table>
+      <thead><tr><th>Service</th><th>What it receives</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>Manus OAuth</td><td>Login session</td><td>Authentication</td></tr>
+        <tr><td>Manus S3 storage</td><td>Uploaded footage, export files</td><td>File storage</td></tr>
+        <tr><td>Google Analytics (GA4)</td><td>Page views, anonymized usage events</td><td>Usage analytics</td></tr>
+      </tbody>
+    </table>
+    <p>Prototype AI features (scene detection, clip analysis) are not yet connected to any external inference API. When they are, this table will be updated before the feature is enabled.</p>
 
-    <h2>6. Sharing and third parties</h2>
-    <p>We do not sell your data. We do not share your footage with third parties except as required to operate the service (cloud storage provider, OAuth provider). We use Manus OAuth for authentication; Manus&rsquo;s own privacy policy governs that interaction.</p>
+    <h2>6. AI processing</h2>
+    <p>AI-assisted features are clearly labelled &ldquo;prototype&rdquo; throughout the product. <strong>We do not use your footage to train AI models without your explicit written consent.</strong> No footage is currently sent to any AI inference service. This policy will be updated before any AI feature that processes footage leaves prototype status.</p>
 
-    <h2>7. Cookies and analytics</h2>
+    <h2>7. Data retention and deletion</h2>
+    <p>You can delete any project from your dashboard at any time. Deleting a project removes the project record and all associated metadata from our database. The underlying storage object is scheduled for deletion; deletion is not instantaneous and may take up to 24 hours to propagate through the storage system.</p>
+    <p>We do not retain footage after a deletion request is confirmed. If you wish to delete your account entirely, contact us and we will remove all data associated with your user ID within 30 days.</p>
+
+    <h2>8. Encryption</h2>
+    <p>Data in transit is encrypted via HTTPS (TLS). Storage-at-rest encryption is managed by the Manus storage provider. We do not configure or control the specific encryption algorithm used at rest; we rely on the provider&rsquo;s default settings.</p>
+
+    <h2>9. Cookies and analytics</h2>
     <p>We use Google Analytics (GA4) to understand aggregate usage patterns. GA4 sets cookies in your browser. No footage or personally identifiable project data is sent to Google Analytics. You can opt out using standard browser controls or a GA4 opt-out extension.</p>
 
-    <h2>8. Contact</h2>
-    <p>Questions about this policy can be directed to the project owner via the Manus platform.</p>
+    <h2>10. Contact</h2>
+    <p>Questions about this policy can be directed to the project owner via the Manus platform or via the early access form.</p>
   </div>
 </main>
 <footer class="footer" role="contentinfo">
@@ -137,11 +122,11 @@ details.faq p{color:var(--text-2);font-size:.875rem;line-height:1.7;margin-top:1
         </a>
         <p>AI-first video production platform. Upload raw footage, describe your vision, receive a complete edit.</p>
       </div>
-      <div class="footer-col"><h4>Product</h4><a href="index.html#how-it-works">How it works</a><a href="index.html#features">Features</a><a href="showcase.html">Showcase</a><a href="pricing.html">Pricing</a><a href="index.html#waitlist">Early access</a></div>
-      <div class="footer-col"><h4>Platform</h4><a href="dashboard.html">Dashboard</a><a href="new-project.html">New project</a><a href="editor.html">Editor</a></div>
+      <div class="footer-col"><h4>Product</h4><a href="index.html#how-it-works">How it works</a><a href="index.html#features">Features</a><a href="showcase.html">Showcase</a><a href="pricing.html">Early access</a></div>
+      <div class="footer-col"><h4>Platform</h4><a href="dashboard.html">Dashboard</a></div>
       <div class="footer-col"><h4>Legal</h4><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of service</a></div>
     </div>
-    <div class="footer-bottom"><p>&copy; 2026 Stromation. All rights reserved.</p><p>Raw footage in. Finished video out.</p></div>
+    <div class="footer-bottom"><p>&copy; 2026 Stromation. All rights reserved.</p><p>Early access &mdash; features are in active development.</p></div>
   </div>
 </footer>
 <script>
