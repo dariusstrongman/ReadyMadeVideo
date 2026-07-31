@@ -54,11 +54,33 @@ Run it: `python -m app.pipeline.runner --file video.mp4 --out outdir` (local) or
 `--asset <media_asset_id>` (cloud). Live-verified: Gemini correctly described the
 repo's real test clip; Whisper transcribed via API; 9 pipeline tests green.
 
-**Not yet built (next in order):** story planner + fitness template (8), candidate
-selector (9), multi-clip timeline build + preview render (10), mechanical
-validator (11), critic (12), revision pass (13), conversational ops (14),
-preference history (15). See `LICENSE-AUDIT.md` for the dependency ruling
-(Crayotter = reference only, OpenChatCut AGPL = not incorporated).
+## Editing engine (milestones 8–15 — added same day)
+
+| Component | Status | Notes |
+|---|---|---|
+| Story planner + fitness template | **implemented** | `templates/fitness_v1.json` (configurable, 7 beats hook→reflection); deterministic planner adapts duration + drops optional beats on scarce footage; LLM-refined planner can implement the same schema later |
+| Candidate selector | **implemented** | hard constraints first (unusable footage, range reuse, missing assets), then weighted ranking (semantic/technical/motion-fit/emotion/variety/audio/uniqueness); every candidate's scores + selection reason stored — fully auditable |
+| Timeline op engine | **implemented** | constrained op set (insert/replace/move/trim/split/delete/speed/volume/title/caption/duck); AI never touches FFmpeg; versioned, attributable (user/editor_agent/critic/revision_agent/system_rule); protected ranges enforced (ops may not target protected clips) |
+| Multi-clip renderer | **implemented** | compiles validated timeline JSON → deterministic FFmpeg graph: N clips, speed (atempo chains), per-clip volume, title card, caption overlays, looped+ducked music, fades, loudness normalization, preview (360p) + final (1080p) profiles |
+| Mechanical validator | **implemented** | broken/beyond-source ranges, missing media, unusable-footage overlap (from catalog), duplicates, duration vs target, caption overruns, empty ending, render drift |
+| Critic | **implemented** (provider) | Gemini watches the PREVIEW against the brief; fixed question set + timestamped revisionRequests, schema-validated. Live-verified: correctly identified synthetic test-pattern footage as missing the brief. Known quirk: overallScore can contradict the boolean answers — treat requests, not the score, as the signal |
+| Revision agent | **implemented** | converts critic requests into constrained ops using the selector's ranked alternatives; touches only named ranges; loop capped (default 2 passes, env `AUTOEDIT_MAX_REVISIONS`) |
+| Conversational editing | **implemented** (provider) | NL → intent/scope/ops via structured-output LLM → deterministic validation → proposed timeline; protected ranges honored; nothing mutates without validation (mock-provider tested; Gemini provider wired) |
+| Preference history | **implemented (v1 rules)** | `user_corrections` + `edit_runs` tables (migration 0004); local JSONL store for dev; conservative rules-based weight adjustment (±0.05 max); NO fine-tuning by design until enough approved projects exist |
+| Autoedit orchestrator | **implemented** | `python -m app.pipeline.autoedit` — catalog → blueprint → selection → timeline v1 → preview → validate → critic → revision pass(es) → final render; every artifact written to the run dir |
+
+**Live proof (synthetic fixture + Gemini):** plan(5 beats) → select(3 filled, 2 honestly unfilled)
+→ preview v1 (real 10.8 s MP4) → validator OK → critic pass 1 (5 timestamped requests) → revision
+(delete+2 trims) → preview v2 → critic pass 2 → clean stop at pass cap → **final 1920×1080 H.264/AAC**.
+38/38 backend tests green.
+
+**Honest gaps:** run on synthetic + demo footage only — the first-autonomous-edit milestone
+(20+ REAL fitness clips) still requires real footage; story quality on real content is unproven;
+cloud orchestration endpoint (app-triggered autoedit) not yet wired into the FastAPI app;
+critic score calibration; MediaPipe pose pending a Python-3.14 wheel.
+
+See `LICENSE-AUDIT.md` for the dependency ruling (Crayotter = reference only,
+OpenChatCut AGPL = not incorporated).
 
 ## What is still MOCKED / PLANNED / UNFINISHED
 - **AI analysis and auto-editing: not built.** The v1 renderer is title + single trim.
