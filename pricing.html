@@ -92,6 +92,10 @@
       <p class="form-sub">We review applications manually and reach out when a spot opens. No spam, no sales calls.</p>
       <div class="form-error" id="form-error">Something went wrong. Please try again or email us directly.</div>
       <form id="ea-form" novalidate>
+        <div style="position:absolute;left:-9999px" aria-hidden="true">
+          <label for="ea-company">Company</label>
+          <input type="text" id="ea-company" name="company" tabindex="-1" autocomplete="off">
+        </div>
         <div class="field-row">
           <div class="field">
             <label for="ea-name">Name <span class="req">*</span></label>
@@ -205,7 +209,9 @@ if(mb&&nl){mb.addEventListener('click',()=>{const o=nl.classList.toggle('open');
 const nav=document.getElementById('nav');
 if(nav)window.addEventListener('scroll',()=>{nav.style.background=window.scrollY>20?'rgba(10,10,15,0.97)':' rgba(10,10,15,0.85)';},{passive:true});
 </script>
+<script src="assets/js/intake.js"></script>
 <script>
+const EA_LOADED = Date.now();
 document.getElementById('ea-form').addEventListener('submit', async function(e) {
   e.preventDefault();
   const form = e.target;
@@ -229,32 +235,36 @@ document.getElementById('ea-form').addEventListener('submit', async function(e) 
     return;
   }
 
+  // Bot protection: honeypot + time gate. Silently no-op for bots.
+  if (form.company.value || (Date.now() - EA_LOADED) < 2500) {
+    document.getElementById('ea-form').style.display = 'none';
+    document.getElementById('form-success').style.display = 'block';
+    return;
+  }
+
   btn.textContent = 'Submitting...';
   btn.disabled = true;
 
-  const payload = {
-    name,
-    email,
-    creatorType,
-    videoTypes,
-    rawFootageLength: form.rawFootageLength.value,
-    finishedVideoLength: form.finishedVideoLength.value,
-    editingProcess: form.editingProcess.value.trim(),
-    monthlyEditingExpense: form.monthlyEditingExpense.value,
-    betaTesting: form.betaTesting.checked,
-    message: form.message.value.trim(),
-    source: 'pricing_early_access_form',
-    timestamp: new Date().toISOString()
-  };
-
   try {
-    await fetch('https://your-n8n-host/webhook/stromation-early-access', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload)
+    await window.stromationIntake({
+      source: 'early_access',
+      name: name,
+      email: email,
+      creator_type: creatorType,
+      video_types: videoTypes,
+      raw_footage_length: form.rawFootageLength.value,
+      finished_video_length: form.finishedVideoLength.value,
+      editing_process: form.editingProcess.value.trim(),
+      monthly_editing_expense: form.monthlyEditingExpense.value,
+      beta_testing: form.betaTesting.checked ? 'yes' : 'no',
+      message: form.message.value.trim()
     });
-  } catch(_) {
-    // Webhook failure is non-fatal — show success anyway so applicant is not blocked
+  } catch(err) {
+    btn.textContent = 'Apply for early access';
+    btn.disabled = false;
+    errEl.textContent = 'Something went wrong saving your application. Please try again, or email contact@stromation.com.';
+    errEl.style.display = 'block';
+    return;
   }
 
   gtag('event', 'early_access_apply', {

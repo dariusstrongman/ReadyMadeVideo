@@ -540,6 +540,7 @@ section{padding:96px 0}
     <h2 class="section-title" id="wl-h">Be among the first to use Stromation</h2>
     <p class="section-sub" style="margin:16px auto 0;text-align:center">We are onboarding a small group of fitness, lifestyle, and cinematic creators for the initial beta. Join the list to get early access and help shape the product.</p>
     <form class="waitlist-form" id="waitlist-form" novalidate>
+      <input type="text" name="company" id="wl-company" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px">
       <input type="email" name="email" placeholder="Your email address" required autocomplete="email" aria-label="Email address for waitlist">
       <button type="submit" class="btn btn-primary" onclick="gtag('event','cta_click',{label:'waitlist_submit'})">Request access</button>
     </form>
@@ -571,15 +572,26 @@ if(mb&&nl){mb.addEventListener('click',()=>{const o=nl.classList.toggle('open');
 const nav=document.getElementById('nav');
 if(nav)window.addEventListener('scroll',()=>{nav.style.background=window.scrollY>20?'rgba(10,10,15,0.97)':'rgba(10,10,15,0.85)';},{passive:true});
 </script>
+<script src="assets/js/intake.js"></script>
 <script>
 const form=document.getElementById('waitlist-form'),successMsg=document.getElementById('waitlist-success');
+const WL_LOADED=Date.now();
 if(form)form.addEventListener('submit',async(e)=>{
   e.preventDefault();
   const email=form.email.value.trim();
-  if(!email||!email.includes('@'))return;
+  if(!email||!email.includes('@')||!email.includes('.'))return;
   const btn=form.querySelector('button[type=submit]');
+  // Bot protection: honeypot + time gate.
+  if(form.company.value||(Date.now()-WL_LOADED)<2500){form.style.display='none';successMsg.style.display='block';return;}
   btn.textContent='Submitting...';btn.disabled=true;
-  try{await fetch('https://your-n8n-host/webhook/stromation-waitlist' /* TODO: set real webhook URL */,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,source:'homepage_waitlist',timestamp:new Date().toISOString()})});}catch(_){}
+  try{
+    await window.stromationIntake({source:'homepage_waitlist',email:email});
+  }catch(_){
+    btn.textContent='Request access';btn.disabled=false;
+    successMsg.textContent='Something went wrong. Please try again or email contact@stromation.com.';
+    successMsg.style.color='#fca5a5';successMsg.style.display='block';
+    return;
+  }
   form.style.display='none';successMsg.style.display='block';
   gtag('event','lead_submit',{label:'waitlist',email_domain:email.split('@')[1]});
 });

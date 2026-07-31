@@ -44,6 +44,21 @@
 6. Worker generates a structured `timeline` JSON based on the user's prompt.
 7. Client UI polls or receives WebSocket updates and loads the proxy media and timeline JSON into the browser editor.
 
+### 6a. Live Data Capture (implemented 2026-07-31)
+The only real backend in Phase 1 is **intake capture** — deliberately minimal, to support
+concierge validation without building the full platform. One table in the **Stromation** Supabase
+(`iadzcnzgbtuigyodeqas`), no second database:
+- `video_intake` (id, created_at, source, name, email, creator_type, video_types,
+  raw_footage_length, finished_video_length, editing_process, monthly_editing_expense,
+  beta_testing, message, status default 'new', notes). RLS enabled; **INSERT-only policy for
+  anon/authenticated, no read/update/delete** — the publishable key is safe in frontend and
+  signups cannot be scraped. Owner reads via service role / dashboard.
+- Wired forms: homepage waitlist (`source=homepage_waitlist`, email only) and pricing early-access
+  (`source=early_access`, full concierge intake). Both use `assets/js/intake.js`, include a
+  honeypot + time gate, and only show success on a confirmed insert (no silent data loss).
+- The full app schema (users/profiles/projects/media_assets/timelines) in §5 remains **deferred**
+  until the 30-day paid validation clears. Do not build it before then.
+
 ### 7. Functional vs Mocked Feature Matrix (Phase 1)
 | Feature | Phase 1 Status |
 |---|---|
