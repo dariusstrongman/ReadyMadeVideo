@@ -1,0 +1,14 @@
+# Gitleaks config. Extends default rules; allowlists ONLY values that are
+# public by design. Service-role keys, PATs, provider API keys are NOT listed.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Supabase PUBLISHABLE (anon) keys are browser-safe by design — they are shipped in the public frontend and constrained by RLS."
+regexes = [
+  '''sb_publishable_[A-Za-z0-9_-]+''',
+]
+paths = [
+  '''app/\.env\.example''',
+  '''render-backend/\.env\.example''',
+]
