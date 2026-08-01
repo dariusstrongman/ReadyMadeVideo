@@ -3,7 +3,8 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [feature/real-video-pipeline]
+    branches: [feature/real-video-pipeline, codex/human-ceiling-evaluation,
+               codex/full-audiovisual-editor-v1]
 
 jobs:
   frontend:
@@ -81,6 +82,8 @@ jobs:
             psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f "$f"
           done
           echo "all migrations applied cleanly"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/human_ceiling_integrity.sql
+          echo "human-ceiling PostgreSQL integrity assertions passed"
 
   secret-scan:
     runs-on: ubuntu-latest

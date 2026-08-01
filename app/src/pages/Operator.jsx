@@ -175,6 +175,7 @@ function ProjectDetail({ project, session }) {
       <PreproductionSection project={project} />
       <BlueprintSection project={project} />
       <TimelinesSection project={project} session={session} act={act} post={post} />
+      <HumanCeilingSection project={project} session={session} />
       <CoverageSection project={project} session={session} />
       <EvaluationSection project={project} session={session} act={act} post={post} />
       <AuditSection project={project} />
@@ -330,7 +331,7 @@ function TimelinesSection({ project, session, act, post }) {
   const [tls, setTls] = useState([])
   const [compare, setCompare] = useState([])
   useEffect(() => {
-    supabase.from('timelines').select('id,version,created_at,timeline_json')
+    supabase.from('timelines').select('id,version,created_at,timeline_json,lineage,parent_timeline_id,is_immutable')
       .eq('project_id', project.id).order('version')
       .then(({ data }) => setTls(data || []))
   }, [project.id])
@@ -344,7 +345,8 @@ function TimelinesSection({ project, session, act, post }) {
           <button key={t.id} className="btn btn-ghost"
             onClick={() => setCompare((c) => c.includes(t.id)
               ? c.filter((x) => x !== t.id) : [...c.slice(-1), t.id])}>
-            v{t.version}{compare.includes(t.id) ? ' ✓' : ''}
+            v{t.version} · {t.lineage || 'legacy'}{t.is_immutable ? ' · locked' : ''}
+            {compare.includes(t.id) ? ' ✓' : ''}
           </button>))}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
@@ -360,7 +362,7 @@ function TimelinesSection({ project, session, act, post }) {
                       { params: { timeline_id: t.id } }))}>Approve → final</button>
               </div>
               {clipsOf(t).map((c, i) => <div key={i} className="small mono">{c}</div>)}
-              <TrimForm project={project} timeline={t} act={act} post={post} />
+              {!t.is_immutable && <TrimForm project={project} timeline={t} act={act} post={post} />}
             </div>)
         })}
       </div>
@@ -386,6 +388,251 @@ function TrimForm({ project, timeline, act, post }) {
         }))}>Trim</button>
     </div>
   )
+}
+
+const SCORE_FIELDS = ['hook', 'story_clarity', 'shot_selection', 'shot_variety',
+  'pacing', 'continuity', 'action_visibility', 'emotional_intensity',
+  'natural_audio', 'audio_mix', 'captions_titles', 'color_consistency',
+  'ending_payoff']
+
+function HumanCeilingSection({ project, session: authSession }) {
+  const [timelines, setTimelines] = useState([])
+  const [humanSession, setHumanSession] = useState(null)
+  const [abandonedSession, setAbandonedSession] = useState(null)
+  const [initialId, setInitialId] = useState('')
+  const [revisedId, setRevisedId] = useState('')
+  const [operationText, setOperationText] = useState(
+    JSON.stringify({ op: 'trim_clip', clipId: '', sourceStart: 0, sourceEnd: 1 }, null, 2))
+  const [note, setNote] = useState('')
+  const [elapsed, setElapsed] = useState(0)
+  const [serverMeasured, setServerMeasured] = useState(0)
+  const [timerRunning, setTimerRunning] = useState(false)
+  const [report, setReport] = useState(null)
+  const [err, setErr] = useState('')
+  const [msg, setMsg] = useState('')
+
+  const load = useCallback(async () => {
+    const [{ data: tls }, { data: sessions }] = await Promise.all([
+      supabase.from('timelines')
+        .select('id,version,created_at,timeline_json,lineage,parent_timeline_id,is_immutable')
+        .eq('project_id', project.id).order('version'),
+      supabase.from('human_edit_sessions').select('*').eq('project_id', project.id)
+        .order('created_at', { ascending: false }).limit(1),
+    ])
+    const rows = tls || []
+    setTimelines(rows)
+    const latest = sessions?.[0] || null
+    const current = latest?.status === 'abandoned' ? null : latest
+    setHumanSession(current)
+    setAbandonedSession(latest?.status === 'abandoned' ? latest : null)
+    const initial = rows.find((t) => t.lineage === 'autonomous_initial')
+    const revised = rows.find((t) => t.lineage === 'autonomous_revised')
+    if (initial) setInitialId(initial.id)
+    if (revised) setRevisedId(revised.id)
+    if (latest) {
+      setInitialId(latest.autonomous_initial_timeline_id)
+      setRevisedId(latest.autonomous_revised_timeline_id || '')
+      setServerMeasured(Number(latest.server_measured_seconds || 0))
+      setElapsed(Number(latest.client_reported_seconds || 0))
+      setTimerRunning(latest.status === 'active' && latest.timing_state === 'running')
+    }
+  }, [project.id])
+  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (!timerRunning) return undefined
+    const timer = setInterval(() => setElapsed((value) => value + 1), 1000)
+    return () => clearInterval(timer)
+  }, [timerRunning])
+
+  async function perform(label, fn) {
+    setErr(''); setMsg('')
+    try {
+      const value = await fn()
+      setMsg(`${label}: ok`)
+      await load()
+      return value
+    } catch (e) {
+      setErr(`${label}: ${e.message}`)
+      return null
+    }
+  }
+
+  const baselineOptions = timelines.filter((t) =>
+    ['legacy', 'autonomous_initial', 'autonomous_revised'].includes(t.lineage || 'legacy'))
+  const currentTimeline = timelines.find((t) => t.id === humanSession?.current_timeline_id)
+  const approvedTimeline = timelines.find((t) => t.id === humanSession?.approved_timeline_id)
+  const canStart = initialId && (!revisedId || initialId !== revisedId)
+
+  async function start() {
+    const data = await perform('start human ceiling', () => api(authSession, 'POST',
+      `/projects/${project.id}/human-ceiling/start`, {
+        autonomous_initial_timeline_id: initialId,
+        ...(revisedId && { autonomous_revised_timeline_id: revisedId }),
+      }))
+    if (data) {
+      setElapsed(0); setServerMeasured(0); setTimerRunning(true)
+    }
+  }
+
+  async function applyManualOperation() {
+    let operation
+    try { operation = JSON.parse(operationText) }
+    catch { setErr('manual operation: JSON is invalid'); return }
+    const data = await perform('manual operation', () => api(authSession, 'POST',
+      `/projects/${project.id}/timeline-ops`, {
+        base_timeline_id: humanSession.current_timeline_id,
+        human_edit_session_id: humanSession.id,
+        operations: [operation], client_reported_seconds: elapsed, note,
+      }))
+    if (data) setServerMeasured(Number(data.timing?.server_measured_seconds || 0))
+  }
+
+  async function pause() {
+    const data = await perform('pause human timing', () => api(authSession, 'POST',
+      `/projects/${project.id}/human-ceiling/pause`, {
+        session_id: humanSession.id, client_reported_seconds: elapsed,
+      }))
+    if (data) { setTimerRunning(false); setServerMeasured(data.server_measured_seconds) }
+  }
+
+  async function resume() {
+    const data = await perform('resume human timing', () => api(authSession, 'POST',
+      `/projects/${project.id}/human-ceiling/resume`, {
+        session_id: humanSession.id, client_reported_seconds: elapsed,
+      }))
+    if (data) { setTimerRunning(true); setServerMeasured(data.server_measured_seconds) }
+  }
+
+  async function approve() {
+    const data = await perform('approve human timeline', () => api(authSession, 'POST',
+      `/projects/${project.id}/human-ceiling/approve`, {
+        session_id: humanSession.id, client_reported_seconds: elapsed,
+      }))
+    if (data) {
+      setTimerRunning(false)
+      setServerMeasured(Number(data.timing?.server_measured_seconds || 0))
+    }
+  }
+
+  async function abandon() {
+    const reason = window.prompt('Reason for abandoning this human-ceiling session?')?.trim()
+    if (!reason) { setErr('abandon: a reason is required'); return }
+    if (!window.confirm('Abandon this session? The human draft will be frozen as non-approved evidence.')) return
+    const data = await perform('abandon human session', () => api(authSession, 'POST',
+      `/projects/${project.id}/human-ceiling/abandon`, {
+        session_id: humanSession.id, reason, client_reported_seconds: elapsed,
+      }))
+    if (data) {
+      setTimerRunning(false)
+      setServerMeasured(Number(data.timing?.server_measured_seconds || 0))
+    }
+  }
+
+  async function generateReport() {
+    const data = await perform('generate comparison report', () => api(authSession, 'GET',
+      `/projects/${project.id}/human-ceiling/report?session_id=${humanSession.id}`))
+    if (data) setReport(data)
+  }
+
+  return (
+    <Section title="Human-ceiling comparison: autonomous evidence vs human approved" defaultOpen>
+      <p className="small">Starting a session freezes the available autonomous evidence and clones the
+        revised timeline—or the initial timeline when no real revision exists—into a separate human lineage.
+        Server timestamps are authoritative; the browser timer is only a diagnostic hint.</p>
+      {err && <div className="err">{err}</div>}
+      {msg && <div className="ok">{msg}</div>}
+      {!humanSession && <div className="grid grid-2" style={{ marginTop: 10 }}>
+        <label className="small">Autonomous initial
+          <select value={initialId} onChange={(e) => setInitialId(e.target.value)}>
+            <option value="">Select timeline</option>
+            {baselineOptions.map((t) => <option key={t.id} value={t.id}>v{t.version} · {t.lineage}</option>)}
+          </select>
+        </label>
+        <label className="small">Autonomous revised (optional)
+          <select value={revisedId} onChange={(e) => setRevisedId(e.target.value)}>
+            <option value="">No distinct revised timeline</option>
+            {baselineOptions.map((t) => <option key={t.id} value={t.id}>v{t.version} · {t.lineage}</option>)}
+          </select>
+        </label>
+        <button className="btn btn-primary" disabled={!canStart} onClick={start}>
+          Freeze autonomous evidence + begin human lineage</button>
+      </div>}
+      {abandonedSession && !humanSession && <p className="small" style={{ color: 'var(--amber)' }}>
+        Previous session abandoned: {abandonedSession.abandonment_reason}. Its draft and corrections remain
+        frozen as non-approved evidence; a new session may be started.</p>}
+      {humanSession && <div style={{ marginTop: 12 }}>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <span className={`badge ${humanSession.status === 'active' ? 'processing' : 'completed'}`}>
+            {humanSession.status}</span>
+          <span className="small mono">human v{currentTimeline?.version || '?'} · server authoritative:
+            {' '}{serverMeasured.toFixed(1)}s · client hint: {elapsed}s</span>
+          {humanSession.status === 'active' && <>
+            <button className="btn btn-ghost" onClick={timerRunning ? pause : resume}>
+              {timerRunning ? 'Pause server timing' : 'Resume server timing'}</button>
+            <label className="small">Client timer hint <input type="number" min="0" value={elapsed}
+              onChange={(e) => setElapsed(Math.max(0, Number(e.target.value)))}
+              style={{ width: 100, display: 'inline-block' }} /></label>
+          </>}
+        </div>
+        {humanSession.status === 'active' && <div className="grid" style={{ marginTop: 10 }}>
+          <label className="small">One constrained operation (replacement, trim, reorder, audio, title, etc.)
+            <textarea rows="7" className="mono" value={operationText}
+              onChange={(e) => setOperationText(e.target.value)} /></label>
+          <input placeholder="Reason for this human decision" value={note}
+            onChange={(e) => setNote(e.target.value)} />
+          <div className="row">
+            <button className="btn btn-secondary" onClick={applyManualOperation}>Apply + record operation</button>
+            <button className="btn btn-primary" onClick={approve}>Approve human timeline</button>
+            <button className="btn btn-danger" onClick={abandon}>Abandon session</button>
+          </div>
+        </div>}
+        {humanSession.status === 'approved' && <>
+          <p className="small">Approved human timeline: v{approvedTimeline?.version || '?'}.
+            {' '}{humanSession.autonomous_revised_timeline_id ? 'All three versions' : 'Initial and human versions'}
+            {' '}are immutable evidence. Correction time is server-measured.</p>
+          <div className="grid grid-3">
+            <ScorecardEditor label="Autonomous initial" timelineId={humanSession.autonomous_initial_timeline_id}
+              project={project} session={humanSession} authSession={authSession} perform={perform} />
+            {humanSession.autonomous_revised_timeline_id &&
+              <ScorecardEditor label="Autonomous revised" timelineId={humanSession.autonomous_revised_timeline_id}
+                project={project} session={humanSession} authSession={authSession} perform={perform} />}
+            <ScorecardEditor label="Human approved" timelineId={humanSession.approved_timeline_id}
+              project={project} session={humanSession} authSession={authSession} perform={perform} />
+          </div>
+          <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={generateReport}>
+            Generate side-by-side report</button>
+          {report && <pre style={{ whiteSpace: 'pre-wrap', marginTop: 10 }}>{report.markdown}</pre>}
+        </>}
+      </div>}
+    </Section>
+  )
+}
+
+function ScorecardEditor({ label, timelineId, project, session, authSession, perform }) {
+  const [overall, setOverall] = useState('')
+  const [publishable, setPublishable] = useState('')
+  const [scores, setScores] = useState({})
+  const [notes, setNotes] = useState('')
+  return <div className="card" style={{ background: 'var(--bg-3)' }}>
+    <b className="small">{label}</b>
+    <label className="small">Overall (1-10)<input type="number" min="1" max="10" value={overall}
+      onChange={(e) => setOverall(e.target.value)} /></label>
+    <label className="small">Publishable<select value={publishable}
+      onChange={(e) => setPublishable(e.target.value)}>
+      <option value="">Not scored</option><option value="true">Yes</option><option value="false">No</option>
+    </select></label>
+    {SCORE_FIELDS.map((field) => <label key={field} className="small">{field}
+      <input type="number" min="1" max="10" value={scores[field] || ''}
+        onChange={(e) => setScores({ ...scores, [field]: e.target.value === '' ? null : Number(e.target.value) })} />
+    </label>)}
+    <textarea placeholder="Scorecard notes" rows="3" value={notes} onChange={(e) => setNotes(e.target.value)} />
+    <button className="btn btn-secondary btn-sm" disabled={!overall} onClick={() => perform(
+      `score ${label}`, () => api(authSession, 'POST', `/projects/${project.id}/human-ceiling/scorecard`, {
+        session_id: session.id, timeline_id: timelineId, scores,
+        overall_rating: Number(overall), publishable: publishable === '' ? null : publishable === 'true',
+        evaluator_role: 'operator', notes,
+      }))}>Save scorecard</button>
+  </div>
 }
 
 function CoverageSection({ project, session }) {

@@ -41,9 +41,12 @@ class FakeSupabase:
                             "asset_analysis", "edit_runs", "draft_evaluations",
                             "user_corrections", "operators", "operator_audit",
                             "stage_metrics", "project_status_events", "profiles",
-                            "preproduction_runs")}
+                            "preproduction_runs",
+                            "human_edit_sessions", "human_edit_timing_events",
+                            "timeline_scorecards")}
         self.storage: dict[str, bytes] = {}          # "bucket/path" -> data
         self.fail_tables: set[str] = set()           # simulate write failures
+        self.conflict_once_tables: set[str] = set()  # simulate one unique collision
         self.users: dict[str, dict] = {}             # token -> user
 
     # ---------- filter parsing ----------
@@ -86,6 +89,9 @@ class FakeSupabase:
     def insert(self, table, body):
         if table in self.fail_tables:
             return resp(500, {"message": "simulated failure"})
+        if table in self.conflict_once_tables:
+            self.conflict_once_tables.discard(table)
+            return resp(409, {"message": "simulated unique collision"})
         rows = body if isinstance(body, list) else [body]
         out = []
         for b in rows:
@@ -101,6 +107,30 @@ class FakeSupabase:
                 b.setdefault("progress", 0)
                 b.setdefault("attempt_count", 0)
                 b.setdefault("max_attempts", 3)
+            if table == "timelines":
+                b.setdefault("lineage", "legacy")
+                b.setdefault("is_immutable", False)
+            if table == "human_edit_sessions":
+                duplicate = [r for r in self.tables[table]
+                             if r["project_id"] == b["project_id"]
+                             and r.get("status") == "active"]
+                if duplicate and b.get("status", "active") == "active":
+                    return resp(409, {"message": "duplicate active session"})
+                b.setdefault("status", "active")
+                b.setdefault("timing_state", "running")
+                b.setdefault("server_measured_seconds", 0)
+                b.setdefault("client_reported_seconds", None)
+                b.setdefault("idle_gap_cap_seconds", 300)
+                b.setdefault("human_correction_seconds", 0)
+                b.setdefault("last_activity_at", _now())
+            if table == "human_edit_timing_events":
+                b.setdefault("occurred_at", _now())
+            if table == "user_corrections" and b.get("human_edit_session_id"):
+                duplicate = [r for r in self.tables[table]
+                             if r.get("human_edit_session_id") == b["human_edit_session_id"]
+                             and r.get("operation_index") == b.get("operation_index")]
+                if duplicate:
+                    return resp(409, {"message": "duplicate operation index"})
             b.setdefault("id", str(uuid.uuid4()))
             b.setdefault("created_at", _now())
             self.tables[table].append(b)

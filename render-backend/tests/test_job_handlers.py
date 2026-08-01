@@ -79,6 +79,13 @@ def test_handle_autoedit_then_final_render(env):
     assert row["artifacts"]["previews"], "draft previews must be uploaded"
     assert any(k.startswith("exports/") for k in fake.storage)
     assert fake.tables["edit_runs"] and fake.tables["draft_evaluations"]
+    timelines = fake.select("timelines", f"project_id=eq.{project['id']}")
+    edit_run = fake.tables["edit_runs"][0]
+    assert timelines[0]["lineage"] == "autonomous_initial"
+    assert timelines[0]["is_immutable"] is True
+    assert all(timeline["edit_run_id"] == edit_run["id"] for timeline in timelines)
+    assert edit_run["timeline_v1_id"] == timelines[0]["id"]
+    assert edit_run["timeline_v2_id"] is None
     ev = fake.tables["draft_evaluations"][0]
     assert ev["beats_requested"] >= ev["beats_filled"] >= 1
     assert fake.select("projects",
