@@ -41,6 +41,7 @@ class FakeSupabase:
                             "asset_analysis", "edit_runs", "draft_evaluations",
                             "user_corrections", "operators", "operator_audit",
                             "stage_metrics", "project_status_events", "profiles",
+                            "preproduction_runs",
                             "human_edit_sessions", "human_edit_timing_events",
                             "timeline_scorecards")}
         self.storage: dict[str, bytes] = {}          # "bucket/path" -> data

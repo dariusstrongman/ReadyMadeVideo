@@ -22,6 +22,7 @@ import os
 import shutil
 import tempfile
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -1045,6 +1046,97 @@ def op_coverage(project_id: str, authorization: str = Header(default="")):
     rows = supa.db_select("segments", f"project_id=eq.{project_id}")
     segs = [Seg(**r["data"]) for r in rows]
     return validate_coverage(segs).model_dump()
+
+
+class PreproductionBody(BaseModel):
+    purpose: str = "cinematic fitness recap"
+    audience: str = "social fitness audience"
+    targetDurationSeconds: float | None = None
+    targetPlatform: Literal["vertical"] = "vertical"
+    referenceStyle: str | None = None
+    tone: list[str] = Field(default_factory=lambda: [
+        "intense", "authentic", "motivational",
+    ])
+    preferredVariant: str | None = None
+    graphicsPreference: Literal["none", "low", "medium"] = "low"
+    colorPreference: str = "high contrast natural warmth"
+
+
+@app.post("/projects/{project_id}/preproduction")
+def op_preproduction(project_id: str, body: PreproductionBody,
+                     authorization: str = Header(default="")):
+    """Create the Milestone 1 planning contract without selecting or rendering."""
+    import httpx as _hx
+
+    from .pipeline.creative_director import CreativeBrief
+    from .pipeline.preproduction import build_preproduction_package
+    from .pipeline.schemas import Segment as Seg
+
+    op = _require_operator(authorization)
+    _rate_check(op["id"], "preproduction")
+    project = _get_project(project_id)
+    rows = supa.db_select("segments", f"project_id=eq.{project_id}")
+    if not rows:
+        raise HTTPException(409, "segment catalog required - run analysis first")
+    try:
+        brief = CreativeBrief(
+            purpose=body.purpose,
+            audience=body.audience,
+            targetDurationSeconds=body.targetDurationSeconds,
+            referenceStyle=body.referenceStyle,
+            tone=body.tone,
+            preferredVariant=body.preferredVariant,
+            graphicsPreference=body.graphicsPreference,
+            colorPreference=body.colorPreference,
+        )
+        package = build_preproduction_package(
+            brief,
+            [Seg(**row["data"]) for row in rows],
+        )
+    except ValidationError as exc:
+        raise HTTPException(422, exc.errors(include_url=False))
+
+    existing = supa.db_select(
+        "preproduction_runs",
+        f"project_id=eq.{project_id}&order=version.desc&limit=1",
+    )
+    version = (existing[0]["version"] + 1) if existing else 1
+    request = body.model_dump()
+    _audit(op, "create_preproduction", project_id, {
+        "version": version,
+        "target_duration": package.creativeTreatment.targetDurationSeconds,
+        "status": package.status,
+    })
+    payload = {
+        "project_id": project_id,
+        "user_id": project["user_id"],
+        "version": version,
+        "status": package.status,
+        "request": request,
+        "creative_treatment": package.creativeTreatment.model_dump(),
+        "capture_quality_report": package.captureQualityReport.model_dump(),
+        "composition_by_segment": {
+            key: value.model_dump() for key, value in package.compositionBySegment.items()
+        },
+        "story_variants": package.storyVariants.model_dump(),
+        "warnings": package.warnings,
+    }
+    response = _hx.post(
+        f"{supa.SUPABASE_URL}/rest/v1/preproduction_runs",
+        headers={
+            "apikey": supa.SERVICE_KEY,
+            "Authorization": f"Bearer {supa.SERVICE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        },
+        json=payload,
+        timeout=30,
+    )
+    if response.status_code == 409:
+        raise HTTPException(409, "preproduction version conflict; retry")
+    response.raise_for_status()
+    saved = response.json()[0]
+    return {"id": saved["id"], "version": version, **package.model_dump()}
 
 
 class SignBody(BaseModel):

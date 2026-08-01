@@ -159,6 +159,77 @@ def test_segment_flag_requires_existing_segment(env):
     assert r.status_code == 404
 
 
+# ---------- audiovisual preproduction ----------
+def _add_preproduction_segments(env):
+    base = {
+        "schemaVersion": 2, "assetId": "asset-a", "sourceStart": 0,
+        "sourceEnd": 5, "subjects": ["athlete"], "shotType": "medium",
+        "cameraAngle": "eye level", "cameraMovement": "static",
+        "location": "gym", "transcript": None, "emotion": "focused",
+        "focusScore": 0.8, "exposureScore": 0.8, "stabilityScore": 0.8,
+        "audioScore": 0.8, "semanticRelevance": 0.8,
+        "duplicateGroupId": None, "problems": [],
+    }
+    for index, (uses, motion, action, shot, movement) in enumerate([
+        (["hook", "peak"], 0.95, "sprint start", "close", "static"),
+        (["location", "broll"], 0.1, "gym establishing", "wide", "static"),
+        (["early_effort"], 0.5, "running", "medium", "gimbal follow"),
+        (["build"], 0.7, "sled push", "medium", "tracking"),
+        (["completion", "reflection"], 0.2, "recovery", "medium", "static"),
+    ]):
+        sid = f"seg-{index}"
+        data = {**base, "segmentId": sid, "storyUses": uses,
+                "motionIntensity": motion, "action": action, "shotType": shot,
+                "cameraMovement": movement, "searchText": action}
+        env.fake.insert("segments", {
+            "project_id": env.project["id"], "user_id": env.project["user_id"],
+            "asset_id": "asset-a", "segment_key": sid, "data": data,
+        })
+
+
+def test_operator_creates_audited_preproduction_contract(env):
+    _add_preproduction_segments(env)
+    r = env.client.post(
+        f"/projects/{env.project['id']}/preproduction",
+        json={"purpose": "authentic training recap", "targetDurationSeconds": 24,
+              "targetPlatform": "vertical"},
+        headers=env.h(env.operator[1]),
+    )
+    assert r.status_code == 200, r.text
+    payload = r.json()
+    assert payload["version"] == 1
+    assert payload["creativeTreatment"]["orientation"] == "9:16"
+    assert len(payload["storyVariants"]["variants"]) == 5
+    saved = env.fake.tables["preproduction_runs"][0]
+    assert saved["project_id"] == env.project["id"]
+    assert any(a["action"] == "create_preproduction"
+               for a in env.fake.tables["operator_audit"])
+    second = env.client.post(
+        f"/projects/{env.project['id']}/preproduction",
+        json={"purpose": "alternate training recap", "targetDurationSeconds": 20},
+        headers=env.h(env.operator[1]),
+    )
+    assert second.status_code == 200 and second.json()["version"] == 2
+    assert [row["version"] for row in env.fake.tables["preproduction_runs"]] == [1, 2]
+
+
+def test_preproduction_requires_operator_and_catalog(env):
+    path = f"/projects/{env.project['id']}/preproduction"
+    denied = env.client.post(path, json={}, headers=env.h(env.owner[1]))
+    assert denied.status_code == 403
+    missing = env.client.post(path, json={}, headers=env.h(env.operator[1]))
+    assert missing.status_code == 409
+
+
+def test_preproduction_rejects_out_of_scope_duration(env):
+    _add_preproduction_segments(env)
+    r = env.client.post(
+        f"/projects/{env.project['id']}/preproduction",
+        json={"targetDurationSeconds": 90}, headers=env.h(env.operator[1]),
+    )
+    assert r.status_code == 422
+
+
 # ---------- timeline op validation ----------
 def _project_timeline(env):
     tl = {"version": 1, "width": 1920, "height": 1080, "fps": 30, "duration": 6,
