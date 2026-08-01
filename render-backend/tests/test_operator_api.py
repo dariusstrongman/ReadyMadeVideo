@@ -180,7 +180,8 @@ def _add_preproduction_segments(env):
         sid = f"seg-{index}"
         data = {**base, "segmentId": sid, "storyUses": uses,
                 "motionIntensity": motion, "action": action, "shotType": shot,
-                "cameraMovement": movement, "searchText": action}
+                "cameraMovement": movement, "searchText": action,
+                "sourceStart": index * 5, "sourceEnd": index * 5 + 5}
         env.fake.insert("segments", {
             "project_id": env.project["id"], "user_id": env.project["user_id"],
             "asset_id": "asset-a", "segment_key": sid, "data": data,
@@ -228,6 +229,75 @@ def test_preproduction_rejects_out_of_scope_duration(env):
         json={"targetDurationSeconds": 90}, headers=env.h(env.operator[1]),
     )
     assert r.status_code == 422
+
+
+# ---------- audiovisual picture editor ----------
+def _create_preproduction(env):
+    _add_preproduction_segments(env)
+    response = env.client.post(
+        f"/projects/{env.project['id']}/preproduction",
+        json={"purpose": "Milestone 2 picture edit", "targetDurationSeconds": 24},
+        headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_operator_creates_versioned_audited_picture_candidates(env):
+    preproduction = _create_preproduction(env)
+    baseline = _project_timeline(env)
+    baseline_json = baseline["timeline_json"].copy()
+    path = f"/projects/{env.project['id']}/picture-edit"
+    response = env.client.post(
+        path, json={"preproductionRunId": preproduction["id"]},
+        headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["version"] == 1
+    assert len(payload["candidates"]) == 3
+    assert len(payload["visualRhythmPlans"]) == 3
+    assert payload["selectedCandidateId"]
+    assert {c["timeline"]["meta"]["milestone"] for c in payload["candidates"]} == {
+        "audiovisual_picture_editor_v1",
+    }
+    assert all([track["type"] for track in c["timeline"]["tracks"]] == ["video"]
+               for c in payload["candidates"])
+    assert env.fake.select("timelines", f"id=eq.{baseline['id']}")[0][
+        "timeline_json"] == baseline_json
+    saved = env.fake.tables["picture_edit_runs"][0]
+    assert saved["preproduction_run_id"] == preproduction["id"]
+    assert any(a["action"] == "create_picture_edit"
+               for a in env.fake.tables["operator_audit"])
+
+    second = env.client.post(path, json={}, headers=env.h(env.operator[1]))
+    assert second.status_code == 200, second.text
+    assert second.json()["version"] == 2
+    assert [row["version"] for row in env.fake.tables["picture_edit_runs"]] == [1, 2]
+
+
+def test_picture_edit_requires_operator_catalog_and_preproduction(env):
+    path = f"/projects/{env.project['id']}/picture-edit"
+    assert env.client.post(path, json={}).status_code == 401
+    assert env.client.post(path, json={}, headers=env.h(env.owner[1])).status_code == 403
+    no_catalog = env.client.post(path, json={}, headers=env.h(env.operator[1]))
+    assert no_catalog.status_code == 409
+    _add_preproduction_segments(env)
+    no_preproduction = env.client.post(path, json={}, headers=env.h(env.operator[1]))
+    assert no_preproduction.status_code == 409
+    assert "preproduction" in no_preproduction.json()["detail"]
+
+
+def test_picture_edit_rejects_cross_project_preproduction_reference(env):
+    preproduction = _create_preproduction(env)
+    other_project = env.fake.add_project(env.project["user_id"], "Other", status="ready")
+    env.fake.tables["segments"][0]["project_id"] = other_project["id"]
+    path = f"/projects/{other_project['id']}/picture-edit"
+    response = env.client.post(
+        path, json={"preproductionRunId": preproduction["id"]},
+        headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 409
 
 
 # ---------- timeline op validation ----------
