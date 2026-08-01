@@ -7,6 +7,30 @@ from .schemas import SceneRange, ScenesArtifact
 
 THRESHOLD = 27.0
 MIN_SCENE_LEN_S = 0.6
+# Continuous phone footage often has ZERO hard cuts (Project One smoke-test
+# finding: a 73 s handheld clip produced one giant unusable segment). Scenes
+# longer than MAX_SCENE_S are subdivided into ~TARGET_SUB_S logical windows so
+# the catalog/selector work with editable ranges.
+MAX_SCENE_S = 12.0
+TARGET_SUB_S = 8.0
+
+
+def _subdivide(scenes: list[SceneRange]) -> list[SceneRange]:
+    out: list[SceneRange] = []
+    for s in scenes:
+        dur = s.end - s.start
+        if dur <= MAX_SCENE_S:
+            out.append(s)
+            continue
+        n = max(2, round(dur / TARGET_SUB_S))
+        step = dur / n
+        for k in range(n):
+            out.append(SceneRange(index=0,
+                                  start=round(s.start + k * step, 3),
+                                  end=round(s.start + (k + 1) * step, 3)))
+    for i, s in enumerate(out):
+        s.index = i
+    return out
 
 
 def scenes_stage(proxy_path: str, duration: float) -> ScenesArtifact:
@@ -25,5 +49,6 @@ def scenes_stage(proxy_path: str, duration: float) -> ScenesArtifact:
         for i, (s, e) in enumerate(ranges):
             scenes.append(SceneRange(index=i, start=round(s.seconds, 3),
                                      end=round(e.seconds, 3)))
-    return ScenesArtifact(detector="pyscenedetect.ContentDetector",
+    scenes = _subdivide(scenes)
+    return ScenesArtifact(detector="pyscenedetect.ContentDetector+subdivide",
                           threshold=THRESHOLD, scenes=scenes)

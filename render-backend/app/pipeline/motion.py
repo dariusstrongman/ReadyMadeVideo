@@ -37,10 +37,29 @@ def motion_stage(proxy_path: str, scenes: ScenesArtifact) -> MotionArtifact:
             small = cv2.resize(frame, (WIDTH, max(2, int(h * WIDTH / w))))
             gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
             if prev is not None:
-                samples.append((idx / fps, float(cv2.absdiff(gray, prev).mean())))
+                d = cv2.absdiff(gray, prev)
+                # Foreground-sensitive metric (Project One smoke-test finding:
+                # whole-frame mean gave ~0.02 for real tire flips because a
+                # small moving subject on a static wide shot barely moves the
+                # global mean). Use the mean of the top-decile most-changed
+                # pixels: tracks subject movement independent of subject size.
+                flat = d.reshape(-1)
+                k = max(1, flat.size // 50)          # top 2% most-changed pixels
+                top = float(cv2.mean(cv2.sort(flat.reshape(1, -1),
+                                              cv2.SORT_EVERY_ROW
+                                              | cv2.SORT_DESCENDING)[:, :k])[0])
+                samples.append((idx / fps, top))
             prev = gray
         idx += 1
     cap.release()
+
+    # Adaptive per-video normalization (Project One finding: absolute pixel-diff
+    # scales are meaningless across phone footage — small subjects on static
+    # wide shots compress to ~0). Intensity is RELATIVE within this video:
+    # scene p75 against the video's own p95, so the selector ranks correctly
+    # regardless of framing. A floor guards against amplifying pure noise.
+    all_vals = np.array([m for _, m in samples]) if samples else np.array([0.0])
+    global_scale = max(12.0, float(np.percentile(all_vals, 95)))
 
     out: list[MotionScene] = []
     for s in scenes.scenes:
@@ -51,8 +70,7 @@ def motion_stage(proxy_path: str, scenes: ScenesArtifact) -> MotionArtifact:
             continue
         vals = np.array([m for _, m in pts])
         times = [t for t, _ in pts]
-        # normalize: ~0 = still, >=18 mean-abs-diff = very fast movement
-        intensity = float(min(1.0, np.percentile(vals, 75) / 18.0))
+        intensity = float(min(1.0, max(0.0, np.percentile(vals, 75) / global_scale)))
 
         # peak moments: local maxima above 80th percentile, min 1 s apart
         thresh = np.percentile(vals, 80)
@@ -66,7 +84,7 @@ def motion_stage(proxy_path: str, scenes: ScenesArtifact) -> MotionArtifact:
         stationary: list[list[float]] = []
         run_start = None
         for (t, m) in pts:
-            if m < 1.5:
+            if m < 6.0:
                 run_start = t if run_start is None else run_start
             else:
                 if run_start is not None and t - run_start >= 1.0:
