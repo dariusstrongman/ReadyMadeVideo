@@ -23,6 +23,14 @@ alter table public.timelines add constraint timeline_baseline_is_immutable check
 create index if not exists timelines_lineage_idx
   on public.timelines(project_id, edit_run_id, lineage, version);
 
+-- Existing edit runs already identify their first/final timelines. Backfill only
+-- the relationship; do not infer a revised lineage when timeline_v2_id is null.
+update public.timelines t
+set edit_run_id = e.id
+from public.edit_runs e
+where t.edit_run_id is null
+  and (t.id = e.timeline_v1_id or t.id = e.timeline_v2_id);
+
 create or replace function public.protect_immutable_timeline()
 returns trigger language plpgsql set search_path = public as $$
 begin
@@ -39,7 +47,9 @@ begin
        or new.lineage is distinct from old.lineage
        or new.parent_timeline_id is distinct from old.parent_timeline_id
        or new.edit_run_id is distinct from old.edit_run_id
-       or new.is_immutable is distinct from old.is_immutable then
+       or new.is_immutable is distinct from old.is_immutable
+       or new.approved_by is distinct from old.approved_by
+       or new.approved_at is distinct from old.approved_at then
       raise exception 'immutable timeline % cannot be modified', old.id;
     end if;
   end if;
@@ -61,15 +71,30 @@ create table if not exists public.human_edit_sessions (
   edit_run_id uuid references public.edit_runs(id) on delete set null,
   operator_user_id uuid not null references auth.users(id) on delete restrict,
   autonomous_initial_timeline_id uuid not null references public.timelines(id) on delete restrict,
-  autonomous_revised_timeline_id uuid not null references public.timelines(id) on delete restrict,
+  autonomous_revised_timeline_id uuid references public.timelines(id) on delete restrict,
   current_timeline_id uuid references public.timelines(id) on delete restrict,
   approved_timeline_id uuid references public.timelines(id) on delete restrict,
   status text not null default 'active'
     check (status in ('active','approved','abandoned')),
+  timing_state text not null default 'running'
+    check (timing_state in ('running','paused','closed')),
+  server_measured_seconds double precision not null default 0
+    check (server_measured_seconds >= 0),
+  client_reported_seconds double precision
+    check (client_reported_seconds is null or client_reported_seconds >= 0),
+  idle_gap_cap_seconds double precision not null default 300
+    check (idle_gap_cap_seconds > 0 and idle_gap_cap_seconds <= 3600),
   human_correction_seconds double precision not null default 0
     check (human_correction_seconds >= 0),
   started_at timestamptz not null default now(),
+  last_activity_at timestamptz not null default now(),
+  paused_at timestamptz,
+  resumed_at timestamptz,
   approved_at timestamptz,
+  abandoned_at timestamptz,
+  abandoned_by uuid references auth.users(id) on delete set null,
+  abandonment_reason text,
+  abandoned_timeline_id uuid references public.timelines(id) on delete restrict,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -97,10 +122,12 @@ begin
   if not found or ref.project_id <> new.project_id or ref.user_id <> new.user_id then
     raise exception 'autonomous initial timeline is outside the session project/user';
   end if;
-  select project_id, user_id into ref from public.timelines
-    where id = new.autonomous_revised_timeline_id;
-  if not found or ref.project_id <> new.project_id or ref.user_id <> new.user_id then
-    raise exception 'autonomous revised timeline is outside the session project/user';
+  if new.autonomous_revised_timeline_id is not null then
+    select project_id, user_id into ref from public.timelines
+      where id = new.autonomous_revised_timeline_id;
+    if not found or ref.project_id <> new.project_id or ref.user_id <> new.user_id then
+      raise exception 'autonomous revised timeline is outside the session project/user';
+    end if;
   end if;
   if new.current_timeline_id is not null then
     select project_id, user_id into ref from public.timelines where id = new.current_timeline_id;
@@ -112,6 +139,12 @@ begin
     select project_id, user_id into ref from public.timelines where id = new.approved_timeline_id;
     if not found or ref.project_id <> new.project_id or ref.user_id <> new.user_id then
       raise exception 'approved timeline is outside the session project/user';
+    end if;
+  end if;
+  if new.abandoned_timeline_id is not null then
+    select project_id, user_id into ref from public.timelines where id = new.abandoned_timeline_id;
+    if not found or ref.project_id <> new.project_id or ref.user_id <> new.user_id then
+      raise exception 'abandoned timeline is outside the session project/user';
     end if;
   end if;
   if new.edit_run_id is not null then
@@ -126,6 +159,46 @@ drop trigger if exists human_session_refs_check on public.human_edit_sessions;
 create trigger human_session_refs_check before insert or update on public.human_edit_sessions
   for each row execute function public.enforce_human_session_refs();
 
+create table if not exists public.human_edit_timing_events (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.projects(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  human_edit_session_id uuid not null references public.human_edit_sessions(id) on delete cascade,
+  event_type text not null
+    check (event_type in ('start','pause','resume','operation','approve','abandon')),
+  operation_index integer,
+  operator_user_id uuid not null references auth.users(id) on delete restrict,
+  client_reported_seconds double precision
+    check (client_reported_seconds is null or client_reported_seconds >= 0),
+  occurred_at timestamptz not null default clock_timestamp(),
+  details jsonb not null default '{}'::jsonb
+);
+create index if not exists human_edit_timing_events_session_idx
+  on public.human_edit_timing_events(human_edit_session_id, occurred_at, id);
+alter table public.human_edit_timing_events enable row level security;
+drop policy if exists human_timing_events_select on public.human_edit_timing_events;
+create policy human_timing_events_select on public.human_edit_timing_events
+  for select to authenticated using (user_id = auth.uid() or public.is_operator());
+drop trigger if exists own_project_check on public.human_edit_timing_events;
+create trigger own_project_check before insert or update on public.human_edit_timing_events
+  for each row execute function public.enforce_project_ownership();
+
+create or replace function public.enforce_human_timing_event_refs()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare ref record;
+begin
+  select project_id, user_id into ref from public.human_edit_sessions
+    where id = new.human_edit_session_id;
+  if not found or ref.project_id <> new.project_id or ref.user_id <> new.user_id then
+    raise exception 'timing event session is outside the event project/user';
+  end if;
+  return new;
+end $$;
+drop trigger if exists human_timing_event_refs_check on public.human_edit_timing_events;
+create trigger human_timing_event_refs_check before insert or update
+  on public.human_edit_timing_events
+  for each row execute function public.enforce_human_timing_event_refs();
+
 alter table public.user_corrections
   add column if not exists human_edit_session_id uuid
     references public.human_edit_sessions(id) on delete set null,
@@ -137,6 +210,10 @@ alter table public.user_corrections
                                'insert','delete','speed','caption')),
   add column if not exists elapsed_seconds double precision
     check (elapsed_seconds is null or elapsed_seconds >= 0),
+  add column if not exists server_measured_seconds double precision
+    check (server_measured_seconds is null or server_measured_seconds >= 0),
+  add column if not exists client_reported_seconds double precision
+    check (client_reported_seconds is null or client_reported_seconds >= 0),
   add column if not exists operator_user_id uuid references auth.users(id) on delete set null;
 create unique index if not exists user_corrections_session_operation_idx
   on public.user_corrections(human_edit_session_id, operation_index)
@@ -185,6 +262,10 @@ create table if not exists public.timeline_scorecards (
   scores jsonb not null default '{}'::jsonb,
   overall_rating integer not null check (overall_rating between 1 and 10),
   publishable boolean,
+  server_measured_seconds double precision not null default 0
+    check (server_measured_seconds >= 0),
+  client_reported_seconds double precision
+    check (client_reported_seconds is null or client_reported_seconds >= 0),
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),

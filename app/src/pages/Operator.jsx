@@ -353,13 +353,14 @@ const SCORE_FIELDS = ['hook', 'story_clarity', 'shot_selection', 'shot_variety',
 function HumanCeilingSection({ project, session: authSession }) {
   const [timelines, setTimelines] = useState([])
   const [humanSession, setHumanSession] = useState(null)
+  const [abandonedSession, setAbandonedSession] = useState(null)
   const [initialId, setInitialId] = useState('')
   const [revisedId, setRevisedId] = useState('')
   const [operationText, setOperationText] = useState(
     JSON.stringify({ op: 'trim_clip', clipId: '', sourceStart: 0, sourceEnd: 1 }, null, 2))
   const [note, setNote] = useState('')
   const [elapsed, setElapsed] = useState(0)
-  const [loggedElapsed, setLoggedElapsed] = useState(0)
+  const [serverMeasured, setServerMeasured] = useState(0)
   const [timerRunning, setTimerRunning] = useState(false)
   const [report, setReport] = useState(null)
   const [err, setErr] = useState('')
@@ -375,18 +376,20 @@ function HumanCeilingSection({ project, session: authSession }) {
     ])
     const rows = tls || []
     setTimelines(rows)
-    const current = sessions?.[0] || null
+    const latest = sessions?.[0] || null
+    const current = latest?.status === 'abandoned' ? null : latest
     setHumanSession(current)
+    setAbandonedSession(latest?.status === 'abandoned' ? latest : null)
     const initial = rows.find((t) => t.lineage === 'autonomous_initial')
     const revised = rows.find((t) => t.lineage === 'autonomous_revised')
     if (initial) setInitialId(initial.id)
     if (revised) setRevisedId(revised.id)
-    if (current) {
-      setInitialId(current.autonomous_initial_timeline_id)
-      setRevisedId(current.autonomous_revised_timeline_id)
-      const recorded = Number(current.human_correction_seconds || 0)
-      setElapsed((value) => Math.max(value, recorded))
-      setLoggedElapsed(recorded)
+    if (latest) {
+      setInitialId(latest.autonomous_initial_timeline_id)
+      setRevisedId(latest.autonomous_revised_timeline_id || '')
+      setServerMeasured(Number(latest.server_measured_seconds || 0))
+      setElapsed(Number(latest.client_reported_seconds || 0))
+      setTimerRunning(latest.status === 'active' && latest.timing_state === 'running')
     }
   }, [project.id])
   useEffect(() => { load() }, [load])
@@ -413,16 +416,16 @@ function HumanCeilingSection({ project, session: authSession }) {
     ['legacy', 'autonomous_initial', 'autonomous_revised'].includes(t.lineage || 'legacy'))
   const currentTimeline = timelines.find((t) => t.id === humanSession?.current_timeline_id)
   const approvedTimeline = timelines.find((t) => t.id === humanSession?.approved_timeline_id)
-  const canStart = initialId && revisedId && initialId !== revisedId
+  const canStart = initialId && (!revisedId || initialId !== revisedId)
 
   async function start() {
     const data = await perform('start human ceiling', () => api(authSession, 'POST',
       `/projects/${project.id}/human-ceiling/start`, {
         autonomous_initial_timeline_id: initialId,
-        autonomous_revised_timeline_id: revisedId,
+        ...(revisedId && { autonomous_revised_timeline_id: revisedId }),
       }))
     if (data) {
-      setElapsed(0); setLoggedElapsed(0); setTimerRunning(true)
+      setElapsed(0); setServerMeasured(0); setTimerRunning(true)
     }
   }
 
@@ -430,22 +433,54 @@ function HumanCeilingSection({ project, session: authSession }) {
     let operation
     try { operation = JSON.parse(operationText) }
     catch { setErr('manual operation: JSON is invalid'); return }
-    const delta = Math.max(0, elapsed - loggedElapsed)
     const data = await perform('manual operation', () => api(authSession, 'POST',
       `/projects/${project.id}/timeline-ops`, {
         base_timeline_id: humanSession.current_timeline_id,
         human_edit_session_id: humanSession.id,
-        operations: [operation], elapsed_seconds: delta, note,
+        operations: [operation], client_reported_seconds: elapsed, note,
       }))
-    if (data) setLoggedElapsed(elapsed)
+    if (data) setServerMeasured(Number(data.timing?.server_measured_seconds || 0))
+  }
+
+  async function pause() {
+    const data = await perform('pause human timing', () => api(authSession, 'POST',
+      `/projects/${project.id}/human-ceiling/pause`, {
+        session_id: humanSession.id, client_reported_seconds: elapsed,
+      }))
+    if (data) { setTimerRunning(false); setServerMeasured(data.server_measured_seconds) }
+  }
+
+  async function resume() {
+    const data = await perform('resume human timing', () => api(authSession, 'POST',
+      `/projects/${project.id}/human-ceiling/resume`, {
+        session_id: humanSession.id, client_reported_seconds: elapsed,
+      }))
+    if (data) { setTimerRunning(true); setServerMeasured(data.server_measured_seconds) }
   }
 
   async function approve() {
     const data = await perform('approve human timeline', () => api(authSession, 'POST',
       `/projects/${project.id}/human-ceiling/approve`, {
-        session_id: humanSession.id, total_human_seconds: elapsed,
+        session_id: humanSession.id, client_reported_seconds: elapsed,
       }))
-    if (data) setTimerRunning(false)
+    if (data) {
+      setTimerRunning(false)
+      setServerMeasured(Number(data.timing?.server_measured_seconds || 0))
+    }
+  }
+
+  async function abandon() {
+    const reason = window.prompt('Reason for abandoning this human-ceiling session?')?.trim()
+    if (!reason) { setErr('abandon: a reason is required'); return }
+    if (!window.confirm('Abandon this session? The human draft will be frozen as non-approved evidence.')) return
+    const data = await perform('abandon human session', () => api(authSession, 'POST',
+      `/projects/${project.id}/human-ceiling/abandon`, {
+        session_id: humanSession.id, reason, client_reported_seconds: elapsed,
+      }))
+    if (data) {
+      setTimerRunning(false)
+      setServerMeasured(Number(data.timing?.server_measured_seconds || 0))
+    }
   }
 
   async function generateReport() {
@@ -455,10 +490,10 @@ function HumanCeilingSection({ project, session: authSession }) {
   }
 
   return (
-    <Section title="Human-ceiling comparison: autonomous initial vs revised vs human approved" defaultOpen>
-      <p className="small">Starting a session freezes both autonomous timelines and clones the revised
-        version into a separate human lineage. Manual changes must use constrained operations and are
-        recorded individually.</p>
+    <Section title="Human-ceiling comparison: autonomous evidence vs human approved" defaultOpen>
+      <p className="small">Starting a session freezes the available autonomous evidence and clones the
+        revised timeline—or the initial timeline when no real revision exists—into a separate human lineage.
+        Server timestamps are authoritative; the browser timer is only a diagnostic hint.</p>
       {err && <div className="err">{err}</div>}
       {msg && <div className="ok">{msg}</div>}
       {!humanSession && <div className="grid grid-2" style={{ marginTop: 10 }}>
@@ -468,24 +503,28 @@ function HumanCeilingSection({ project, session: authSession }) {
             {baselineOptions.map((t) => <option key={t.id} value={t.id}>v{t.version} · {t.lineage}</option>)}
           </select>
         </label>
-        <label className="small">Autonomous revised
+        <label className="small">Autonomous revised (optional)
           <select value={revisedId} onChange={(e) => setRevisedId(e.target.value)}>
-            <option value="">Select timeline</option>
+            <option value="">No distinct revised timeline</option>
             {baselineOptions.map((t) => <option key={t.id} value={t.id}>v{t.version} · {t.lineage}</option>)}
           </select>
         </label>
         <button className="btn btn-primary" disabled={!canStart} onClick={start}>
-          Freeze baselines + begin human lineage</button>
+          Freeze autonomous evidence + begin human lineage</button>
       </div>}
+      {abandonedSession && !humanSession && <p className="small" style={{ color: 'var(--amber)' }}>
+        Previous session abandoned: {abandonedSession.abandonment_reason}. Its draft and corrections remain
+        frozen as non-approved evidence; a new session may be started.</p>}
       {humanSession && <div style={{ marginTop: 12 }}>
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <span className={`badge ${humanSession.status === 'active' ? 'processing' : 'completed'}`}>
             {humanSession.status}</span>
-          <span className="small mono">human v{currentTimeline?.version || '?'} · {elapsed}s</span>
+          <span className="small mono">human v{currentTimeline?.version || '?'} · server authoritative:
+            {' '}{serverMeasured.toFixed(1)}s · client hint: {elapsed}s</span>
           {humanSession.status === 'active' && <>
-            <button className="btn btn-ghost" onClick={() => setTimerRunning(!timerRunning)}>
-              {timerRunning ? 'Pause timer' : 'Resume timer'}</button>
-            <label className="small">Measured seconds <input type="number" min="0" value={elapsed}
+            <button className="btn btn-ghost" onClick={timerRunning ? pause : resume}>
+              {timerRunning ? 'Pause server timing' : 'Resume server timing'}</button>
+            <label className="small">Client timer hint <input type="number" min="0" value={elapsed}
               onChange={(e) => setElapsed(Math.max(0, Number(e.target.value)))}
               style={{ width: 100, display: 'inline-block' }} /></label>
           </>}
@@ -499,16 +538,19 @@ function HumanCeilingSection({ project, session: authSession }) {
           <div className="row">
             <button className="btn btn-secondary" onClick={applyManualOperation}>Apply + record operation</button>
             <button className="btn btn-primary" onClick={approve}>Approve human timeline</button>
+            <button className="btn btn-danger" onClick={abandon}>Abandon session</button>
           </div>
         </div>}
         {humanSession.status === 'approved' && <>
-          <p className="small">Approved human timeline: v{approvedTimeline?.version || '?'}. All three
-            comparison versions are immutable evidence.</p>
+          <p className="small">Approved human timeline: v{approvedTimeline?.version || '?'}.
+            {' '}{humanSession.autonomous_revised_timeline_id ? 'All three versions' : 'Initial and human versions'}
+            {' '}are immutable evidence. Correction time is server-measured.</p>
           <div className="grid grid-3">
             <ScorecardEditor label="Autonomous initial" timelineId={humanSession.autonomous_initial_timeline_id}
               project={project} session={humanSession} authSession={authSession} perform={perform} />
-            <ScorecardEditor label="Autonomous revised" timelineId={humanSession.autonomous_revised_timeline_id}
-              project={project} session={humanSession} authSession={authSession} perform={perform} />
+            {humanSession.autonomous_revised_timeline_id &&
+              <ScorecardEditor label="Autonomous revised" timelineId={humanSession.autonomous_revised_timeline_id}
+                project={project} session={humanSession} authSession={authSession} perform={perform} />}
             <ScorecardEditor label="Human approved" timelineId={humanSession.approved_timeline_id}
               project={project} session={humanSession} authSession={authSession} perform={perform} />
           </div>

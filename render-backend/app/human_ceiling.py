@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from datetime import datetime
 from typing import Any
 
 
@@ -16,11 +17,7 @@ AUTONOMOUS_REVISED = "autonomous_revised"
 HUMAN_DRAFT = "human_draft"
 HUMAN_APPROVED = "human_approved"
 
-REQUIRED_COMPARISON_LINEAGES = (
-    AUTONOMOUS_INITIAL,
-    AUTONOMOUS_REVISED,
-    HUMAN_APPROVED,
-)
+REQUIRED_COMPARISON_LINEAGES = (AUTONOMOUS_INITIAL, HUMAN_APPROVED)
 
 SCORE_DIMENSIONS = (
     "hook",
@@ -64,8 +61,12 @@ def correction_type(operation: dict[str, Any]) -> str:
     return _CORRECTION_TYPES[op]
 
 
-def split_elapsed_seconds(total_seconds: float, operation_count: int) -> list[float]:
-    """Allocate measured batch time without inflating the session total."""
+def split_elapsed_seconds(
+    total_seconds: float | None, operation_count: int,
+) -> list[float | None]:
+    """Allocate a client diagnostic hint without inflating its total."""
+    if total_seconds is None:
+        return [None] * max(operation_count, 0)
     if total_seconds < 0:
         raise HumanCeilingError("elapsed_seconds cannot be negative")
     if operation_count < 1:
@@ -74,6 +75,93 @@ def split_elapsed_seconds(total_seconds: float, operation_count: int) -> list[fl
     values = [round(each, 3) for _ in range(operation_count)]
     values[-1] = round(total_seconds - sum(values[:-1]), 3)
     return values
+
+
+def _timestamp(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        raise HumanCeilingError("timing event is missing occurred_at")
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HumanCeilingError(f"invalid timing timestamp: {value!r}") from exc
+
+
+def measure_server_time(events: list[dict[str, Any]], idle_gap_cap_seconds: float) -> dict[str, Any]:
+    """Derive authoritative active time from persisted server-stamped events.
+
+    Each running interval is capped independently, so an abandoned browser tab
+    cannot add unbounded benchmark time. Explicitly paused intervals add zero.
+    """
+    if idle_gap_cap_seconds <= 0:
+        raise HumanCeilingError("idle gap cap must be positive")
+    ordered = sorted(events, key=lambda e: (_timestamp(e.get("occurred_at")), str(e.get("id") or "")))
+    state = "not_started"
+    anchor: datetime | None = None
+    total = 0.0
+    operation_seconds: dict[int, float] = {}
+    last_at: datetime | None = None
+    terminal: str | None = None
+
+    def close_running(at: datetime) -> float:
+        nonlocal anchor, total
+        if anchor is None:
+            raise HumanCeilingError("running timing state has no anchor")
+        gap = max(0.0, (at - anchor).total_seconds())
+        measured = min(gap, idle_gap_cap_seconds)
+        total += measured
+        anchor = at
+        return measured
+
+    for event in ordered:
+        kind = event.get("event_type")
+        at = _timestamp(event.get("occurred_at"))
+        if last_at and at < last_at:
+            raise HumanCeilingError("timing events are out of order")
+        if state == "closed":
+            raise HumanCeilingError("timing event exists after session closure")
+        if kind == "start":
+            if state != "not_started":
+                raise HumanCeilingError("duplicate or misplaced start event")
+            state, anchor = "running", at
+        elif kind == "resume":
+            if state != "paused":
+                raise HumanCeilingError("resume requires a paused session")
+            state, anchor = "running", at
+        elif kind == "pause":
+            if state != "running":
+                raise HumanCeilingError("pause requires a running session")
+            close_running(at)
+            state, anchor = "paused", None
+        elif kind == "operation":
+            if state != "running":
+                raise HumanCeilingError("operations require a running timing state")
+            measured = close_running(at)
+            index = event.get("operation_index")
+            if index is None:
+                raise HumanCeilingError("operation timing event is missing operation_index")
+            operation_seconds[int(index)] = round(measured, 6)
+        elif kind in ("approve", "abandon"):
+            if state not in ("running", "paused"):
+                raise HumanCeilingError(f"{kind} requires an active timing state")
+            if state == "running":
+                close_running(at)
+            state, anchor, terminal = "closed", None, kind
+        else:
+            raise HumanCeilingError(f"unsupported timing event: {kind!r}")
+        last_at = at
+
+    if state == "not_started":
+        raise HumanCeilingError("session has no start timing event")
+    return {
+        "server_measured_seconds": round(total, 6),
+        "timing_state": state,
+        "terminal_event": terminal,
+        "last_activity_at": last_at.isoformat() if last_at else None,
+        "operation_seconds": operation_seconds,
+        "event_count": len(ordered),
+    }
 
 
 def validate_scores(scores: dict[str, Any]) -> dict[str, int | None]:
@@ -166,16 +254,21 @@ def build_comparison_report(
     """Build the canonical initial vs revised vs human-approved report."""
     ids = {
         AUTONOMOUS_INITIAL: session.get("autonomous_initial_timeline_id"),
-        AUTONOMOUS_REVISED: session.get("autonomous_revised_timeline_id"),
         HUMAN_APPROVED: session.get("approved_timeline_id"),
     }
+    if session.get("autonomous_revised_timeline_id"):
+        ids[AUTONOMOUS_REVISED] = session["autonomous_revised_timeline_id"]
     missing_ids = [lineage for lineage, timeline_id in ids.items() if not timeline_id]
     if missing_ids:
         raise HumanCeilingError(f"comparison is missing timeline IDs: {missing_ids}")
 
     by_id = {row.get("id"): row for row in timeline_rows}
     versions: dict[str, Any] = {}
-    for lineage in REQUIRED_COMPARISON_LINEAGES:
+    lineages = [AUTONOMOUS_INITIAL]
+    if AUTONOMOUS_REVISED in ids:
+        lineages.append(AUTONOMOUS_REVISED)
+    lineages.append(HUMAN_APPROVED)
+    for lineage in lineages:
         timeline_id = ids[lineage]
         row = by_id.get(timeline_id)
         if not row:
@@ -189,7 +282,7 @@ def build_comparison_report(
     counts = Counter(c.get("correction_type") for c in corrections)
     ordered = sorted(corrections, key=lambda c: int(c.get("operation_index") or 0))
     initial = versions[AUTONOMOUS_INITIAL]
-    revised = versions[AUTONOMOUS_REVISED]
+    revised = versions.get(AUTONOMOUS_REVISED)
     human = versions[HUMAN_APPROVED]
 
     def rating(version: dict[str, Any]):
@@ -197,14 +290,15 @@ def build_comparison_report(
         return card.get("overall_rating")
 
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "project_id": session.get("project_id"),
         "human_edit_session_id": session.get("id"),
         "status": session.get("status"),
         "versions": versions,
         "human_work": {
-            "total_correction_seconds": round(float(session.get("human_correction_seconds") or 0), 3),
-            "total_correction_minutes": round(float(session.get("human_correction_seconds") or 0) / 60, 2),
+            "server_measured_seconds": round(float(session.get("server_measured_seconds") or 0), 3),
+            "server_measured_minutes": round(float(session.get("server_measured_seconds") or 0) / 60, 2),
+            "client_reported_seconds": session.get("client_reported_seconds"),
             "operation_count": len(ordered),
             "counts_by_type": dict(sorted((k, v) for k, v in counts.items() if k)),
             "operations": [
@@ -212,7 +306,8 @@ def build_comparison_report(
                     "index": c.get("operation_index"),
                     "type": c.get("correction_type"),
                     "operation": _first_operation(c),
-                    "elapsed_seconds": c.get("elapsed_seconds"),
+                    "server_measured_seconds": c.get("server_measured_seconds"),
+                    "client_reported_seconds": c.get("client_reported_seconds"),
                     "base_timeline_id": c.get("base_timeline_id"),
                     "result_timeline_id": c.get("result_timeline_id"),
                 }
@@ -220,15 +315,17 @@ def build_comparison_report(
             ],
         },
         "deltas": {
-            "revised_vs_initial_rating": None if rating(revised) is None or rating(initial) is None
+            "revised_vs_initial_rating": None if revised is None
+            or rating(revised) is None or rating(initial) is None
             else rating(revised) - rating(initial),
             "human_vs_initial_rating": None if rating(human) is None or rating(initial) is None
             else rating(human) - rating(initial),
-            "human_vs_revised_rating": None if rating(human) is None or rating(revised) is None
+            "human_vs_revised_rating": None if revised is None
+            or rating(human) is None or rating(revised) is None
             else rating(human) - rating(revised),
             "human_vs_initial_duration_seconds": round(
                 human["duration_seconds"] - initial["duration_seconds"], 3),
-            "human_vs_revised_duration_seconds": round(
+            "human_vs_revised_duration_seconds": None if revised is None else round(
                 human["duration_seconds"] - revised["duration_seconds"], 3),
         },
     }
@@ -250,7 +347,9 @@ def comparison_markdown(report: dict[str, Any]) -> str:
         "| Version | Duration | Clips | Sources | Overall | Publishable |",
         "|---|---:|---:|---:|---:|---|",
     ]
-    for lineage in REQUIRED_COMPARISON_LINEAGES:
+    for lineage in (AUTONOMOUS_INITIAL, AUTONOMOUS_REVISED, HUMAN_APPROVED):
+        if lineage not in versions:
+            continue
         version = versions[lineage]
         card = version.get("scorecard") or {}
         rating = card.get("overall_rating")
@@ -266,7 +365,9 @@ def comparison_markdown(report: dict[str, Any]) -> str:
         "",
         "## Human work",
         "",
-        f"- Correction time: {work['total_correction_minutes']:.2f} minutes",
+        f"- Server-measured correction time: {work['server_measured_minutes']:.2f} minutes",
+        f"- Client-reported timer hint: "
+        f"{work['client_reported_seconds'] if work['client_reported_seconds'] is not None else 'not supplied'} seconds",
         f"- Recorded operations: {work['operation_count']}",
         f"- Operations by type: {json.dumps(work['counts_by_type'], sort_keys=True)}",
         "",
