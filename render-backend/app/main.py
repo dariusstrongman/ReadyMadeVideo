@@ -103,18 +103,95 @@ def _run_render_job(job_id: str, plan_dict: dict, asset_path: str) -> None:
 
 @app.get("/healthz")
 def healthz():
+    """Liveness only — process is up."""
     return {"ok": True}
+
+
+@app.get("/readyz")
+def readyz():
+    """Readiness: config valid + database reachable + storage reachable.
+    Returns 503 with the failing component (no secrets/paths leaked)."""
+    import httpx as _hx
+    problems = config.validate(exit_on_error=False)
+    try:
+        r = _hx.get(f"{supa.SUPABASE_URL}/rest/v1/projects?select=id&limit=1",
+                    headers={"apikey": supa.SERVICE_KEY,
+                             "Authorization": f"Bearer {supa.SERVICE_KEY}"},
+                    timeout=10)
+        if r.status_code != 200:
+            problems.append("database not reachable")
+    except Exception:
+        problems.append("database not reachable")
+    try:
+        r = _hx.get(f"{supa.SUPABASE_URL}/storage/v1/bucket/raw-footage",
+                    headers={"apikey": supa.SERVICE_KEY,
+                             "Authorization": f"Bearer {supa.SERVICE_KEY}"},
+                    timeout=10)
+        if r.status_code != 200:
+            problems.append("storage bucket not reachable")
+    except Exception:
+        problems.append("storage bucket not reachable")
+    if problems:
+        raise HTTPException(503, {"ready": False, "problems": problems})
+    return {"ready": True}
 
 
 # ==================== operator API (P3/P4) ====================
 # Operator access is enforced SERVER-SIDE (operators table lookup with the
-# service role) — never by a hidden frontend route. Every action is audited.
+# service role) — never by a hidden frontend route. Every sensitive action is
+# audited with a CONFIRMED write (see _audit docstring for the policy).
 
-@app.on_event("startup")
-def _start_worker():
+from contextlib import asynccontextmanager  # noqa: E402
+
+
+@asynccontextmanager
+async def _lifespan(app_):
     if os.environ.get("WORKER_ENABLED", "1") == "1":
         from . import jobs
         jobs.start_worker()
+    yield
+
+
+app.router.lifespan_context = _lifespan
+
+
+# ---- request-body size limit (operator/JSON endpoints only need small bodies)
+MAX_BODY_BYTES = int(os.environ.get("MAX_BODY_BYTES", str(1024 * 1024)))
+
+
+@app.middleware("http")
+async def _body_size_limit(request, call_next):
+    cl = request.headers.get("content-length")
+    if cl and cl.isdigit() and int(cl) > MAX_BODY_BYTES:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "request body too large"}, status_code=413)
+    return await call_next(request)
+
+
+# ---- sanitized errors: unexpected exceptions never leak paths/traces
+@app.exception_handler(Exception)
+async def _unhandled(request, exc):
+    from fastapi.responses import JSONResponse
+    from .logging_util import log_event
+    log_event("API-UNHANDLED-ERROR", path=str(request.url.path),
+              error=f"{type(exc).__name__}: {exc}"[:300])
+    return JSONResponse({"detail": "internal error"}, status_code=500)
+
+
+# ---- simple in-memory rate limiter for expensive operator actions
+_rate: dict[str, list[float]] = {}
+RATE_LIMIT_PER_MIN = int(os.environ.get("OPERATOR_RATE_LIMIT_PER_MIN", "10"))
+
+
+def _rate_check(user_id: str, bucket: str = "enqueue") -> None:
+    import time as _t
+    key = f"{user_id}:{bucket}"
+    now = _t.time()
+    window = [t for t in _rate.get(key, []) if now - t < 60]
+    if len(window) >= RATE_LIMIT_PER_MIN:
+        raise HTTPException(429, "rate limit exceeded, retry in a minute")
+    window.append(now)
+    _rate[key] = window
 
 
 def _auth_user(authorization: str) -> dict:
@@ -133,16 +210,51 @@ def _require_operator(authorization: str) -> dict:
     return user
 
 
-def _audit(operator: dict, action: str, project_id=None, details=None):
+class AuditFailure(Exception):
+    pass
+
+
+def _audit(operator: dict, action: str, project_id=None, details=None) -> str:
+    """CONFIRMED audit write — AUDIT-BEFORE-ACTION policy.
+
+    Policy (documented): the audit record is inserted and CONFIRMED (with one
+    retry) BEFORE the sensitive action runs. If the audit store is unavailable
+    the action is aborted with 503 — we never perform an unaudited sensitive
+    action. If the action later fails, the audit row remains as a record of the
+    attempt (the endpoint's error response makes the outcome unambiguous).
+    True DB-level atomicity is not possible across PostgREST + external
+    side-effects; this ordering guarantees no unaudited action instead.
+    Failures raise AuditFailure (mapped to 503) and emit an operational alert.
+    """
     import httpx as _hx
-    _hx.post(f"{supa.SUPABASE_URL}/rest/v1/operator_audit",
-             headers={"apikey": supa.SERVICE_KEY,
-                      "Authorization": f"Bearer {supa.SERVICE_KEY}",
-                      "Content-Type": "application/json",
-                      "Prefer": "return=minimal"},
-             json={"operator_user_id": operator["id"], "action": action,
-                   "project_id": project_id, "details": details or {}},
-             timeout=15)
+    from .logging_util import log_event
+    payload = {"operator_user_id": operator["id"], "action": action,
+               "project_id": project_id, "details": details or {}}
+    last_err = None
+    for _attempt in range(2):
+        try:
+            r = _hx.post(f"{supa.SUPABASE_URL}/rest/v1/operator_audit",
+                         headers={"apikey": supa.SERVICE_KEY,
+                                  "Authorization": f"Bearer {supa.SERVICE_KEY}",
+                                  "Content-Type": "application/json",
+                                  "Prefer": "return=representation"},
+                         json=payload, timeout=15)
+            if r.status_code == 201:
+                return r.json()[0]["id"]
+            last_err = f"HTTP {r.status_code}"
+        except Exception as e:
+            last_err = f"{type(e).__name__}"
+    log_event("AUDIT-FAILURE-ALERT", action=action, project_id=project_id,
+              operator=operator["id"], error=last_err)
+    raise AuditFailure(f"audit store unavailable ({last_err})")
+
+
+@app.exception_handler(AuditFailure)
+async def _audit_failure(request, exc):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        {"detail": "action aborted: audit record could not be stored"},
+        status_code=503)
 
 
 def _get_project(project_id: str) -> dict:
@@ -159,10 +271,14 @@ class JobParams(BaseModel):
 def _enqueue(kind: str, project_id: str, body: JobParams, authorization: str):
     from . import jobs
     op = _require_operator(authorization)
+    _rate_check(op["id"], "enqueue")
     project = _get_project(project_id)
-    job = jobs.enqueue_job(project_id, project["user_id"], kind, body.params)
-    _audit(op, f"enqueue_{kind}", project_id, {"job_id": job.get("id"),
-                                               "params": body.params})
+    # audit-before-action: intent is recorded and confirmed first
+    _audit(op, f"enqueue_{kind}", project_id, {"params": body.params})
+    try:
+        job = jobs.enqueue_job(project_id, project["user_id"], kind, body.params)
+    except jobs.ConcurrencyLimit as e:
+        raise HTTPException(429, str(e))
     return job
 
 
@@ -214,25 +330,31 @@ def op_retry_job(job_id: str, authorization: str = Header(default="")):
         raise HTTPException(409, f"job is {job['status']}, only failed jobs retry")
     if job["attempt_count"] >= job["max_attempts"]:
         raise HTTPException(409, "max attempts exhausted")
-    jobs.update_job(job_id, {"status": "queued", "error_message": None})
     _audit(op, "retry_job", job["project_id"], {"job_id": job_id})
+    jobs.update_job(job_id, {"status": "queued", "error_message": None})
     return {"job_id": job_id, "status": "queued"}
 
 
 @app.post("/jobs/{job_id}/cancel")
 def op_cancel_job(job_id: str, authorization: str = Header(default="")):
+    """Explicit cancellation states: queued -> cancelled immediately;
+    processing -> cancel_requested (worker honors it at the next checkpoint;
+    in-flight provider requests cannot be interrupted — documented)."""
     from . import jobs
     op = _require_operator(authorization)
     rows = supa.db_select("pipeline_jobs", f"id=eq.{job_id}")
     if not rows:
         raise HTTPException(404, "job not found")
     job = rows[0]
-    if job["status"] not in ("queued", "processing"):
+    if job["status"] not in ("queued", "processing", "cancel_requested"):
         raise HTTPException(409, f"job is {job['status']}")
-    jobs.update_job(job_id, {"status": "cancelled", "completed_at":
-                             jobs._now()})
-    _audit(op, "cancel_job", job["project_id"], {"job_id": job_id})
-    return {"job_id": job_id, "status": "cancelled"}
+    _audit(op, "cancel_job", job["project_id"],
+           {"job_id": job_id, "prior_status": job["status"]})
+    try:
+        result = jobs.request_cancel(job, requested_by=op["id"])
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return {"job_id": job_id, **result}
 
 
 class TimelineOpsBody(BaseModel):
@@ -256,6 +378,9 @@ def op_timeline_ops(project_id: str, body: TimelineOpsBody,
     tl = rows[0]["timeline_json"]
     if isinstance(tl, str):
         tl = json.loads(tl)
+    _audit(op, "timeline_ops", project_id,
+           {"base": body.base_timeline_id, "operations": body.operations,
+            "protected_ranges": body.protected_ranges})
     try:
         ops = parse_operations(body.operations)
         result = apply_operations(tl, ops, actor="user",
@@ -273,9 +398,6 @@ def op_timeline_ops(project_id: str, body: TimelineOpsBody,
                        "timeline_json": result.timeline}, timeout=30)
     r.raise_for_status()
     new_tl = r.json()[0]
-    _audit(op, "timeline_ops", project_id,
-           {"base": body.base_timeline_id, "new": new_tl["id"],
-            "applied": result.applied, "rejected": result.rejected})
     return {"timeline_id": new_tl["id"], "version": new_tl["version"],
             "applied": result.applied, "rejected": result.rejected}
 
@@ -301,15 +423,15 @@ def op_flag_segment(segment_id: str, body: SegmentFlagBody,
     else:
         problems.discard("operator_unusable")
     data["problems"] = sorted(problems)
+    _audit(op, "flag_segment", seg["project_id"],
+           {"segment": segment_id, "unusable": body.unusable,
+            "reason": body.reason})
     _hx.patch(f"{supa.SUPABASE_URL}/rest/v1/segments?id=eq.{segment_id}",
               headers={"apikey": supa.SERVICE_KEY,
                        "Authorization": f"Bearer {supa.SERVICE_KEY}",
                        "Content-Type": "application/json",
                        "Prefer": "return=minimal"},
               json={"data": data}, timeout=30).raise_for_status()
-    _audit(op, "flag_segment", seg["project_id"],
-           {"segment": segment_id, "unusable": body.unusable,
-            "reason": body.reason})
     return {"segment_id": segment_id, "problems": data["problems"]}
 
 
@@ -344,6 +466,8 @@ def op_sign_url(project_id: str, body: SignBody,
     prefix = f"users/{project['user_id']}/projects/{project_id}/"
     if not body.path.startswith(prefix):
         raise HTTPException(403, "path does not belong to this project")
+    _audit(op, "sign_preview", project_id, {"bucket": body.bucket,
+                                            "path": body.path})
     r = _hx.post(f"{supa.SUPABASE_URL}/storage/v1/object/sign/{body.bucket}/{body.path}",
                  headers={"apikey": supa.SERVICE_KEY,
                           "Authorization": f"Bearer {supa.SERVICE_KEY}",
@@ -351,9 +475,7 @@ def op_sign_url(project_id: str, body: SignBody,
                  json={"expiresIn": max(60, min(3600, body.expires_in))},
                  timeout=30)
     if r.status_code != 200:
-        raise HTTPException(404, f"could not sign: {r.text[:200]}")
-    _audit(op, "sign_preview", project_id, {"bucket": body.bucket,
-                                            "path": body.path})
+        raise HTTPException(404, "object not found or could not be signed")
     return {"url": f"{supa.SUPABASE_URL}/storage/v1{r.json()['signedURL']}"}
 
 
@@ -380,13 +502,13 @@ def op_patch_evaluation(project_id: str, body: EvalPatch,
                           f"project_id=eq.{project_id}&order=created_at.desc&limit=1")
     if not rows:
         raise HTTPException(404, "no evaluation row yet — run generate-draft first")
+    _audit(op, "record_evaluation", project_id, patch)
     _hx.patch(f"{supa.SUPABASE_URL}/rest/v1/draft_evaluations?id=eq.{rows[0]['id']}",
               headers={"apikey": supa.SERVICE_KEY,
                        "Authorization": f"Bearer {supa.SERVICE_KEY}",
                        "Content-Type": "application/json",
                        "Prefer": "return=minimal"},
               json=patch, timeout=30).raise_for_status()
-    _audit(op, "record_evaluation", project_id, patch)
     return {"updated": sorted(patch)}
 
 

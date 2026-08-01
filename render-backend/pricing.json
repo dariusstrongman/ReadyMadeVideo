@@ -1,4 +1,5 @@
 {
+  "version": "2026-08-01",
   "_note": "Cost ESTIMATE configuration (P6). Provider pricing changes — update here, never hardcode in code or marketing. Values are USD.",
   "whisper_per_audio_minute": 0.006,
   "gemini_flash_per_video_second": 0.00035,

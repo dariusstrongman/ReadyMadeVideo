@@ -175,16 +175,46 @@ def compile_timeline(timeline: dict, sources: dict[str, str], out_path: str,
     return CompiledRender(cmd=cmd, duration=round(total, 3))
 
 
+class RenderCancelled(Exception):
+    pass
+
+
+def _run_interruptible(cmd: list[str], timeout: int, cancel_check=None,
+                       out_path: str | None = None):
+    """Run ffmpeg with polling so an operator cancellation terminates the
+    subprocess promptly (checked every 0.5 s) and partial output is deleted.
+    Fixed argument lists only — never shell=True."""
+    import time as _time
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    t0 = _time.time()
+    while True:
+        rc = proc.poll()
+        if rc is not None:
+            _, stderr = proc.communicate()
+            return rc, stderr
+        if cancel_check and cancel_check():
+            proc.kill()
+            proc.communicate()
+            if out_path and os.path.exists(out_path):
+                try:
+                    os.remove(out_path)          # delete partial output
+                except OSError:
+                    pass
+            raise RenderCancelled("ffmpeg terminated by cancellation request")
+        if _time.time() - t0 > timeout:
+            proc.kill()
+            proc.communicate()
+            raise RenderError(f"render exceeded {timeout}s")
+        _time.sleep(0.5)
+
+
 def render_timeline(timeline: dict, sources: dict[str, str], out_path: str,
                     profile: str = "preview", music_path: str | None = None,
-                    timeout: int = 900):
+                    timeout: int = 900, cancel_check=None):
     compiled = compile_timeline(timeline, sources, out_path, profile, music_path)
-    try:
-        proc = subprocess.run(compiled.cmd, capture_output=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        raise RenderError(f"render exceeded {timeout}s")
-    if proc.returncode != 0:
-        raise RenderError(f"ffmpeg failed: {proc.stderr.decode(errors='replace')[-600:]}")
+    rc, stderr = _run_interruptible(compiled.cmd, timeout, cancel_check, out_path)
+    if rc != 0:
+        raise RenderError(f"ffmpeg failed: {stderr.decode(errors='replace')[-600:]}")
     if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
         raise RenderError("no output produced")
     info = probe(out_path)

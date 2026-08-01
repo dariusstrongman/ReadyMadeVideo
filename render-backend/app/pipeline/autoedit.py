@@ -49,10 +49,19 @@ def autoedit(segments: list[Segment],
              use_critic: bool = True,
              render_final: bool = False,
              corrections_path: str | None = None,
-             max_revisions: int = MAX_REVISION_PASSES) -> dict:
+             max_revisions: int = MAX_REVISION_PASSES,
+             cancel_check=None) -> dict:
     from ..renderer2 import render_timeline
     os.makedirs(out_dir, exist_ok=True)
     report: dict = {"brief": brief, "steps": []}
+
+    def _cancelled(stage):
+        if cancel_check and cancel_check():
+            report["status"] = "cancelled"
+            report["cancelled_at_stage"] = stage
+            _save(out_dir, "run.json", report)
+            return True
+        return False
     asset_durations = {aid: probe(p).duration for aid, p in sources.items()}
 
     # 1. plan
@@ -61,6 +70,8 @@ def autoedit(segments: list[Segment],
     report["steps"].append({"step": "plan", "beats": len(blueprint.beats),
                             "target": blueprint.targetDuration})
 
+    if _cancelled("after_plan"):
+        return report
     # 2. select (with preference-adjusted weights)
     weights = dict(DEFAULT_WEIGHTS)
     if corrections_path:
@@ -85,6 +96,8 @@ def autoedit(segments: list[Segment],
         build_timeline(blueprint, selection, title_text=title_text), segments)
     _save(out_dir, "timeline_v1.json", timeline)
 
+    if _cancelled("before_preview"):
+        return report
     # 4. preview v1
     preview1 = os.path.join(out_dir, "preview_v1.mp4")
     r1 = render_timeline(timeline, sources, preview1, profile="preview")
@@ -104,6 +117,8 @@ def autoedit(segments: list[Segment],
     # 6. critic + revision passes
     final_timeline = timeline
     passes = 0
+    if _cancelled("before_critic"):
+        return report
     if use_critic:
         critic = get_critic()
         if critic is None:
@@ -112,6 +127,8 @@ def autoedit(segments: list[Segment],
             from .revision import plan_revision_ops
             current_preview = preview1
             while passes < max_revisions:
+                if _cancelled(f"revision_pass_{passes + 1}"):
+                    return report
                 verdict = critic.critique(current_preview, blueprint, final_timeline)
                 _save(out_dir, f"critic_pass{passes + 1}.json", verdict.model_dump())
                 report["steps"].append({
@@ -146,6 +163,8 @@ def autoedit(segments: list[Segment],
                                         "duration": r2["duration"],
                                         "validator_ok": v2.ok})
 
+    if _cancelled("before_final"):
+        return report
     # 7. optional final render
     if render_final:
         final_path = os.path.join(out_dir, "final.mp4")
