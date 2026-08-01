@@ -37,6 +37,7 @@ thankyou-pro-verified.png
 # real-video-pipeline build artifacts (never commit)
 app/node_modules/
 app/dist/
+app/.vite/
 render-backend/.env
 render-backend/**/__pycache__/
 render-backend/.pytest_cache/
