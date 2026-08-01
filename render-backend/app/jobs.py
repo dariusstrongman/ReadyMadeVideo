@@ -300,41 +300,59 @@ def handle_autoedit(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict
 
     ctx.checkpoint("before_artifact_upload")      # never upload after cancel
     artifacts: dict = {"previews": [], "run_report": report}
-    existing = supa.db_select("timelines",
-                              f"project_id=eq.{project['id']}"
-                              f"&order=version.desc&limit=1")
-    next_ver = (existing[0]["version"] + 1) if existing else 1
-    tl_ids = []
-    for fname in sorted(f for f in os.listdir(run_dir)
-                        if f.startswith("timeline_v") and f.endswith(".json")):
-        tl = _json.load(open(os.path.join(run_dir, fname), encoding="utf-8"))
-        r = _insert("timelines", {"project_id": project["id"],
-                                  "user_id": project["user_id"],
-                                  "version": next_ver, "timeline_json": tl})
-        tl_ids.append(r.json()[0]["id"])
-        next_ver += 1
-    for fname in sorted(f for f in os.listdir(run_dir) if f.endswith(".mp4")):
-        artifacts["previews"].append(_upload_export(
-            project, f"drafts/{job['id']}/{fname}", os.path.join(run_dir, fname)))
     for fname in ("blueprint.json", "selection.json", "validator_v1.json",
                   "critic_pass1.json", "revision_ops_pass1.json"):
         p = os.path.join(run_dir, fname)
         if os.path.exists(p):
             artifacts[fname.replace(".json", "")] = _json.load(
                 open(p, encoding="utf-8"))
-
+    # Create the run first so every autonomous timeline is associated at insert
+    # time rather than being backfilled only when a human session begins.
     er = _insert("edit_runs", {
         "project_id": project["id"], "user_id": project["user_id"],
-        "status": "completed", "brief": params.get("brief"),
+        "status": "running", "brief": params.get("brief"),
         "blueprint": artifacts.get("blueprint"),
         "selection": artifacts.get("selection"),
         "validator_report": artifacts.get("validator_v1"),
         "critic_verdict": artifacts.get("critic_pass1"),
-        "revision_ops": artifacts.get("revision_ops_pass1"),
+        "revision_ops": artifacts.get("revision_ops_pass1")})
+    edit_run_id = er.json()[0]["id"] if er.status_code == 201 else None
+    if not edit_run_id:
+        raise RuntimeError("could not create edit run before timeline persistence")
+    existing = supa.db_select("timelines",
+                              f"project_id=eq.{project['id']}"
+                              f"&order=version.desc&limit=1")
+    next_ver = (existing[0]["version"] + 1) if existing else 1
+    tl_ids = []
+    timeline_files = sorted(f for f in os.listdir(run_dir)
+                            if f.startswith("timeline_v") and f.endswith(".json"))
+    for index, fname in enumerate(timeline_files):
+        tl = _json.load(open(os.path.join(run_dir, fname), encoding="utf-8"))
+        if index == 0:
+            lineage = "autonomous_initial"
+        elif index == len(timeline_files) - 1:
+            lineage = "autonomous_revised"
+        else:
+            lineage = "autonomous_intermediate"
+        r = _insert("timelines", {"project_id": project["id"],
+                                  "user_id": project["user_id"],
+                                  "version": next_ver, "timeline_json": tl,
+                                  "lineage": lineage,
+                                  "edit_run_id": edit_run_id,
+                                  "parent_timeline_id": tl_ids[-1] if tl_ids else None,
+                                  "is_immutable": lineage in
+                                  ("autonomous_initial", "autonomous_revised")})
+        tl_ids.append(r.json()[0]["id"])
+        next_ver += 1
+    for fname in sorted(f for f in os.listdir(run_dir) if f.endswith(".mp4")):
+        artifacts["previews"].append(_upload_export(
+            project, f"drafts/{job['id']}/{fname}", os.path.join(run_dir, fname)))
+    _patch("edit_runs", f"id=eq.{edit_run_id}", {
+        "status": "completed",
         "timeline_v1_id": tl_ids[0] if tl_ids else None,
         "timeline_v2_id": tl_ids[-1] if len(tl_ids) > 1 else None,
-        "preview_paths": artifacts["previews"], "completed_at": _now()})
-    edit_run_id = er.json()[0]["id"] if er.status_code == 201 else None
+        "preview_paths": artifacts["previews"], "completed_at": _now()},
+        prefer="return=minimal")
 
     sel = artifacts.get("selection") or {}
     beats = sel.get("beats", [])

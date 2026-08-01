@@ -18,6 +18,7 @@ original footage.
 | 05 | [overfitting-risks](05-overfitting-risks.md) | Changes that would overfit to this one project — do NOT make |
 | 06 | [engine-improvements-prioritized](06-engine-improvements-prioritized.md) | Ranked fix backlog (P1–P10) by expected impact |
 | 07 | [project-two-capture-plan](07-project-two-capture-plan.md) | Footage plan that tests each fix and breaks the ceiling |
+| 08 | [human-ceiling-workflow](08-human-ceiling-workflow.md) | Immutable baselines, human lineage, correction ledger, scorecards, and three-way report |
 
 ## One-paragraph summary
 The 4/10 is ~60% footage ceiling (no close-ups, one angle, one repeated
