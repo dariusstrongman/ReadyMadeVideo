@@ -13,11 +13,8 @@ import subprocess
 
 import pytest
 
-from app.pipeline.media import probe_stage, proxy_stage
-from app.pipeline.mechanical import audio_stage, mechanical_stage
-from app.pipeline.motion import motion_stage
+from app.pipeline.media import probe_stage
 from app.pipeline.runner import ALL_STAGES, LocalStore, run_pipeline
-from app.pipeline.scenes import scenes_stage
 from app.renderer import FFMPEG
 
 
