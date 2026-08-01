@@ -89,7 +89,7 @@ def build_catalog(asset_id: str,
                                f"motion={motion_intensity:.2f}")
 
         segments.append(Segment(
-            segmentId=f"seg_{asset_id[:8]}_{sc.index:03d}",
+            segmentId=f"seg_{__import__('re').sub(r'[^A-Za-z0-9]+', '', asset_id.rsplit('.', 1)[0])[-12:]}_{sc.index:03d}",
             assetId=asset_id,
             sourceStart=round(start, 3), sourceEnd=round(end, 3),
             subjects=sem.subjects if sem else [],

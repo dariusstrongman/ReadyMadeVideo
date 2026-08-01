@@ -24,6 +24,5 @@ python -m app.pipeline.autoedit \
   --brief "Serious cinematic workout video of a real training session. Open on the strongest action moment immediately. Build intensity through the session. Use natural workout audio. Restrained, no gimmicks. End on the clearest completion or payoff moment." \
   --duration "$TARGET" \
   --platform vertical \
-  --title "SESSION 01" \
   --final \
-  --out "$P1/timelines/run1"
+  --out "$P1/timelines/run2"
