@@ -131,6 +131,30 @@ OpenChatCut AGPL = not incorporated).
   final render → completed-with-reason → audit trail → cost telemetry, plus
   authorization negatives.
 
+## Reliability policies (hardening round 2, 2026-08-01)
+- **Audit policy — audit-before-action:** every sensitive operator action first
+  writes a CONFIRMED `operator_audit` row (one retry). If the audit store is
+  unavailable the action is aborted with 503 and an `AUDIT-FAILURE-ALERT` is
+  logged — an unaudited sensitive action can never happen. True cross-system
+  atomicity is impossible over PostgREST; the chosen ordering guarantees the
+  audit can only over-record (an intent whose action then errored), never miss.
+- **Cancellation:** `queued → cancelled` immediately; `processing →
+  cancel_requested → cancelled` at the next checkpoint (before stages, between
+  assets, between autoedit stages, and mid-FFmpeg via subprocess termination
+  with partial-output deletion). NOT interruptible: an in-flight Gemini/Whisper
+  HTTP request — cancellation lands when it returns. Requester + timestamp
+  recorded and audited; the console shows requested/cancelling/cancelled.
+- **Telemetry:** `record()` failures are logged (`TELEMETRY-FAILURE`), queued,
+  and retried at job end; each job stores `artifacts.telemetry_status`
+  (expected vs recorded stages + `complete` flag + pricing version) so
+  incompleteness is visible. All costs are labeled ESTIMATES.
+- **Coverage gates (CI-enforced):** jobs.py ≥75%, operator API ≥70%,
+  autoedit.py ≥70%, telemetry.py ≥75%, backend total ≥70% — via
+  `scripts/check_coverage.py` on an in-memory Supabase-semantics fake
+  (CI has zero production-database dependency; live behavior covered by
+  `scripts/test_db_integrity.py` + `scripts/e2e_operator_flow.py` +
+  `scripts/project_one_readiness.py`).
+
 ## What is still MOCKED / PLANNED / UNFINISHED
 - **AI analysis and auto-editing: not built.** The v1 renderer is title + single trim.
 - v1 renderer supports exactly ONE video clip + optional ONE title clip; complex

@@ -150,6 +150,10 @@ function ProjectDetail({ project, session }) {
             {['queued', 'processing'].includes(j.status) && (
               <button className="btn btn-danger" onClick={() => act('cancel',
                 () => post(`/jobs/${j.id}/cancel`))}>Cancel</button>)}
+            {j.status === 'cancel_requested' && (
+              <span className="small" style={{ color: 'var(--amber)' }}>
+                Cancelling… (stops at the next checkpoint; in-flight provider
+                calls cannot be interrupted)</span>)}
           </div>
         ))}
         {jobs.filter((j) => j.error_message).map((j) => (
@@ -377,6 +381,7 @@ function EvaluationSection({ project, session, act, post }) {
     </label>)
   return (
     <Section title="Evaluation (auto metrics + operator-recorded corrections/ratings)">
+      <p className="small" style={{ color: 'var(--amber)' }}>All cost figures are ESTIMATES (configurable pricing.json; see stage_metrics.units.pricing_version).</p>
       {ev ? <Json data={ev} /> : <p className="sub">No evaluation yet (created by generate-draft).</p>}
       <div>
         {F('human_correction_minutes')}{F('clips_manually_replaced')}
