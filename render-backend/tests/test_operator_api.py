@@ -333,3 +333,186 @@ def test_job_get_404(env):
     r = env.client.get("/jobs/00000000-0000-0000-0000-000000000000",
                        headers=env.h(env.operator[1]))
     assert r.status_code == 404
+
+
+# ---------- human-ceiling evaluation ----------
+def _human_ceiling_baselines(env):
+    initial = _project_timeline(env)
+    revised_json = initial["timeline_json"] | {"duration": 5.5}
+    revised = env.fake.insert("timelines", {
+        "project_id": env.project["id"], "user_id": env.project["user_id"],
+        "version": 2, "timeline_json": revised_json}).json()[0]
+    run = env.fake.insert("edit_runs", {
+        "project_id": env.project["id"], "user_id": env.project["user_id"],
+        "status": "completed", "timeline_v1_id": initial["id"],
+        "timeline_v2_id": revised["id"]}).json()[0]
+    env.fake.insert("draft_evaluations", {
+        "project_id": env.project["id"], "user_id": env.project["user_id"],
+        "edit_run_id": run["id"]})
+    return initial, revised, run
+
+
+def test_human_ceiling_records_every_operation_and_builds_report(env):
+    import copy
+    initial, revised, run = _human_ceiling_baselines(env)
+    initial_evidence = copy.deepcopy(initial["timeline_json"])
+    revised_evidence = copy.deepcopy(revised["timeline_json"])
+
+    start = env.client.post(
+        f"/projects/{env.project['id']}/human-ceiling/start",
+        json={"autonomous_initial_timeline_id": initial["id"],
+              "autonomous_revised_timeline_id": revised["id"],
+              "edit_run_id": run["id"]}, headers=env.h(env.operator[1]))
+    assert start.status_code == 200, start.text
+    session = start.json()["session"]
+    human = start.json()["human_timeline"]
+    assert human["lineage"] == "human_draft"
+    assert human["parent_timeline_id"] == revised["id"]
+
+    initial_after = env.fake.select("timelines", f"id=eq.{initial['id']}")[0]
+    revised_after = env.fake.select("timelines", f"id=eq.{revised['id']}")[0]
+    assert initial_after["timeline_json"] == initial_evidence
+    assert revised_after["timeline_json"] == revised_evidence
+    assert initial_after["is_immutable"] is True
+    assert revised_after["is_immutable"] is True
+
+    edit = env.client.post(
+        f"/projects/{env.project['id']}/timeline-ops",
+        json={
+            "base_timeline_id": human["id"],
+            "human_edit_session_id": session["id"],
+            "elapsed_seconds": 150,
+            "note": "human ceiling pass",
+            "operations": [
+                {"op": "replace_clip", "clipId": "c1", "assetId": "a2",
+                 "sourceStart": 10, "sourceEnd": 12},
+                {"op": "trim_clip", "clipId": "c2", "sourceStart": 4.5,
+                 "sourceEnd": 6.5},
+                {"op": "move_clip", "clipId": "c2", "newIndex": 0},
+                {"op": "change_volume", "clipId": "c2", "volume": 0},
+                {"op": "add_title", "text": "PROJECT ONE", "durationSeconds": 1},
+            ],
+        }, headers=env.h(env.operator[1]))
+    assert edit.status_code == 200, edit.text
+    assert edit.json()["lineage"] == "human_draft"
+    corrections = env.fake.select(
+        "user_corrections", f"human_edit_session_id=eq.{session['id']}")
+    assert [c["correction_type"] for c in corrections] == [
+        "replacement", "trim", "reorder", "audio", "title"]
+    assert sum(c["elapsed_seconds"] for c in corrections) == 150
+
+    approve = env.client.post(
+        f"/projects/{env.project['id']}/human-ceiling/approve",
+        json={"session_id": session["id"], "total_human_seconds": 240},
+        headers=env.h(env.operator[1]))
+    assert approve.status_code == 200, approve.text
+    approved_id = approve.json()["approved_timeline_id"]
+    approved = env.fake.select("timelines", f"id=eq.{approved_id}")[0]
+    assert approved["lineage"] == "human_approved"
+    assert approved["is_immutable"] is True
+
+    for timeline_id, overall, publishable in (
+        (initial["id"], 4, False), (revised["id"], 3, False),
+        (approved_id, 6, True),
+    ):
+        score = env.client.post(
+            f"/projects/{env.project['id']}/human-ceiling/scorecard",
+            json={"session_id": session["id"], "timeline_id": timeline_id,
+                  "scores": {"hook": overall, "pacing": overall},
+                  "overall_rating": overall, "publishable": publishable,
+                  "evaluator_role": "operator"},
+            headers=env.h(env.operator[1]))
+        assert score.status_code == 200, score.text
+
+    report = env.client.get(
+        f"/projects/{env.project['id']}/human-ceiling/report"
+        f"?session_id={session['id']}", headers=env.h(env.operator[1]))
+    assert report.status_code == 200, report.text
+    data = report.json()
+    assert set(data["versions"]) == {
+        "autonomous_initial", "autonomous_revised", "human_approved"}
+    assert data["human_work"]["operation_count"] == 5
+    assert data["human_work"]["total_correction_minutes"] == 4
+    assert data["deltas"]["human_vs_revised_rating"] == 3
+    assert "| Autonomous initial |" in data["markdown"]
+
+
+def test_human_ceiling_prevents_parallel_sessions_and_stale_edits(env):
+    initial, revised, run = _human_ceiling_baselines(env)
+    payload = {"autonomous_initial_timeline_id": initial["id"],
+               "autonomous_revised_timeline_id": revised["id"],
+               "edit_run_id": run["id"]}
+    first = env.client.post(f"/projects/{env.project['id']}/human-ceiling/start",
+                            json=payload, headers=env.h(env.operator[1]))
+    assert first.status_code == 200
+    second = env.client.post(f"/projects/{env.project['id']}/human-ceiling/start",
+                             json=payload, headers=env.h(env.operator[1]))
+    assert second.status_code == 409
+    session = first.json()["session"]
+    stale = env.client.post(
+        f"/projects/{env.project['id']}/timeline-ops",
+        json={"base_timeline_id": revised["id"],
+              "human_edit_session_id": session["id"],
+              "operations": [{"op": "trim_clip", "clipId": "c1",
+                              "sourceEnd": 2}]},
+        headers=env.h(env.operator[1]))
+    assert stale.status_code == 409
+
+
+def test_human_ceiling_accepts_already_frozen_autonomous_baselines(env):
+    initial, revised, run = _human_ceiling_baselines(env)
+    env.fake.patch("timelines", f"id=eq.{initial['id']}",
+                   {"lineage": "autonomous_initial", "is_immutable": True})
+    env.fake.patch("timelines", f"id=eq.{revised['id']}",
+                   {"lineage": "autonomous_revised", "is_immutable": True})
+    response = env.client.post(
+        f"/projects/{env.project['id']}/human-ceiling/start",
+        json={"autonomous_initial_timeline_id": initial["id"],
+              "autonomous_revised_timeline_id": revised["id"],
+              "edit_run_id": run["id"]}, headers=env.h(env.operator[1]))
+    assert response.status_code == 200, response.text
+    assert response.json()["human_timeline"]["lineage"] == "human_draft"
+    blocked = env.client.post(
+        f"/projects/{env.project['id']}/timeline-ops",
+        json={"base_timeline_id": initial["id"],
+              "operations": [{"op": "trim_clip", "clipId": "c1",
+                              "sourceEnd": 2}]},
+        headers=env.h(env.operator[1]))
+    assert blocked.status_code == 409
+    assert "immutable" in blocked.json()["detail"]
+
+
+def test_human_ceiling_rejects_unrelated_baselines(env):
+    initial = _project_timeline(env)
+    revised = env.fake.insert("timelines", {
+        "project_id": env.project["id"], "user_id": env.project["user_id"],
+        "version": 2, "timeline_json": initial["timeline_json"]}).json()[0]
+    response = env.client.post(
+        f"/projects/{env.project['id']}/human-ceiling/start",
+        json={"autonomous_initial_timeline_id": initial["id"],
+              "autonomous_revised_timeline_id": revised["id"]},
+        headers=env.h(env.operator[1]))
+    assert response.status_code == 422
+    assert "same recorded edit run" in response.json()["detail"]
+
+
+def test_human_approval_time_cannot_undercount_recorded_ops(env):
+    initial, revised, run = _human_ceiling_baselines(env)
+    start = env.client.post(
+        f"/projects/{env.project['id']}/human-ceiling/start",
+        json={"autonomous_initial_timeline_id": initial["id"],
+              "autonomous_revised_timeline_id": revised["id"],
+              "edit_run_id": run["id"]}, headers=env.h(env.operator[1])).json()
+    session, human = start["session"], start["human_timeline"]
+    env.client.post(
+        f"/projects/{env.project['id']}/timeline-ops",
+        json={"base_timeline_id": human["id"],
+              "human_edit_session_id": session["id"], "elapsed_seconds": 60,
+              "operations": [{"op": "trim_clip", "clipId": "c1",
+                              "sourceEnd": 2}]},
+        headers=env.h(env.operator[1]))
+    approve = env.client.post(
+        f"/projects/{env.project['id']}/human-ceiling/approve",
+        json={"session_id": session["id"], "total_human_seconds": 30},
+        headers=env.h(env.operator[1]))
+    assert approve.status_code == 422

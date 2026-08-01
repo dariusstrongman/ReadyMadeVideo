@@ -305,12 +305,23 @@ def handle_autoedit(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict
                               f"&order=version.desc&limit=1")
     next_ver = (existing[0]["version"] + 1) if existing else 1
     tl_ids = []
-    for fname in sorted(f for f in os.listdir(run_dir)
-                        if f.startswith("timeline_v") and f.endswith(".json")):
+    timeline_files = sorted(f for f in os.listdir(run_dir)
+                            if f.startswith("timeline_v") and f.endswith(".json"))
+    for index, fname in enumerate(timeline_files):
         tl = _json.load(open(os.path.join(run_dir, fname), encoding="utf-8"))
+        if index == 0:
+            lineage = "autonomous_initial"
+        elif index == len(timeline_files) - 1:
+            lineage = "autonomous_revised"
+        else:
+            lineage = "autonomous_intermediate"
         r = _insert("timelines", {"project_id": project["id"],
                                   "user_id": project["user_id"],
-                                  "version": next_ver, "timeline_json": tl})
+                                  "version": next_ver, "timeline_json": tl,
+                                  "lineage": lineage,
+                                  "parent_timeline_id": tl_ids[-1] if tl_ids else None,
+                                  "is_immutable": lineage in
+                                  ("autonomous_initial", "autonomous_revised")})
         tl_ids.append(r.json()[0]["id"])
         next_ver += 1
     for fname in sorted(f for f in os.listdir(run_dir) if f.endswith(".mp4")):

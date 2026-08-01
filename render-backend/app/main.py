@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from . import config
 
@@ -54,6 +54,32 @@ class RenderRequest(BaseModel):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _service_insert(table: str, body: dict) -> dict:
+    """Insert one service-role row and require the representation back."""
+    import httpx as _hx
+    r = _hx.post(f"{supa.SUPABASE_URL}/rest/v1/{table}",
+                 headers={"apikey": supa.SERVICE_KEY,
+                          "Authorization": f"Bearer {supa.SERVICE_KEY}",
+                          "Content-Type": "application/json",
+                          "Prefer": "return=representation"},
+                 json=body, timeout=30)
+    r.raise_for_status()
+    return r.json()[0]
+
+
+def _service_patch(table: str, filters: str, body: dict) -> list[dict]:
+    """Patch service-role rows and require the representations back."""
+    import httpx as _hx
+    r = _hx.patch(f"{supa.SUPABASE_URL}/rest/v1/{table}?{filters}",
+                  headers={"apikey": supa.SERVICE_KEY,
+                           "Authorization": f"Bearer {supa.SERVICE_KEY}",
+                           "Content-Type": "application/json",
+                           "Prefer": "return=representation"},
+                  json=body, timeout=30)
+    r.raise_for_status()
+    return r.json()
 
 
 def _fail_job(job_id: str, message: str) -> None:
@@ -360,15 +386,18 @@ def op_cancel_job(job_id: str, authorization: str = Header(default="")):
 class TimelineOpsBody(BaseModel):
     base_timeline_id: str
     operations: list[dict]
-    protected_ranges: list[list[float]] = []
+    protected_ranges: list[list[float]] = Field(default_factory=list)
+    human_edit_session_id: str | None = None
+    elapsed_seconds: float = Field(default=0, ge=0, le=12 * 60 * 60)
+    note: str = Field(default="", max_length=1000)
 
 
 @app.post("/projects/{project_id}/timeline-ops")
 def op_timeline_ops(project_id: str, body: TimelineOpsBody,
                     authorization: str = Header(default="")):
     """Operator edits the timeline through CONSTRAINED operations only."""
-    import httpx as _hx
-
+    from .human_ceiling import (HUMAN_DRAFT, correction_type,
+                                split_elapsed_seconds)
     from .timeline_ops import OpError, apply_operations, parse_operations
     op = _require_operator(authorization)
     project = _get_project(project_id)
@@ -378,9 +407,27 @@ def op_timeline_ops(project_id: str, body: TimelineOpsBody,
     tl = rows[0]["timeline_json"]
     if isinstance(tl, str):
         tl = json.loads(tl)
+
+    session = None
+    if body.human_edit_session_id:
+        sessions = supa.db_select(
+            "human_edit_sessions", f"id=eq.{body.human_edit_session_id}")
+        if not sessions or sessions[0]["project_id"] != project_id:
+            raise HTTPException(404, "human edit session not found in this project")
+        session = sessions[0]
+        if session["status"] != "active":
+            raise HTTPException(409, f"human edit session is {session['status']}")
+        if session.get("current_timeline_id") != body.base_timeline_id:
+            raise HTTPException(409, "base timeline is not the session's current human draft")
+    elif rows[0].get("is_immutable"):
+        raise HTTPException(
+            409, "immutable timeline cannot be edited; start a human edit session")
+
     _audit(op, "timeline_ops", project_id,
            {"base": body.base_timeline_id, "operations": body.operations,
-            "protected_ranges": body.protected_ranges})
+            "protected_ranges": body.protected_ranges,
+            "human_edit_session_id": body.human_edit_session_id,
+            "elapsed_seconds": body.elapsed_seconds})
     try:
         ops = parse_operations(body.operations)
         result = apply_operations(tl, ops, actor="user",
@@ -388,18 +435,296 @@ def op_timeline_ops(project_id: str, body: TimelineOpsBody,
                                              body.protected_ranges if len(r) == 2])
     except OpError as e:
         raise HTTPException(422, str(e))
-    r = _hx.post(f"{supa.SUPABASE_URL}/rest/v1/timelines",
-                 headers={"apikey": supa.SERVICE_KEY,
-                          "Authorization": f"Bearer {supa.SERVICE_KEY}",
-                          "Content-Type": "application/json",
-                          "Prefer": "return=representation"},
-                 json={"project_id": project_id, "user_id": project["user_id"],
-                       "version": rows[0]["version"] + 1,
-                       "timeline_json": result.timeline}, timeout=30)
-    r.raise_for_status()
-    new_tl = r.json()[0]
+
+    latest = supa.db_select("timelines",
+                            f"project_id=eq.{project_id}&order=version.desc&limit=1")
+    next_version = (latest[0]["version"] + 1) if latest else rows[0]["version"] + 1
+    new_tl = _service_insert("timelines", {
+        "project_id": project_id,
+        "user_id": project["user_id"],
+        "version": next_version,
+        "timeline_json": result.timeline,
+        "lineage": HUMAN_DRAFT if session else rows[0].get("lineage", "legacy"),
+        "parent_timeline_id": rows[0]["id"],
+        "edit_run_id": session.get("edit_run_id") if session else rows[0].get("edit_run_id"),
+        "is_immutable": False,
+    })
+
+    if session:
+        existing = supa.db_select(
+            "user_corrections",
+            f"human_edit_session_id=eq.{session['id']}&order=operation_index.desc&limit=1")
+        next_index = (existing[0].get("operation_index") or 0) + 1 if existing else 1
+        elapsed = split_elapsed_seconds(body.elapsed_seconds, len(result.applied))
+        for offset, applied in enumerate(result.applied):
+            kind = correction_type(applied)
+            _service_insert("user_corrections", {
+                "project_id": project_id,
+                "user_id": project["user_id"],
+                "original_timeline_version": rows[0]["version"],
+                "requested_change": body.note or applied.get("comment") or f"human {kind}",
+                "applied_operations": [applied],
+                "accepted": True,
+                "final_timeline_version": new_tl["version"],
+                "project_style": "human_ceiling",
+                "human_edit_session_id": session["id"],
+                "base_timeline_id": rows[0]["id"],
+                "result_timeline_id": new_tl["id"],
+                "operation_index": next_index + offset,
+                "correction_type": kind,
+                "elapsed_seconds": elapsed[offset],
+                "operator_user_id": op["id"],
+            })
+        _service_patch("human_edit_sessions", f"id=eq.{session['id']}", {
+            "current_timeline_id": new_tl["id"],
+            "human_correction_seconds": round(
+                float(session.get("human_correction_seconds") or 0)
+                + body.elapsed_seconds, 3),
+        })
     return {"timeline_id": new_tl["id"], "version": new_tl["version"],
+            "lineage": new_tl.get("lineage"),
             "applied": result.applied, "rejected": result.rejected}
+
+
+class HumanCeilingStartBody(BaseModel):
+    autonomous_initial_timeline_id: str
+    autonomous_revised_timeline_id: str
+    edit_run_id: str | None = None
+
+
+@app.post("/projects/{project_id}/human-ceiling/start")
+def op_start_human_ceiling(project_id: str, body: HumanCeilingStartBody,
+                           authorization: str = Header(default="")):
+    """Freeze the two autonomous baselines and branch a human draft."""
+    from .human_ceiling import (AUTONOMOUS_INITIAL, AUTONOMOUS_REVISED,
+                                HUMAN_DRAFT)
+    op = _require_operator(authorization)
+    project = _get_project(project_id)
+    active = supa.db_select("human_edit_sessions",
+                            f"project_id=eq.{project_id}&status=eq.active&limit=1")
+    if active:
+        raise HTTPException(409, "an active human edit session already exists")
+
+    timeline_ids = [body.autonomous_initial_timeline_id,
+                    body.autonomous_revised_timeline_id]
+    timelines = []
+    for timeline_id in timeline_ids:
+        rows = supa.db_select("timelines", f"id=eq.{timeline_id}")
+        if not rows or rows[0]["project_id"] != project_id:
+            raise HTTPException(404, "autonomous baseline not found in this project")
+        timelines.append(rows[0])
+    if timeline_ids[0] == timeline_ids[1]:
+        raise HTTPException(422, "initial and revised baselines must be separate timelines")
+
+    edit_run_id = body.edit_run_id
+    if edit_run_id:
+        runs = supa.db_select("edit_runs", f"id=eq.{edit_run_id}")
+        if not runs or runs[0]["project_id"] != project_id:
+            raise HTTPException(404, "edit run not found in this project")
+        run = runs[0]
+        if (run.get("timeline_v1_id") != timeline_ids[0]
+                or run.get("timeline_v2_id") != timeline_ids[1]):
+            raise HTTPException(422, "baseline timelines do not match the edit run")
+    else:
+        runs = supa.db_select("edit_runs",
+                              f"project_id=eq.{project_id}&order=created_at.desc")
+        run = next((r for r in runs
+                    if r.get("timeline_v1_id") == timeline_ids[0]
+                    and r.get("timeline_v2_id") == timeline_ids[1]), None)
+        edit_run_id = run.get("id") if run else None
+    if not edit_run_id:
+        raise HTTPException(422, "baselines must belong to the same recorded edit run")
+
+    _audit(op, "start_human_ceiling", project_id, {
+        "autonomous_initial_timeline_id": timeline_ids[0],
+        "autonomous_revised_timeline_id": timeline_ids[1],
+        "edit_run_id": edit_run_id,
+    })
+    for timeline, lineage in zip(
+            timelines, (AUTONOMOUS_INITIAL, AUTONOMOUS_REVISED), strict=True):
+        if timeline.get("is_immutable"):
+            if timeline.get("lineage") != lineage:
+                raise HTTPException(
+                    409, f"immutable baseline has unexpected lineage: {timeline.get('lineage')}")
+            continue
+        _service_patch("timelines", f"id=eq.{timeline['id']}", {
+            "lineage": lineage, "is_immutable": True,
+            "edit_run_id": edit_run_id,
+        })
+
+    latest = supa.db_select("timelines",
+                            f"project_id=eq.{project_id}&order=version.desc&limit=1")
+    human_timeline = _service_insert("timelines", {
+        "project_id": project_id,
+        "user_id": project["user_id"],
+        "version": (latest[0]["version"] + 1) if latest else 1,
+        "timeline_json": timelines[1]["timeline_json"],
+        "lineage": HUMAN_DRAFT,
+        "parent_timeline_id": timeline_ids[1],
+        "edit_run_id": edit_run_id,
+        "is_immutable": False,
+    })
+    session = _service_insert("human_edit_sessions", {
+        "project_id": project_id,
+        "user_id": project["user_id"],
+        "edit_run_id": edit_run_id,
+        "operator_user_id": op["id"],
+        "autonomous_initial_timeline_id": timeline_ids[0],
+        "autonomous_revised_timeline_id": timeline_ids[1],
+        "current_timeline_id": human_timeline["id"],
+        "status": "active",
+        "human_correction_seconds": 0,
+    })
+    return {"session": session, "human_timeline": human_timeline}
+
+
+class HumanCeilingApproveBody(BaseModel):
+    session_id: str
+    total_human_seconds: float = Field(ge=0, le=24 * 60 * 60)
+
+
+@app.post("/projects/{project_id}/human-ceiling/approve")
+def op_approve_human_ceiling(project_id: str, body: HumanCeilingApproveBody,
+                             authorization: str = Header(default="")):
+    """Approve and freeze the separate human timeline lineage."""
+    from collections import Counter
+    from .human_ceiling import HUMAN_APPROVED, HUMAN_DRAFT
+    op = _require_operator(authorization)
+    _get_project(project_id)
+    sessions = supa.db_select("human_edit_sessions", f"id=eq.{body.session_id}")
+    if not sessions or sessions[0]["project_id"] != project_id:
+        raise HTTPException(404, "human edit session not found in this project")
+    session = sessions[0]
+    if session["status"] != "active":
+        raise HTTPException(409, f"human edit session is {session['status']}")
+    timelines = supa.db_select("timelines", f"id=eq.{session['current_timeline_id']}")
+    if not timelines or timelines[0].get("lineage") != HUMAN_DRAFT:
+        raise HTTPException(409, "session has no mutable human draft to approve")
+
+    corrections = supa.db_select(
+        "user_corrections", f"human_edit_session_id=eq.{session['id']}")
+    counted_seconds = sum(float(c.get("elapsed_seconds") or 0) for c in corrections)
+    if body.total_human_seconds + 0.001 < counted_seconds:
+        raise HTTPException(422, "total human time cannot be less than recorded operation time")
+    _audit(op, "approve_human_ceiling", project_id, {
+        "session_id": session["id"],
+        "timeline_id": session["current_timeline_id"],
+        "total_human_seconds": body.total_human_seconds,
+    })
+    approved = _service_patch("timelines", f"id=eq.{session['current_timeline_id']}", {
+        "lineage": HUMAN_APPROVED,
+        "is_immutable": True,
+        "approved_by": op["id"],
+        "approved_at": _now(),
+    })[0]
+    _service_patch("human_edit_sessions", f"id=eq.{session['id']}", {
+        "status": "approved",
+        "approved_timeline_id": approved["id"],
+        "human_correction_seconds": body.total_human_seconds,
+        "approved_at": _now(),
+    })
+
+    counts = Counter(c.get("correction_type") for c in corrections)
+    evaluations = supa.db_select(
+        "draft_evaluations", f"project_id=eq.{project_id}&order=created_at.desc&limit=1")
+    if evaluations:
+        _service_patch("draft_evaluations", f"id=eq.{evaluations[0]['id']}", {
+            "clips_manually_replaced": counts["replacement"],
+            "clips_manually_trimmed": counts["trim"],
+            "clips_manually_reordered": counts["reorder"],
+            "audio_changes": counts["audio"],
+            "title_changes": counts["title"],
+            "captions_manually_changed": counts["caption"],
+            "human_correction_minutes": round(body.total_human_seconds / 60, 3),
+        })
+    return {"session_id": session["id"], "approved_timeline_id": approved["id"],
+            "lineage": approved["lineage"],
+            "human_correction_seconds": body.total_human_seconds,
+            "correction_counts": dict(counts)}
+
+
+class TimelineScorecardBody(BaseModel):
+    session_id: str
+    timeline_id: str
+    scores: dict = Field(default_factory=dict)
+    overall_rating: int = Field(ge=1, le=10)
+    publishable: bool | None = None
+    evaluator_role: str = "operator"
+    notes: str = Field(default="", max_length=10000)
+
+
+@app.post("/projects/{project_id}/human-ceiling/scorecard")
+def op_human_ceiling_scorecard(project_id: str, body: TimelineScorecardBody,
+                               authorization: str = Header(default="")):
+    """Record a version-specific scorecard for the three-way comparison."""
+    from .human_ceiling import HumanCeilingError, validate_scores
+    op = _require_operator(authorization)
+    project = _get_project(project_id)
+    sessions = supa.db_select("human_edit_sessions", f"id=eq.{body.session_id}")
+    if not sessions or sessions[0]["project_id"] != project_id:
+        raise HTTPException(404, "human edit session not found in this project")
+    session = sessions[0]
+    allowed_ids = {session.get("autonomous_initial_timeline_id"),
+                   session.get("autonomous_revised_timeline_id"),
+                   session.get("approved_timeline_id")}
+    if body.timeline_id not in allowed_ids:
+        raise HTTPException(422, "scorecard timeline is not a comparison version")
+    if body.evaluator_role not in {"operator", "founder", "customer", "system"}:
+        raise HTTPException(422, "invalid evaluator_role")
+    try:
+        scores = validate_scores(body.scores)
+    except HumanCeilingError as e:
+        raise HTTPException(422, str(e))
+    _audit(op, "record_human_ceiling_scorecard", project_id, {
+        "session_id": session["id"], "timeline_id": body.timeline_id,
+        "overall_rating": body.overall_rating,
+        "evaluator_role": body.evaluator_role,
+    })
+    existing = supa.db_select(
+        "timeline_scorecards",
+        f"timeline_id=eq.{body.timeline_id}&evaluator_user_id=eq.{op['id']}"
+        f"&evaluator_role=eq.{body.evaluator_role}&limit=1")
+    payload = {
+        "scores": scores, "overall_rating": body.overall_rating,
+        "publishable": body.publishable, "notes": body.notes,
+    }
+    if existing:
+        row = _service_patch("timeline_scorecards", f"id=eq.{existing[0]['id']}", payload)[0]
+    else:
+        row = _service_insert("timeline_scorecards", {
+            "project_id": project_id, "user_id": project["user_id"],
+            "timeline_id": body.timeline_id,
+            "human_edit_session_id": session["id"],
+            "evaluator_user_id": op["id"],
+            "evaluator_role": body.evaluator_role,
+            **payload,
+        })
+    return row
+
+
+@app.get("/projects/{project_id}/human-ceiling/report")
+def op_human_ceiling_report(project_id: str, session_id: str | None = None,
+                            authorization: str = Header(default="")):
+    """Generate the side-by-side initial/revised/human-approved report."""
+    from .human_ceiling import HumanCeilingError, build_comparison_report
+    _require_operator(authorization)
+    _get_project(project_id)
+    filters = f"project_id=eq.{project_id}&status=eq.approved&order=created_at.desc&limit=1"
+    if session_id:
+        filters = f"id=eq.{session_id}"
+    sessions = supa.db_select("human_edit_sessions", filters)
+    if not sessions or sessions[0]["project_id"] != project_id:
+        raise HTTPException(404, "approved human edit session not found")
+    session = sessions[0]
+    timelines = supa.db_select("timelines", f"project_id=eq.{project_id}")
+    scorecards = supa.db_select(
+        "timeline_scorecards", f"human_edit_session_id=eq.{session['id']}")
+    corrections = supa.db_select(
+        "user_corrections", f"human_edit_session_id=eq.{session['id']}")
+    try:
+        return build_comparison_report(session, timelines, scorecards, corrections)
+    except HumanCeilingError as e:
+        raise HTTPException(409, str(e))
 
 
 class SegmentFlagBody(BaseModel):

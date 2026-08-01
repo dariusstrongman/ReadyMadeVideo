@@ -169,6 +169,7 @@ function ProjectDetail({ project, session }) {
       <SegmentsSection project={project} session={session} act={act} post={post} />
       <BlueprintSection project={project} />
       <TimelinesSection project={project} session={session} act={act} post={post} />
+      <HumanCeilingSection project={project} session={session} />
       <CoverageSection project={project} session={session} />
       <EvaluationSection project={project} session={session} act={act} post={post} />
       <AuditSection project={project} />
@@ -285,7 +286,7 @@ function TimelinesSection({ project, session, act, post }) {
   const [tls, setTls] = useState([])
   const [compare, setCompare] = useState([])
   useEffect(() => {
-    supabase.from('timelines').select('id,version,created_at,timeline_json')
+    supabase.from('timelines').select('id,version,created_at,timeline_json,lineage,parent_timeline_id,is_immutable')
       .eq('project_id', project.id).order('version')
       .then(({ data }) => setTls(data || []))
   }, [project.id])
@@ -299,7 +300,8 @@ function TimelinesSection({ project, session, act, post }) {
           <button key={t.id} className="btn btn-ghost"
             onClick={() => setCompare((c) => c.includes(t.id)
               ? c.filter((x) => x !== t.id) : [...c.slice(-1), t.id])}>
-            v{t.version}{compare.includes(t.id) ? ' ✓' : ''}
+            v{t.version} · {t.lineage || 'legacy'}{t.is_immutable ? ' · locked' : ''}
+            {compare.includes(t.id) ? ' ✓' : ''}
           </button>))}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
@@ -315,7 +317,7 @@ function TimelinesSection({ project, session, act, post }) {
                       { params: { timeline_id: t.id } }))}>Approve → final</button>
               </div>
               {clipsOf(t).map((c, i) => <div key={i} className="small mono">{c}</div>)}
-              <TrimForm project={project} timeline={t} act={act} post={post} />
+              {!t.is_immutable && <TrimForm project={project} timeline={t} act={act} post={post} />}
             </div>)
         })}
       </div>
@@ -341,6 +343,209 @@ function TrimForm({ project, timeline, act, post }) {
         }))}>Trim</button>
     </div>
   )
+}
+
+const SCORE_FIELDS = ['hook', 'story_clarity', 'shot_selection', 'shot_variety',
+  'pacing', 'continuity', 'action_visibility', 'emotional_intensity',
+  'natural_audio', 'audio_mix', 'captions_titles', 'color_consistency',
+  'ending_payoff']
+
+function HumanCeilingSection({ project, session: authSession }) {
+  const [timelines, setTimelines] = useState([])
+  const [humanSession, setHumanSession] = useState(null)
+  const [initialId, setInitialId] = useState('')
+  const [revisedId, setRevisedId] = useState('')
+  const [operationText, setOperationText] = useState(
+    JSON.stringify({ op: 'trim_clip', clipId: '', sourceStart: 0, sourceEnd: 1 }, null, 2))
+  const [note, setNote] = useState('')
+  const [elapsed, setElapsed] = useState(0)
+  const [loggedElapsed, setLoggedElapsed] = useState(0)
+  const [timerRunning, setTimerRunning] = useState(false)
+  const [report, setReport] = useState(null)
+  const [err, setErr] = useState('')
+  const [msg, setMsg] = useState('')
+
+  const load = useCallback(async () => {
+    const [{ data: tls }, { data: sessions }] = await Promise.all([
+      supabase.from('timelines')
+        .select('id,version,created_at,timeline_json,lineage,parent_timeline_id,is_immutable')
+        .eq('project_id', project.id).order('version'),
+      supabase.from('human_edit_sessions').select('*').eq('project_id', project.id)
+        .order('created_at', { ascending: false }).limit(1),
+    ])
+    const rows = tls || []
+    setTimelines(rows)
+    const current = sessions?.[0] || null
+    setHumanSession(current)
+    const initial = rows.find((t) => t.lineage === 'autonomous_initial')
+    const revised = rows.find((t) => t.lineage === 'autonomous_revised')
+    if (initial) setInitialId(initial.id)
+    if (revised) setRevisedId(revised.id)
+    if (current) {
+      setInitialId(current.autonomous_initial_timeline_id)
+      setRevisedId(current.autonomous_revised_timeline_id)
+      const recorded = Number(current.human_correction_seconds || 0)
+      setElapsed((value) => Math.max(value, recorded))
+      setLoggedElapsed(recorded)
+    }
+  }, [project.id])
+  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (!timerRunning) return undefined
+    const timer = setInterval(() => setElapsed((value) => value + 1), 1000)
+    return () => clearInterval(timer)
+  }, [timerRunning])
+
+  async function perform(label, fn) {
+    setErr(''); setMsg('')
+    try {
+      const value = await fn()
+      setMsg(`${label}: ok`)
+      await load()
+      return value
+    } catch (e) {
+      setErr(`${label}: ${e.message}`)
+      return null
+    }
+  }
+
+  const baselineOptions = timelines.filter((t) =>
+    ['legacy', 'autonomous_initial', 'autonomous_revised'].includes(t.lineage || 'legacy'))
+  const currentTimeline = timelines.find((t) => t.id === humanSession?.current_timeline_id)
+  const approvedTimeline = timelines.find((t) => t.id === humanSession?.approved_timeline_id)
+  const canStart = initialId && revisedId && initialId !== revisedId
+
+  async function start() {
+    const data = await perform('start human ceiling', () => api(authSession, 'POST',
+      `/projects/${project.id}/human-ceiling/start`, {
+        autonomous_initial_timeline_id: initialId,
+        autonomous_revised_timeline_id: revisedId,
+      }))
+    if (data) {
+      setElapsed(0); setLoggedElapsed(0); setTimerRunning(true)
+    }
+  }
+
+  async function applyManualOperation() {
+    let operation
+    try { operation = JSON.parse(operationText) }
+    catch { setErr('manual operation: JSON is invalid'); return }
+    const delta = Math.max(0, elapsed - loggedElapsed)
+    const data = await perform('manual operation', () => api(authSession, 'POST',
+      `/projects/${project.id}/timeline-ops`, {
+        base_timeline_id: humanSession.current_timeline_id,
+        human_edit_session_id: humanSession.id,
+        operations: [operation], elapsed_seconds: delta, note,
+      }))
+    if (data) setLoggedElapsed(elapsed)
+  }
+
+  async function approve() {
+    const data = await perform('approve human timeline', () => api(authSession, 'POST',
+      `/projects/${project.id}/human-ceiling/approve`, {
+        session_id: humanSession.id, total_human_seconds: elapsed,
+      }))
+    if (data) setTimerRunning(false)
+  }
+
+  async function generateReport() {
+    const data = await perform('generate comparison report', () => api(authSession, 'GET',
+      `/projects/${project.id}/human-ceiling/report?session_id=${humanSession.id}`))
+    if (data) setReport(data)
+  }
+
+  return (
+    <Section title="Human-ceiling comparison: autonomous initial vs revised vs human approved" defaultOpen>
+      <p className="small">Starting a session freezes both autonomous timelines and clones the revised
+        version into a separate human lineage. Manual changes must use constrained operations and are
+        recorded individually.</p>
+      {err && <div className="err">{err}</div>}
+      {msg && <div className="ok">{msg}</div>}
+      {!humanSession && <div className="grid grid-2" style={{ marginTop: 10 }}>
+        <label className="small">Autonomous initial
+          <select value={initialId} onChange={(e) => setInitialId(e.target.value)}>
+            <option value="">Select timeline</option>
+            {baselineOptions.map((t) => <option key={t.id} value={t.id}>v{t.version} · {t.lineage}</option>)}
+          </select>
+        </label>
+        <label className="small">Autonomous revised
+          <select value={revisedId} onChange={(e) => setRevisedId(e.target.value)}>
+            <option value="">Select timeline</option>
+            {baselineOptions.map((t) => <option key={t.id} value={t.id}>v{t.version} · {t.lineage}</option>)}
+          </select>
+        </label>
+        <button className="btn btn-primary" disabled={!canStart} onClick={start}>
+          Freeze baselines + begin human lineage</button>
+      </div>}
+      {humanSession && <div style={{ marginTop: 12 }}>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <span className={`badge ${humanSession.status === 'active' ? 'processing' : 'completed'}`}>
+            {humanSession.status}</span>
+          <span className="small mono">human v{currentTimeline?.version || '?'} · {elapsed}s</span>
+          {humanSession.status === 'active' && <>
+            <button className="btn btn-ghost" onClick={() => setTimerRunning(!timerRunning)}>
+              {timerRunning ? 'Pause timer' : 'Resume timer'}</button>
+            <label className="small">Measured seconds <input type="number" min="0" value={elapsed}
+              onChange={(e) => setElapsed(Math.max(0, Number(e.target.value)))}
+              style={{ width: 100, display: 'inline-block' }} /></label>
+          </>}
+        </div>
+        {humanSession.status === 'active' && <div className="grid" style={{ marginTop: 10 }}>
+          <label className="small">One constrained operation (replacement, trim, reorder, audio, title, etc.)
+            <textarea rows="7" className="mono" value={operationText}
+              onChange={(e) => setOperationText(e.target.value)} /></label>
+          <input placeholder="Reason for this human decision" value={note}
+            onChange={(e) => setNote(e.target.value)} />
+          <div className="row">
+            <button className="btn btn-secondary" onClick={applyManualOperation}>Apply + record operation</button>
+            <button className="btn btn-primary" onClick={approve}>Approve human timeline</button>
+          </div>
+        </div>}
+        {humanSession.status === 'approved' && <>
+          <p className="small">Approved human timeline: v{approvedTimeline?.version || '?'}. All three
+            comparison versions are immutable evidence.</p>
+          <div className="grid grid-3">
+            <ScorecardEditor label="Autonomous initial" timelineId={humanSession.autonomous_initial_timeline_id}
+              project={project} session={humanSession} authSession={authSession} perform={perform} />
+            <ScorecardEditor label="Autonomous revised" timelineId={humanSession.autonomous_revised_timeline_id}
+              project={project} session={humanSession} authSession={authSession} perform={perform} />
+            <ScorecardEditor label="Human approved" timelineId={humanSession.approved_timeline_id}
+              project={project} session={humanSession} authSession={authSession} perform={perform} />
+          </div>
+          <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={generateReport}>
+            Generate side-by-side report</button>
+          {report && <pre style={{ whiteSpace: 'pre-wrap', marginTop: 10 }}>{report.markdown}</pre>}
+        </>}
+      </div>}
+    </Section>
+  )
+}
+
+function ScorecardEditor({ label, timelineId, project, session, authSession, perform }) {
+  const [overall, setOverall] = useState('')
+  const [publishable, setPublishable] = useState('')
+  const [scores, setScores] = useState({})
+  const [notes, setNotes] = useState('')
+  return <div className="card" style={{ background: 'var(--bg-3)' }}>
+    <b className="small">{label}</b>
+    <label className="small">Overall (1-10)<input type="number" min="1" max="10" value={overall}
+      onChange={(e) => setOverall(e.target.value)} /></label>
+    <label className="small">Publishable<select value={publishable}
+      onChange={(e) => setPublishable(e.target.value)}>
+      <option value="">Not scored</option><option value="true">Yes</option><option value="false">No</option>
+    </select></label>
+    {SCORE_FIELDS.map((field) => <label key={field} className="small">{field}
+      <input type="number" min="1" max="10" value={scores[field] || ''}
+        onChange={(e) => setScores({ ...scores, [field]: e.target.value === '' ? null : Number(e.target.value) })} />
+    </label>)}
+    <textarea placeholder="Scorecard notes" rows="3" value={notes} onChange={(e) => setNotes(e.target.value)} />
+    <button className="btn btn-secondary btn-sm" disabled={!overall} onClick={() => perform(
+      `score ${label}`, () => api(authSession, 'POST', `/projects/${project.id}/human-ceiling/scorecard`, {
+        session_id: session.id, timeline_id: timelineId, scores,
+        overall_rating: Number(overall), publishable: publishable === '' ? null : publishable === 'true',
+        evaluator_role: 'operator', notes,
+      }))}>Save scorecard</button>
+  </div>
 }
 
 function CoverageSection({ project, session }) {

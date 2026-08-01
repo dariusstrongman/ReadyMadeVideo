@@ -40,7 +40,8 @@ class FakeSupabase:
                             "render_jobs", "pipeline_jobs", "segments",
                             "asset_analysis", "edit_runs", "draft_evaluations",
                             "user_corrections", "operators", "operator_audit",
-                            "stage_metrics", "project_status_events", "profiles")}
+                            "stage_metrics", "project_status_events", "profiles",
+                            "human_edit_sessions", "timeline_scorecards")}
         self.storage: dict[str, bytes] = {}          # "bucket/path" -> data
         self.fail_tables: set[str] = set()           # simulate write failures
         self.users: dict[str, dict] = {}             # token -> user
@@ -100,6 +101,12 @@ class FakeSupabase:
                 b.setdefault("progress", 0)
                 b.setdefault("attempt_count", 0)
                 b.setdefault("max_attempts", 3)
+            if table == "timelines":
+                b.setdefault("lineage", "legacy")
+                b.setdefault("is_immutable", False)
+            if table == "human_edit_sessions":
+                b.setdefault("status", "active")
+                b.setdefault("human_correction_seconds", 0)
             b.setdefault("id", str(uuid.uuid4()))
             b.setdefault("created_at", _now())
             self.tables[table].append(b)
