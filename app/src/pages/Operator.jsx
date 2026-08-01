@@ -128,6 +128,11 @@ function ProjectDetail({ project, session }) {
       <div className="row" style={{ margin: '12px 0' }}>
         <button className="btn btn-secondary" onClick={() => act('analyze',
           () => post(`/projects/${project.id}/analyze`, { params: {} }))}>Analyze</button>
+        <button className="btn btn-secondary" onClick={() => act('preproduction',
+          () => post(`/projects/${project.id}/preproduction`, {
+            purpose: prompt('Purpose?') || 'cinematic fitness recap',
+            targetPlatform: 'vertical',
+          }))}>Build creative treatment</button>
         <button className="btn btn-secondary" onClick={() => act('generate draft',
           () => post(`/projects/${project.id}/generate-draft`,
             { params: { brief: prompt('Creative brief?') || project.name } }))}>Generate draft</button>
@@ -167,6 +172,7 @@ function ProjectDetail({ project, session }) {
 
       <ArtifactsSection project={project} assets={assets} />
       <SegmentsSection project={project} session={session} act={act} post={post} />
+      <PreproductionSection project={project} />
       <BlueprintSection project={project} />
       <TimelinesSection project={project} session={session} act={act} post={post} />
       <CoverageSection project={project} session={session} />
@@ -252,6 +258,45 @@ function SegmentsSection({ project, session, act, post }) {
             {s.data.problems?.includes('operator_unusable') ? 'Mark usable' : 'Mark unusable'}
           </button>
         </div>))}
+    </Section>
+  )
+}
+
+function PreproductionSection({ project }) {
+  const [run, setRun] = useState(null)
+  useEffect(() => {
+    supabase.from('preproduction_runs').select('*').eq('project_id', project.id)
+      .order('version', { ascending: false }).limit(1)
+      .then(({ data }) => setRun(data?.[0] || null))
+  }, [project.id])
+  if (!run) return (
+    <Section title="Creative Treatment + capture ceiling + story variants">
+      <p className="sub">No Milestone 1 preproduction run yet.</p>
+    </Section>
+  )
+  return (
+    <Section title={`Preproduction v${run.version} — ${run.status}`} defaultOpen>
+      {(run.warnings || []).map((warning) => (
+        <div className="err" key={warning}>{warning}</div>
+      ))}
+      <h3 className="small" style={{ fontWeight: 700 }}>Creative Treatment</h3>
+      <Json data={run.creative_treatment} />
+      <h3 className="small" style={{ fontWeight: 700 }}>Capture Quality Report</h3>
+      <Json data={run.capture_quality_report} />
+      <h3 className="small" style={{ fontWeight: 700 }}>Five story directions</h3>
+      {(run.story_variants?.variants || []).map((variant) => (
+        <div className="list-item" key={variant.variantId} style={{ marginBottom: 8 }}>
+          <div style={{ flex: 1 }}>
+            <b className="small">{variant.label}</b>
+            <div className="small">{variant.editorialIntent}</div>
+            {!variant.valid && <div className="small" style={{ color: '#fca5a5' }}>
+              Rejected: {variant.rejectionReasons.join('; ')}</div>}
+          </div>
+          <span className={`badge ${variant.valid ? 'completed' : 'failed'}`}>
+            {variant.valid ? 'supported' : 'unsupported'}
+          </span>
+        </div>
+      ))}
     </Section>
   )
 }

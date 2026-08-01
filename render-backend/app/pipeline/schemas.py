@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 # ---------- probe ----------
@@ -166,6 +166,7 @@ class Segment(BaseModel):
     subjects: list[str] = []
     action: str = ""
     shotType: str = ""
+    cameraAngle: str = ""
     cameraMovement: str = ""
     location: str = ""
     transcript: str | None = None

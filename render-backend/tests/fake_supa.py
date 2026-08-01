@@ -40,7 +40,8 @@ class FakeSupabase:
                             "render_jobs", "pipeline_jobs", "segments",
                             "asset_analysis", "edit_runs", "draft_evaluations",
                             "user_corrections", "operators", "operator_audit",
-                            "stage_metrics", "project_status_events", "profiles")}
+                            "stage_metrics", "project_status_events", "profiles",
+                            "preproduction_runs")}
         self.storage: dict[str, bytes] = {}          # "bucket/path" -> data
         self.fail_tables: set[str] = set()           # simulate write failures
         self.users: dict[str, dict] = {}             # token -> user
