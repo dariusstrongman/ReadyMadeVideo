@@ -108,15 +108,47 @@ class GeminiVideoProvider(VideoUnderstandingProvider):
 
     def analyze(self, proxy_path: str, scenes: ScenesArtifact,
                 context: str = "") -> SemanticArtifact:
-        file = self._upload(proxy_path)
-        try:
-            return self._analyze_uploaded(file, scenes, context)
-        finally:
-            # provider hygiene: delete the uploaded proxy whether analysis
-            # succeeded or failed. Google auto-expires files after ~48 h if
-            # deletion fails, so a failed delete degrades to retention, not leak.
-            from . import gemini_common
-            gemini_common.delete_file(file["name"], self.api_key)
+        """Full analyze cycle (upload + generate) with retries.
+
+        Project One findings on long phone clips (200-320 s): (a) large
+        single-shot uploads can drop mid-flight, (b) generateContent on long
+        videos can be closed server-side under load. Mitigations: clips longer
+        than LONG_CLIP_S upload a 480p low-bitrate copy from the start (Gemini
+        samples ~1 fps — analysis quality unaffected, payload ~4x smaller), and
+        the WHOLE cycle retries with backoff."""
+        import subprocess
+        import tempfile
+        LONG_CLIP_S = 150.0
+        duration = max((s.end for s in scenes.scenes), default=0)
+        upload_src = proxy_path
+        if duration > LONG_CLIP_S:
+            small = os.path.join(tempfile.gettempdir(),
+                                 f"gemini-upload-{os.getpid()}.mp4")
+            subprocess.run(
+                ["ffmpeg", "-y", "-loglevel", "error", "-i", proxy_path,
+                 "-vf", "scale='if(gt(iw,ih),-2,480)':'if(gt(iw,ih),480,-2)'",
+                 "-map_metadata", "-1", "-c:v", "libx264",
+                 "-preset", "veryfast", "-crf", "32",
+                 "-c:a", "aac", "-b:a", "64k", small],
+                check=True, capture_output=True, timeout=900)
+            upload_src = small
+
+        from . import gemini_common
+        last_err = None
+        for attempt in range(3):
+            file = None
+            try:
+                file = self._upload(upload_src)
+                return self._analyze_uploaded(file, scenes, context)
+            except Exception as e:  # noqa: BLE001 — retry the full cycle
+                last_err = e
+                time.sleep(5 * (attempt + 1))
+            finally:
+                # provider hygiene: delete the uploaded file every attempt.
+                # Google auto-expires after ~48 h if deletion fails.
+                if file is not None:
+                    gemini_common.delete_file(file["name"], self.api_key)
+        raise RuntimeError(f"Gemini analyze failed after retries: {last_err}")
 
     def _analyze_uploaded(self, file: dict, scenes: ScenesArtifact,
                           context: str = "") -> SemanticArtifact:
