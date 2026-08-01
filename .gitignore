@@ -40,3 +40,5 @@ app/dist/
 render-backend/.env
 render-backend/**/__pycache__/
 render-backend/.pytest_cache/
+# generated CI media (uploaded as GitHub Actions artifacts, never committed)
+ci-artifacts/

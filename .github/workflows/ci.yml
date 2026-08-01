@@ -19,6 +19,8 @@ jobs:
         run: npm run build
       - name: Frontend secret guard (no service keys in source or bundle)
         run: node scripts/check-secrets.mjs
+      - name: Dependency vulnerability scan (npm audit)
+        run: npm audit --audit-level=high
       - name: License report (frontend)
         run: npx license-checker --summary --production > ../frontend-licenses.txt || true
       - uses: actions/upload-artifact@v4
@@ -34,11 +36,15 @@ jobs:
       - name: System deps (real ffmpeg + fonts)
         run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
       - name: Python deps
-        run: pip install -r requirements.txt pytest-cov ruff pip-licenses
+        run: pip install -r requirements.txt pip-licenses pip-audit
       - name: Static analysis (ruff)
         run: ruff check app/ --output-format=github
-      - name: Unit + fixture-render + timeline/op tests (real FFmpeg)
-        run: python -m pytest tests/ -v --cov=app --cov-report=xml --cov-report=term --junitxml=test-report.xml
+      - name: Dependency vulnerability scan (pip-audit)
+        run: pip-audit -r requirements.txt --strict || pip-audit -r requirements.txt
+      - name: Unit + worker + operator-API + fixture-render tests (real FFmpeg)
+        run: python -m pytest tests/ -v --cov=app --cov-report=xml --cov-report=json:coverage.json --cov-report=term --junitxml=test-report.xml
+      - name: Critical-module coverage gate
+        run: python ../scripts/check_coverage.py coverage.json
       - name: Render CI artifact videos (preview + final)
         run: python ../scripts/ci_render_artifact.py
         env: { CI_ARTIFACT_DIR: ci-artifacts }
