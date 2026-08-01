@@ -170,6 +170,7 @@ def compile_timeline(timeline: dict, sources: dict[str, str], out_path: str,
         cmd += ["-i", f]
     cmd += ["-filter_complex", ";".join(parts),
             "-map", "[vfade]", "-map", "[afinal]",
+            "-map_metadata", "-1",
             "-c:v", "libx264", "-preset", prof["preset"], "-crf", str(prof["crf"]),
             "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", out_path]
     return CompiledRender(cmd=cmd, duration=round(total, 3))

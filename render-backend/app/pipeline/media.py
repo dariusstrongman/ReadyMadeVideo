@@ -67,8 +67,11 @@ def proxy_stage(src: str, workdir: str, probe: ProbeArtifact) -> dict:
     os.makedirs(thumb_dir, exist_ok=True)
 
     # proxy: scale so the short side is <=720, keep aspect + fps, light crf
+    # -map_metadata -1: strip GPS/device metadata from every generated file;
+    # only technically required stream parameters survive.
     _run([FFMPEG, "-y", "-loglevel", "error", "-i", src,
           "-vf", "scale='if(gt(iw,ih),-2,720)':'if(gt(iw,ih),720,-2)'",
+          "-map_metadata", "-1",
           "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
           "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", proxy])
 
@@ -83,6 +86,7 @@ def proxy_stage(src: str, workdir: str, probe: ProbeArtifact) -> dict:
     # audio for STT / analysis (silent file if no audio stream)
     if probe.has_audio:
         _run([FFMPEG, "-y", "-loglevel", "error", "-i", src,
+              "-map_metadata", "-1",
               "-vn", "-ac", "1", "-ar", "16000", wav])
     else:
         _run([FFMPEG, "-y", "-loglevel", "error",

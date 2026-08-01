@@ -100,28 +100,79 @@ def main():
         if not supa.db_select("operators", "limit=1")
         else f"{len(supa.db_select('operators', 'limit=10'))} operator(s)"))
 
-    # 4. providers
-    def gemini_check():
-        key = os.environ.get("GEMINI_API_KEY")
-        if not key:
-            raise RuntimeError("GEMINI_API_KEY not set")
-        with urllib.request.urlopen(
-                "https://generativelanguage.googleapis.com/v1beta/models"
-                f"?key={key}&pageSize=1", timeout=20) as r:
-            json.loads(r.read())
-        return "models endpoint ok"
-    check("Gemini key works", gemini_check)
+    # 4. providers — REAL small operations, not model-list pings
+    from app.pipeline import telemetry as _tel
 
     def whisper_check():
-        key = os.environ.get("OPENAI_API_KEY")
-        if not key:
+        """Real transcription of a throwaway synthesized-speech fixture."""
+        if not os.environ.get("OPENAI_API_KEY"):
             raise RuntimeError("OPENAI_API_KEY not set")
-        req = urllib.request.Request("https://api.openai.com/v1/models",
-                                     headers={"Authorization": f"Bearer {key}"})
-        with urllib.request.urlopen(req, timeout=20) as r:
-            json.loads(r.read())
-        return "models endpoint ok"
-    check("Whisper provider works", whisper_check)
+        from app.pipeline.schemas import TranscriptArtifact
+        from app.pipeline.transcribe import OpenAIWhisperProvider
+        wav = os.path.join(tempfile.gettempdir(),
+                           f"readiness-speech-{uuid.uuid4().hex[:6]}.wav")
+        try:
+            ps = ("Add-Type -AssemblyName System.Speech; "
+                  "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+                  f"$s.SetOutputToWaveFile('{wav}'); "
+                  "$s.Speak('Stromation readiness check complete'); $s.Dispose()")
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                           check=True, capture_output=True, timeout=60)
+            art = OpenAIWhisperProvider().transcribe(wav)
+            assert isinstance(art, TranscriptArtifact)      # schema-valid
+            if "readiness" not in art.text.lower() \
+                    and "stromation" not in art.text.lower():
+                raise RuntimeError(f"unexpected transcript: {art.text!r}")
+            if not art.words:
+                raise RuntimeError("no word timestamps returned")
+            dur_min = 3 / 60
+            _tel.record("readiness_whisper", None, None, 1.0,
+                        units={"whisper_minutes": dur_min})
+            return (f"transcribed {len(art.words)} words with timestamps "
+                    f"(~${_tel.estimate_cost({'whisper_minutes': dur_min}):.5f})")
+        finally:
+            if os.path.exists(wav):
+                os.remove(wav)
+    check("REAL Whisper transcription works", whisper_check)
+
+    def gemini_check():
+        """Real media upload + schema-validated semantic analysis of a
+        throwaway fixture (never personal footage)."""
+        if not os.environ.get("GEMINI_API_KEY"):
+            raise RuntimeError("GEMINI_API_KEY not set")
+        from app.pipeline.schemas import (ScenesArtifact, SceneRange,
+                                          SemanticArtifact)
+        from app.pipeline.semantic import GeminiVideoProvider
+        vid = os.path.join(tempfile.gettempdir(),
+                           f"readiness-video-{uuid.uuid4().hex[:6]}.mp4")
+        try:
+            from app.renderer import _default_font, _ff_escape
+            subprocess.run(["ffmpeg", "-y", "-loglevel", "error",
+                            "-f", "lavfi", "-i",
+                            "testsrc2=size=640x360:rate=30:duration=3",
+                            "-vf", f"drawtext=fontfile='{_ff_escape(_default_font())}'"
+                                   ":text='STROMATION READINESS'"
+                                   ":fontcolor=white:fontsize=40"
+                                   ":x=(w-text_w)/2:y=(h-text_h)/2",
+                            "-c:v", "libx264", "-preset", "veryfast", vid],
+                           check=True, capture_output=True, timeout=120)
+            scenes = ScenesArtifact(detector="fixture", threshold=0,
+                                    scenes=[SceneRange(index=0, start=0, end=3)])
+            # provider deletes the uploaded Gemini file in its finally block
+            art = GeminiVideoProvider().analyze(vid, scenes,
+                                                context="readiness fixture")
+            assert isinstance(art, SemanticArtifact)         # schema-valid
+            seg = art.segments[0]
+            if not seg.search_description or not seg.shot_type:
+                raise RuntimeError("required schema fields empty")
+            units = {"gemini_requests": 1, "gemini_video_seconds": 3}
+            _tel.record("readiness_gemini", None, None, 1.0, units=units)
+            return (f"analyzed fixture: '{seg.search_description[:50]}…' "
+                    f"(~${_tel.estimate_cost(units):.5f})")
+        finally:
+            if os.path.exists(vid):
+                os.remove(vid)
+    check("REAL Gemini media analysis works", gemini_check)
 
     # 5. fixture flow: user + project + clip + timeline + worker final render
     import httpx
@@ -213,25 +264,99 @@ def main():
         check("signed private download works", signed_check)
 
         def cross_user_check():
-            r = httpx.post(f"{supa.SUPABASE_URL}/auth/v1/token?grant_type=password",
-                           headers={"apikey": os.environ.get(
-                               "SUPABASE_ANON_KEY",
-                               "sb_publishable_8qa-nssfdtEkCz-42wOSWQ_2P7S4Zj7"),
-                               "Content-Type": "application/json"},
-                           json={"email": f"readiness-b-{sfx}@stromation.com",
-                                 "password": "wrong"}, timeout=20)
-            # can't sign in with wrong pw; use service-side RLS simulation:
-            # user B has no rows -> select as B via impersonation is complex;
-            # rely on the DB-boundary check instead:
-            r = httpx.post(f"{supa.SUPABASE_URL}/rest/v1/media_assets",
-                           headers={**admin, "Prefer": "return=minimal"},
-                           json={"project_id": project["id"],
-                                 "user_id": users["b"], "filename": "x.mp4",
-                                 "storage_path": "users/x/x.mp4"}, timeout=30)
-            if r.status_code < 400:
-                raise RuntimeError("cross-user insert was ACCEPTED")
-            return "cross-user write rejected at DB boundary"
-        check("cross-user access remains blocked", cross_user_check)
+            """GENUINE denial suite: User B authenticates with the normal
+            publishable key + their own JWT and attempts 11 unauthorized
+            operations against User A's data. Any success = readiness FAIL."""
+            anon = os.environ.get(
+                "SUPABASE_ANON_KEY",
+                "sb_publishable_8qa-nssfdtEkCz-42wOSWQ_2P7S4Zj7")
+            # set known passwords + sign both users in for real JWTs
+            pws = {}
+            for tag in ("a", "b"):
+                pws[tag] = uuid.uuid4().hex + "Aa1!"
+                httpx.put(f"{supa.SUPABASE_URL}/auth/v1/admin/users/{users[tag]}",
+                          headers=admin, json={"password": pws[tag]},
+                          timeout=30).raise_for_status()
+            toks = {}
+            for tag in ("a", "b"):
+                r = httpx.post(
+                    f"{supa.SUPABASE_URL}/auth/v1/token?grant_type=password",
+                    headers={"apikey": anon, "Content-Type": "application/json"},
+                    json={"email": f"readiness-{tag}-{sfx}@stromation.com",
+                          "password": pws[tag]}, timeout=30)
+                r.raise_for_status()
+                toks[tag] = r.json()["access_token"]
+
+            def bh(extra=None):
+                return {"apikey": anon, "Authorization": f"Bearer {toks['b']}",
+                        **(extra or {})}
+
+            export_path = getattr(main, "export_path", None)
+            job_rows = supa.db_select("pipeline_jobs",
+                                      f"project_id=eq.{project['id']}&limit=1")
+            denials = []
+
+            def deny(name, resp, allow_empty_list=False):
+                ok = resp.status_code >= 400 or (
+                    allow_empty_list and resp.status_code == 200
+                    and resp.json() in ([], {}))
+                denials.append((name, ok, resp.status_code))
+                if not ok:
+                    raise RuntimeError(
+                        f"UNAUTHORIZED OPERATION SUCCEEDED: {name} "
+                        f"(HTTP {resp.status_code})")
+
+            base = supa.SUPABASE_URL
+            deny("read A's project", httpx.get(
+                f"{base}/rest/v1/projects?id=eq.{project['id']}&select=*",
+                headers=bh(), timeout=20), allow_empty_list=True)
+            deny("read A's media record", httpx.get(
+                f"{base}/rest/v1/media_assets?id=eq.{asset_id}&select=*",
+                headers=bh(), timeout=20), allow_empty_list=True)
+            deny("read A's timeline", httpx.get(
+                f"{base}/rest/v1/timelines?project_id=eq.{project['id']}&select=*",
+                headers=bh(), timeout=20), allow_empty_list=True)
+            if job_rows:
+                deny("read A's job", httpx.get(
+                    f"{base}/rest/v1/pipeline_jobs?id=eq.{job_rows[0]['id']}"
+                    f"&select=*", headers=bh(), timeout=20),
+                    allow_empty_list=True)
+            deny("list A's storage objects", httpx.post(
+                f"{base}/storage/v1/object/list/raw-footage",
+                headers=bh({"Content-Type": "application/json"}),
+                json={"prefix": f"users/{users['a']}", "limit": 10},
+                timeout=20), allow_empty_list=True)
+            deny("sign A's original footage", httpx.post(
+                f"{base}/storage/v1/object/sign/raw-footage/{path}",
+                headers=bh({"Content-Type": "application/json"}),
+                json={"expiresIn": 60}, timeout=20))
+            deny("download A's original footage", httpx.get(
+                f"{base}/storage/v1/object/raw-footage/{path}",
+                headers=bh(), timeout=20))
+            if export_path:
+                deny("sign A's export", httpx.post(
+                    f"{base}/storage/v1/object/sign/exports/{export_path}",
+                    headers=bh({"Content-Type": "application/json"}),
+                    json={"expiresIn": 60}, timeout=20))
+                deny("download A's export", httpx.get(
+                    f"{base}/storage/v1/object/exports/{export_path}",
+                    headers=bh(), timeout=20))
+            deny("insert media into A's project", httpx.post(
+                f"{base}/rest/v1/media_assets",
+                headers=bh({"Content-Type": "application/json",
+                            "Prefer": "return=minimal"}),
+                json={"project_id": project["id"], "user_id": users["b"],
+                      "filename": "evil.mp4", "storage_path": "users/x/x.mp4"},
+                timeout=20))
+            deny("trigger processing for A's project", httpx.post(
+                f"{base}/rest/v1/pipeline_jobs",
+                headers=bh({"Content-Type": "application/json",
+                            "Prefer": "return=minimal"}),
+                json={"project_id": project["id"], "user_id": users["b"],
+                      "kind": "analysis"}, timeout=20))
+            return f"all {len(denials)} unauthorized operations denied"
+        check("GENUINE User B denial suite (JWT + publishable key)",
+              cross_user_check)
 
         def audit_check():
             r = httpx.post(f"{supa.SUPABASE_URL}/rest/v1/operator_audit",
