@@ -9,6 +9,7 @@ THRESHOLDS = {          # module filename -> minimum percent
     "main.py": 70.0,     # operator API logic
     "autoedit.py": 70.0,
     "telemetry.py": 75.0,
+    "editorial_intelligence.py": 80.0,
 }
 TOTAL_MIN = 70.0
 

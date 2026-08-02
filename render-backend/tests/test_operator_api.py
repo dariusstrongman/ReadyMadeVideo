@@ -633,6 +633,78 @@ def test_operator_creates_complete_immutable_visual_finishing_lineage(env, monke
                for item in env.fake.tables["operator_audit"])
 
 
+# ---------- audiovisual editorial intelligence ----------
+def test_editorial_intelligence_authorization_and_uuid_boundary(env):
+    path = f"/projects/{env.project['id']}/editorial-intelligence"
+    assert env.client.post(path, json={}).status_code == 401
+    assert env.client.post(path, json={}, headers=env.h(env.owner[1])).status_code == 403
+    malformed = env.client.post(path, json={"colorRunId": "not-a-uuid"},
+                                headers=env.h(env.operator[1]))
+    assert malformed.status_code == 422
+    injected = env.client.post(path, json={
+        "colorRunId": "00000000-0000-0000-0000-000000000001&or=(id.neq.x)"},
+        headers=env.h(env.operator[1]))
+    assert injected.status_code == 422
+
+
+def test_operator_builds_immutable_editorial_tournament(env, monkeypatch):
+    from pathlib import Path
+
+    from app.pipeline import editorial_intelligence as ei
+    from app.pipeline import visual_finishing as vf
+
+    _, audio = _create_audio_mix(env, monkeypatch)
+    picture_row = env.fake.tables["picture_edit_runs"][0]
+    valid = next(item for item in picture_row["candidates"] if item["valid"])
+    if len([item for item in picture_row["candidates"] if item["valid"]]) < 3:
+        import copy
+        picture_row["candidates"] = [valid, *[
+            {**copy.deepcopy(valid), "candidateId": f"api-variant-{index}",
+             "label": f"API variant {index}"} for index in (2, 3)
+        ]]
+
+    def finishing_stub(source, output, graphics, captions, color):
+        Path(output).write_bytes(b"visual-preview")
+        return {"durationSeconds": 24, "videoStreamPresent": True,
+                "audioStreamPresent": True, "width": 1080, "height": 1920,
+                "pictureTimingChanged": False, "audioChanged": False}
+
+    monkeypatch.setattr(vf, "render_finishing_preview", finishing_stub)
+    visual = env.client.post(
+        f"/projects/{env.project['id']}/visual-finishing",
+        json={"audioMixRunId": audio["id"]}, headers=env.h(env.operator[1]),
+    )
+    assert visual.status_code == 200, visual.text
+
+    def candidate_render_stub(manifest, sources, completed, output, workdir):
+        Path(output).write_bytes(b"complete-editorial-candidate")
+        return {"durationSeconds": manifest.pictureTimeline["duration"],
+                "videoStreamPresent": True, "audioStreamPresent": True,
+                "width": 1080, "height": 1920, "fabricatedFootage": False}
+
+    monkeypatch.setattr(ei, "render_complete_candidate", candidate_render_stub)
+    response = env.client.post(
+        f"/projects/{env.project['id']}/editorial-intelligence",
+        json={"colorRunId": visual.json()["colorRunId"]},
+        headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert len(payload["candidates"]) >= 3
+    assert len(payload["tournament"]["pairwiseComparisons"]) == (
+        len(payload["candidates"]) * (len(payload["candidates"]) - 1) // 2
+    )
+    assert payload["winnerCandidateRunId"] in {
+        item["id"] for item in payload["candidates"]
+    }
+    assert len(env.fake.tables["critic_runs"]) == 10 * len(payload["candidates"])
+    assert len(env.fake.tables["publishability_reports"]) == len(payload["candidates"])
+    assert len(env.fake.tables["tournament_runs"]) == 1
+    assert all(not row["fabricated_footage"] for row in env.fake.tables["candidate_runs"])
+    assert any(row["action"] == "create_editorial_intelligence"
+               for row in env.fake.tables["operator_audit"])
+
+
 # ---------- timeline op validation ----------
 def _project_timeline(env):
     tl = {"version": 1, "width": 1920, "height": 1080, "fps": 30, "duration": 6,

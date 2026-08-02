@@ -15,6 +15,9 @@ from app.pipeline.visual_finishing import (  # noqa: E402
     GraphicEvent, GraphicsPackage, PRESETS, NormalizedRegion,
     render_finishing_preview,
 )
+from app.pipeline.editorial_intelligence import (  # noqa: E402
+    CompleteCandidateManifest, VariantConfig, render_complete_candidate,
+)
 
 OUT = os.environ.get("CI_ARTIFACT_DIR", "ci-artifacts")
 os.makedirs(OUT, exist_ok=True)
@@ -74,4 +77,19 @@ finished = render_finishing_preview(
 )
 print(f"visual-finishing: {finished['width']}x{finished['height']} "
       f"{finished['durationSeconds']:.1f}s")
+candidate = CompleteCandidateManifest(
+    candidateKey="ci-editorial-winner", generationKind="initial",
+    sourcePictureCandidateId="ci-picture-candidate", sourceAssetIds=["fx"],
+    variant=VariantConfig(
+        hookStrategy="strongest_supported_hook", pacingProfile="ci fixture",
+        musicSyncOffsetSeconds=.05, graphicsTimingOffsetSeconds=0,
+        captionLayout="adaptive", colorPreset="neutral_social",
+    ), pictureTimeline=timeline, graphics=graphics, captions=captions, color=color,
+)
+editorial = render_complete_candidate(
+    candidate, {"fx": src}, os.path.join(OUT, "final.mp4"),
+    os.path.join(OUT, "editorial-intelligence.mp4"), OUT,
+)
+print(f"editorial-intelligence: {editorial['width']}x{editorial['height']} "
+      f"{editorial['durationSeconds']:.1f}s; fabricated={editorial['fabricatedFootage']}")
 print("ci artifacts ->", OUT)

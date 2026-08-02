@@ -8,7 +8,8 @@ on:
                codex/audiovisual-milestone-2-picture-editor,
                codex/audiovisual-milestone-3-music-sound,
                codex/audiovisual-milestone-4-audio-rendering,
-               codex/audiovisual-milestone-5-motion-graphics]
+               codex/audiovisual-milestone-5-motion-graphics,
+               codex/audiovisual-milestone-6-editorial-intelligence]
 
 jobs:
   frontend:
@@ -88,6 +89,8 @@ jobs:
           echo "all migrations applied cleanly"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260801_0012_audiovisual_motion_graphics.sql
           echo "migration 0012 reapplied cleanly (idempotency check)"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260801_0013_audiovisual_editorial_intelligence.sql
+          echo "migration 0013 reapplied cleanly (idempotency check)"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/human_ceiling_integrity.sql
           echo "human-ceiling PostgreSQL integrity assertions passed"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/picture_editor_integrity.sql
@@ -98,6 +101,8 @@ jobs:
           echo "audio-rendering PostgreSQL integrity assertions passed"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/visual_finishing_integrity.sql
           echo "visual-finishing PostgreSQL integrity assertions passed"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/editorial_intelligence_integrity.sql
+          echo "editorial-intelligence PostgreSQL integrity assertions passed"
 
   secret-scan:
     runs-on: ubuntu-latest

@@ -1780,6 +1780,258 @@ def op_visual_finishing(project_id: str, body: VisualFinishingBody,
     }
 
 
+class EditorialIntelligenceBody(BaseModel):
+    colorRunId: UUID | None = None
+    includeBoundedRevision: bool = True
+
+
+@app.post("/projects/{project_id}/editorial-intelligence")
+def op_editorial_intelligence(
+    project_id: str, body: EditorialIntelligenceBody,
+    authorization: str = Header(default=""),
+):
+    """Render, critique, compare, and persist one immutable Milestone 6 batch."""
+    from .human_ceiling import HumanCeilingError, build_comparison_report
+    from .pipeline.audio_rendering import CompletedAudioMix
+    from .pipeline.composition import CompositionMetrics
+    from .pipeline.creative_director import CreativeTreatment
+    from .pipeline.editorial_intelligence import (
+        EditorialIntelligenceError,
+        apply_bounded_revision,
+        build_four_way_comparison,
+        build_publishability_report,
+        generate_initial_candidates,
+        render_complete_candidate,
+        run_specialized_critics,
+        run_tournament,
+    )
+    from .pipeline.music_supervisor import MusicPlan
+    from .pipeline.picture_editor import PictureCandidateSummary
+    from .pipeline.schemas import Segment as Seg, TranscriptArtifact
+
+    op = _require_operator(authorization)
+    _rate_check(op["id"], "editorial_intelligence")
+    project = _get_project(project_id)
+
+    def json_value(row: dict, key: str):
+        value = row[key]
+        return json.loads(value) if isinstance(value, str) else value
+
+    color_filter = (f"id=eq.{body.colorRunId}&limit=1" if body.colorRunId else
+                    f"project_id=eq.{project_id}&order=version.desc&limit=1")
+    color_rows = supa.db_select("color_runs", color_filter)
+    if not color_rows or color_rows[0]["project_id"] != project_id:
+        raise HTTPException(409, "Milestone 5 QC-passed color run required")
+    color_run = color_rows[0]
+    if color_run.get("status") != "qc_passed":
+        raise HTTPException(409, "Milestone 5 color run must pass QC")
+    refs = {
+        "caption_run": ("caption_runs", color_run["caption_run_id"]),
+        "graphics_run": ("graphics_runs", color_run["graphics_run_id"]),
+        "audio_run": ("audio_mix_runs", color_run["audio_mix_run_id"]),
+        "music_run": ("music_sound_runs", color_run["music_sound_run_id"]),
+        "picture_run": ("picture_edit_runs", color_run["picture_edit_run_id"]),
+        "preproduction": ("preproduction_runs", color_run["preproduction_run_id"]),
+    }
+    lineage = {}
+    for name, (table, row_id) in refs.items():
+        rows = supa.db_select(table, f"id=eq.{row_id}&limit=1")
+        if not rows or rows[0].get("project_id") != project_id:
+            raise HTTPException(409, f"Milestone 1-5 {name} ancestry is invalid")
+        lineage[name] = rows[0]
+    if (lineage["caption_run"].get("graphics_run_id") != color_run["graphics_run_id"]
+            or lineage["audio_run"].get("status") != "qc_passed"):
+        raise HTTPException(409, "Milestone 1-5 ancestry is inconsistent")
+
+    segment_rows = supa.db_select("segments", f"project_id=eq.{project_id}")
+    transcript_rows = supa.db_select(
+        "asset_analysis", f"project_id=eq.{project_id}&kind=eq.transcript&status=eq.completed",
+    )
+    try:
+        treatment = CreativeTreatment(**json_value(lineage["preproduction"], "creative_treatment"))
+        composition = {key: CompositionMetrics(**value) for key, value in
+                       json_value(lineage["preproduction"], "composition_by_segment").items()}
+        pictures = [PictureCandidateSummary(**item) for item in
+                    json_value(lineage["picture_run"], "candidates")]
+        music_plan = MusicPlan(**json_value(lineage["music_run"], "music_plan"))
+        completed = CompletedAudioMix(**json_value(lineage["audio_run"], "mix_instructions"))
+        segments = [Seg(**row["data"]) for row in segment_rows]
+        transcripts = {}
+        for row in transcript_rows:
+            data = row.get("data")
+            data = json.loads(data) if isinstance(data, str) else data
+            if data:
+                transcripts[row["asset_id"]] = TranscriptArtifact(**data)
+        candidates = generate_initial_candidates(
+            pictures, treatment, completed, music_plan, segments, composition, transcripts,
+        )
+    except (ValidationError, EditorialIntelligenceError, ValueError) as exc:
+        detail = exc.errors(include_url=False) if isinstance(exc, ValidationError) else str(exc)
+        raise HTTPException(422, detail)
+
+    asset_rows = supa.db_select("media_assets", f"project_id=eq.{project_id}")
+    asset_by_id = {row["id"]: row for row in asset_rows
+                   if row.get("user_id") == project["user_id"]}
+    required_ids = {asset_id for candidate in candidates for asset_id in candidate.sourceAssetIds}
+    if not required_ids.issubset(asset_by_id):
+        raise HTTPException(409, "editorial candidates reference missing or foreign media")
+
+    batch_id = str(uuid4())
+    existing = supa.db_select(
+        "tournament_runs", f"project_id=eq.{project_id}&order=version.desc&limit=1",
+    )
+    version = (int(existing[0]["version"]) + 1) if existing else 1
+    reports_by_key = {}
+    publishability_by_key = {}
+    output_files = {}
+    with tempfile.TemporaryDirectory(prefix="stromation-editorial-intelligence-") as tmp:
+        completed_preview = os.path.join(tmp, "completed-audio-preview.mp4")
+        supa.storage_download(
+            "exports", lineage["audio_run"]["preview_storage_path"], completed_preview,
+        )
+        source_paths = {}
+        for asset_id in required_ids:
+            local = os.path.join(tmp, f"source-{asset_id}.mp4")
+            supa.storage_download("raw-footage", asset_by_id[asset_id]["storage_path"], local)
+            source_paths[asset_id] = local
+
+        def evaluate(candidate):
+            output = os.path.join(tmp, f"{candidate.candidateKey}.mp4")
+            candidate.renderQc = render_complete_candidate(
+                candidate, source_paths, completed_preview, output, tmp,
+            )
+            candidate.previewStoragePath = (
+                f"users/{project['user_id']}/projects/{project_id}/"
+                f"editorial-intelligence/v{version}/{candidate.candidateKey}-{uuid4()}.mp4"
+            )
+            critics = run_specialized_critics(candidate, segments, composition, completed)
+            report = build_publishability_report(candidate, critics)
+            reports_by_key[candidate.candidateKey] = critics
+            publishability_by_key[candidate.candidateKey] = report
+            output_files[candidate.candidateKey] = output
+
+        try:
+            for candidate in candidates:
+                evaluate(candidate)
+            if body.includeBoundedRevision:
+                revisable = sorted(candidates, key=lambda item: (
+                    bool([request for critic in reports_by_key[item.candidateKey]
+                          for request in critic.revisionRequests]),
+                    publishability_by_key[item.candidateKey].overallPublishabilityScore,
+                ), reverse=True)[0]
+                requests = [request for critic in reports_by_key[revisable.candidateKey]
+                            for request in critic.revisionRequests]
+                if requests:
+                    revised = apply_bounded_revision(revisable, requests, segments)
+                    candidates.append(revised)
+                    evaluate(revised)
+        except (EditorialIntelligenceError, RenderError, subprocess.CalledProcessError) as exc:
+            raise HTTPException(422, str(exc))
+
+        tournament = run_tournament(list(publishability_by_key.values()))
+        winner = next(item for item in candidates
+                      if item.candidateKey == tournament.winnerCandidateKey)
+        human_report = None
+        sessions = supa.db_select(
+            "human_edit_sessions",
+            f"project_id=eq.{project_id}&status=eq.approved&order=created_at.desc&limit=1",
+        )
+        if sessions:
+            session = sessions[0]
+            try:
+                human_report = build_comparison_report(
+                    session, supa.db_select("timelines", f"project_id=eq.{project_id}"),
+                    supa.db_select("timeline_scorecards",
+                                   f"human_edit_session_id=eq.{session['id']}"),
+                    supa.db_select("user_corrections",
+                                   f"human_edit_session_id=eq.{session['id']}"),
+                )
+            except HumanCeilingError:
+                human_report = None
+        comparison = build_four_way_comparison(
+            human_report, winner, publishability_by_key[winner.candidateKey],
+        )
+        _audit(op, "create_editorial_intelligence", project_id, {
+            "batch_id": batch_id, "version": version,
+            "candidate_count": len(candidates), "winner": winner.candidateKey,
+            "pairwise_count": len(tournament.pairwiseComparisons),
+        })
+        for candidate in candidates:
+            supa.storage_upload("exports", candidate.previewStoragePath,
+                                output_files[candidate.candidateKey], content_type="video/mp4")
+
+    ancestry = {
+        "batch_id": batch_id, "project_id": project_id, "user_id": project["user_id"],
+        "preproduction_run_id": color_run["preproduction_run_id"],
+        "picture_edit_run_id": color_run["picture_edit_run_id"],
+        "music_sound_run_id": color_run["music_sound_run_id"],
+        "audio_mix_run_id": color_run["audio_mix_run_id"],
+        "graphics_run_id": color_run["graphics_run_id"],
+        "caption_run_id": color_run["caption_run_id"], "color_run_id": color_run["id"],
+    }
+    candidate_rows = {}
+    for index, candidate in enumerate(candidates, 1):
+        parent_id = (candidate_rows[candidate.parentCandidateKey]["id"]
+                     if candidate.parentCandidateKey else None)
+        row = _service_insert("candidate_runs", {
+            **ancestry, "parent_candidate_run_id": parent_id,
+            "candidate_key": candidate.candidateKey, "candidate_index": index,
+            "generation_kind": candidate.generationKind,
+            "source_picture_candidate_id": candidate.sourcePictureCandidateId,
+            "variant_config": candidate.variant.model_dump(mode="json"),
+            "manifest": candidate.model_dump(mode="json"), "render_qc": candidate.renderQc,
+            "preview_storage_bucket": "exports",
+            "preview_storage_path": candidate.previewStoragePath,
+            "fabricated_footage": False, "created_by": op["id"],
+        })
+        candidate_rows[candidate.candidateKey] = row
+        for critic in reports_by_key[candidate.candidateKey]:
+            _service_insert("critic_runs", {
+                "batch_id": batch_id, "project_id": project_id,
+                "user_id": project["user_id"], "candidate_run_id": row["id"],
+                "critic_kind": critic.criticKind, "version": 1, "score": critic.score,
+                "passed": critic.passed,
+                "evidence": [item.model_dump(mode="json") for item in critic.evidence],
+                "issues": critic.issues,
+                "revision_requests": [item.model_dump(mode="json")
+                                      for item in critic.revisionRequests],
+                "consistency_hash": critic.consistencyHash, "created_by": op["id"],
+            })
+        publishability = publishability_by_key[candidate.candidateKey]
+        _service_insert("publishability_reports", {
+            "batch_id": batch_id, "project_id": project_id,
+            "user_id": project["user_id"], "candidate_run_id": row["id"], "version": 1,
+            "dimensions": {key: value.model_dump(mode="json")
+                           for key, value in publishability.dimensions.items()},
+            "overall_publishability_score": publishability.overallPublishabilityScore,
+            "publishable": publishability.publishable,
+            "blocking_issues": publishability.blockingIssues,
+            "technical_qc_passed": publishability.technicalQcPassed,
+            "created_by": op["id"],
+        })
+    tournament_row = _service_insert("tournament_runs", {
+        **ancestry, "version": version,
+        "candidate_run_ids": [candidate_rows[key]["id"] for key in tournament.candidateKeys],
+        "pairwise_comparisons": [item.model_dump(mode="json")
+                                 for item in tournament.pairwiseComparisons],
+        "bracket": [item.model_dump(mode="json") for item in tournament.bracket],
+        "winner_candidate_run_id": candidate_rows[tournament.winnerCandidateKey]["id"],
+        "winner_reasoning": tournament.winnerReasoning,
+        "human_ceiling_comparison": comparison, "created_by": op["id"],
+    })
+    return {
+        "batchId": batch_id, "version": version, "tournamentRunId": tournament_row["id"],
+        "winnerCandidateRunId": tournament_row["winner_candidate_run_id"],
+        "winnerCandidateKey": tournament.winnerCandidateKey,
+        "candidates": [{"id": candidate_rows[item.candidateKey]["id"],
+                        **item.model_dump(mode="json")} for item in candidates],
+        "publishabilityReports": {key: value.model_dump(mode="json")
+                                  for key, value in publishability_by_key.items()},
+        "tournament": tournament.model_dump(mode="json"),
+        "humanCeilingComparison": comparison,
+    }
+
+
 class SignBody(BaseModel):
     bucket: str
     path: str

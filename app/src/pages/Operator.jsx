@@ -186,6 +186,8 @@ function ProjectDetail({ project, session }) {
         refreshKey={artifactRefresh} />
       <VisualFinishingSection project={project} session={session} act={act}
         refreshKey={artifactRefresh} />
+      <EditorialIntelligenceSection project={project} session={session} act={act}
+        refreshKey={artifactRefresh} />
       <BlueprintSection project={project} />
       <TimelinesSection project={project} session={session} act={act} post={post} />
       <HumanCeilingSection project={project} session={session} />
@@ -562,6 +564,89 @@ function VisualFinishingSection({ project, session, act, refreshKey }) {
         <Json data={{ normalizationTarget: grade.normalizationTarget,
           lutPreset: grade.lutPreset, instructions: grade.instructions,
           renderQc: color.render_qc }} />
+      </>}
+    </Section>
+  )
+}
+
+function EditorialIntelligenceSection({ project, session, act, refreshKey }) {
+  const [tournament, setTournament] = useState(null)
+  const [candidates, setCandidates] = useState([])
+  const [critics, setCritics] = useState([])
+  const [reports, setReports] = useState([])
+  const [selectedId, setSelectedId] = useState(null)
+  const [previewUrl, setPreviewUrl] = useState(null)
+  useEffect(() => {
+    supabase.from('tournament_runs').select('*').eq('project_id', project.id)
+      .order('version', { ascending: false }).limit(1).then(async ({ data }) => {
+        const latest = data?.[0] || null
+        setTournament(latest)
+        if (!latest) { setCandidates([]); setCritics([]); setReports([]); return }
+        const [candidateResult, criticResult, reportResult] = await Promise.all([
+          supabase.from('candidate_runs').select('*').eq('batch_id', latest.batch_id)
+            .order('candidate_index'),
+          supabase.from('critic_runs').select('*').eq('batch_id', latest.batch_id)
+            .order('critic_kind'),
+          supabase.from('publishability_reports').select('*').eq('batch_id', latest.batch_id)
+            .order('overall_publishability_score', { ascending: false }),
+        ])
+        setCandidates(candidateResult.data || [])
+        setCritics(criticResult.data || [])
+        setReports(reportResult.data || [])
+        setSelectedId(latest.winner_candidate_run_id)
+      })
+  }, [project.id, refreshKey])
+  const selected = candidates.find((item) => item.id === selectedId)
+  useEffect(() => {
+    if (!selected?.preview_storage_path) { setPreviewUrl(null); return }
+    api(session, 'POST', `/projects/${project.id}/sign`, {
+      bucket: 'exports', path: selected.preview_storage_path, expires_in: 3600,
+    }).then(({ url }) => setPreviewUrl(url)).catch(() => setPreviewUrl(null))
+  }, [selected?.preview_storage_path, project.id, session])
+  const selectedCritics = critics.filter((item) => item.candidate_run_id === selectedId)
+  const selectedReport = reports.find((item) => item.candidate_run_id === selectedId)
+  return (
+    <Section title="Milestone 6 editorial intelligence · critics + tournament + winner" defaultOpen>
+      <p className="small">Creates immutable complete candidates, applies only evidence-requested bounded
+        revisions, runs ten independent structured critics, compares every pair, and selects the highest
+        publishability result. Existing source footage and Milestones 1–5 remain unchanged.</p>
+      <button className="btn btn-primary" onClick={() => act('build editorial tournament',
+        () => api(session, 'POST', `/projects/${project.id}/editorial-intelligence`, {
+          includeBoundedRevision: true,
+        }))}>Generate, critique + select winner</button>
+      {!tournament && <p className="sub">A QC-passed Milestone 5 finishing run is required.</p>}
+      {tournament && <>
+        <p className="small mono">v{tournament.version} · immutable batch {tournament.batch_id.slice(0, 8)} ·
+          {' '}{candidates.length} candidates · {tournament.pairwise_comparisons.length} pairwise comparisons</p>
+        <h3 className="small" style={{ fontWeight: 700 }}>Candidate browser + winner selection</h3>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          {candidates.map((item) => <button key={item.id}
+            className={item.id === tournament.winner_candidate_run_id ? 'btn btn-primary' : 'btn btn-ghost'}
+            onClick={() => setSelectedId(item.id)}>
+            {item.candidate_key}{item.id === tournament.winner_candidate_run_id ? ' · winner' : ''}
+          </button>)}
+        </div>
+        {selected && <>
+          {previewUrl && <video className="preview" src={previewUrl} controls
+            style={{ maxWidth: 480, marginTop: 10 }} />}
+          <Json data={{ generationKind: selected.generation_kind,
+            parentCandidateRunId: selected.parent_candidate_run_id,
+            sourcePictureCandidateId: selected.source_picture_candidate_id,
+            variant: selected.variant_config, renderQc: selected.render_qc,
+            fabricatedFootage: selected.fabricated_footage }} />
+          <h3 className="small" style={{ fontWeight: 700 }}>Structured critic reports</h3>
+          <Json data={selectedCritics.map((item) => ({ critic: item.critic_kind,
+            score: item.score, passed: item.passed, evidence: item.evidence,
+            revisionRequests: item.revision_requests, consistencyHash: item.consistency_hash }))} />
+          <h3 className="small" style={{ fontWeight: 700 }}>Publishability report</h3>
+          <Json data={selectedReport} />
+        </>}
+        <h3 className="small" style={{ fontWeight: 700 }}>Tournament bracket + all pairwise evidence</h3>
+        <Json data={{ bracket: tournament.bracket,
+          pairwiseComparisons: tournament.pairwise_comparisons,
+          winnerReasoning: tournament.winner_reasoning }} />
+        <h3 className="small" style={{ fontWeight: 700 }}>Human-ceiling comparison viewer</h3>
+        <Json data={tournament.human_ceiling_comparison} />
       </>}
     </Section>
   )
