@@ -7,7 +7,8 @@ on:
                codex/full-audiovisual-editor-v1,
                codex/audiovisual-milestone-2-picture-editor,
                codex/audiovisual-milestone-3-music-sound,
-               codex/audiovisual-milestone-4-audio-rendering]
+               codex/audiovisual-milestone-4-audio-rendering,
+               codex/audiovisual-milestone-5-motion-graphics]
 
 jobs:
   frontend:
@@ -93,6 +94,8 @@ jobs:
           echo "music-sound PostgreSQL integrity assertions passed"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/audio_rendering_integrity.sql
           echo "audio-rendering PostgreSQL integrity assertions passed"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/visual_finishing_integrity.sql
+          echo "visual-finishing PostgreSQL integrity assertions passed"
 
   secret-scan:
     runs-on: ubuntu-latest

@@ -1581,6 +1581,201 @@ def op_audio_render(project_id: str, body: AudioRenderBody,
             "completedAudioMix": completed.model_dump()}
 
 
+class BrandTemplateBody(BaseModel):
+    templateId: str = Field(default="stromation-social-v1", min_length=2, max_length=80)
+    name: str = Field(default="Stromation Social", min_length=2, max_length=120)
+    fontFamily: Literal["DejaVu Sans", "DejaVu Sans Condensed"] = "DejaVu Sans"
+    primary: str = "#FFFFFF"
+    secondary: str = "#101820"
+    accent: str = "#00E5FF"
+    captionStyle: Literal["clean", "boxed", "kinetic"] = "kinetic"
+    titleCase: Literal["upper", "sentence"] = "upper"
+
+
+class VisualFinishingBody(BaseModel):
+    audioMixRunId: UUID | None = None
+    aspect: Literal["9:16", "1:1", "16:9"] = "9:16"
+    lutPreset: Literal["none", "clean_warm", "cool_contrast", "neutral_social"] = "none"
+    brandTemplate: BrandTemplateBody = Field(default_factory=BrandTemplateBody)
+
+
+@app.post("/projects/{project_id}/visual-finishing")
+def op_visual_finishing(project_id: str, body: VisualFinishingBody,
+                         authorization: str = Header(default="")):
+    """Build and render immutable Milestone 5 graphics/caption/color evidence."""
+    import httpx as _hx
+
+    from .pipeline.audio_rendering import CompletedAudioMix
+    from .pipeline.composition import CompositionMetrics
+    from .pipeline.creative_director import CreativeTreatment
+    from .pipeline.picture_editor import PictureCandidateSummary
+    from .pipeline.schemas import Segment as Seg, TranscriptArtifact
+    from .pipeline.visual_finishing import (
+        BrandTemplate,
+        VisualFinishingError,
+        build_caption_package,
+        build_color_package,
+        build_graphics_package,
+        render_finishing_preview,
+    )
+
+    op = _require_operator(authorization)
+    _rate_check(op["id"], "visual_finishing")
+    project = _get_project(project_id)
+    if body.audioMixRunId:
+        audio_rows = supa.db_select("audio_mix_runs", f"id=eq.{body.audioMixRunId}&limit=1")
+    else:
+        audio_rows = supa.db_select(
+            "audio_mix_runs", f"project_id=eq.{project_id}&order=version.desc&limit=1",
+        )
+    if not audio_rows or audio_rows[0]["project_id"] != project_id:
+        raise HTTPException(409, "Milestone 4 completed audio mix required")
+    audio_run = audio_rows[0]
+    if audio_run.get("status") != "qc_passed":
+        raise HTTPException(409, "Milestone 4 audio mix must pass QC before visual finishing")
+
+    picture_rows = supa.db_select(
+        "picture_edit_runs", f"id=eq.{audio_run['picture_edit_run_id']}&limit=1",
+    )
+    music_rows = supa.db_select(
+        "music_sound_runs", f"id=eq.{audio_run['music_sound_run_id']}&limit=1",
+    )
+    preproduction_rows = supa.db_select(
+        "preproduction_runs", f"id=eq.{audio_run['preproduction_run_id']}&limit=1",
+    )
+    lineage = [picture_rows, music_rows, preproduction_rows]
+    if any(not rows or rows[0]["project_id"] != project_id for rows in lineage):
+        raise HTTPException(409, "Milestone 1-4 ancestry is invalid")
+    picture_run, music_run, preproduction = (
+        picture_rows[0], music_rows[0], preproduction_rows[0],
+    )
+    if (music_run.get("picture_edit_run_id") != picture_run["id"]
+            or music_run.get("preproduction_run_id") != preproduction["id"]
+            or audio_run.get("selected_candidate_id") != picture_run.get("selected_candidate_id")):
+        raise HTTPException(409, "Milestone 1-4 selected-picture ancestry is inconsistent")
+
+    def _json_value(row: dict, key: str):
+        value = row[key]
+        return json.loads(value) if isinstance(value, str) else value
+
+    segment_rows = supa.db_select("segments", f"project_id=eq.{project_id}")
+    transcript_rows = supa.db_select(
+        "asset_analysis", f"project_id=eq.{project_id}&kind=eq.transcript&status=eq.completed",
+    )
+    try:
+        candidate_data = next(
+            item for item in _json_value(picture_run, "candidates")
+            if item.get("candidateId") == audio_run["selected_candidate_id"]
+        )
+        candidate = PictureCandidateSummary(**candidate_data)
+        treatment = CreativeTreatment(**_json_value(preproduction, "creative_treatment"))
+        completed = CompletedAudioMix(**_json_value(audio_run, "mix_instructions"))
+        composition = {
+            key: CompositionMetrics(**value)
+            for key, value in _json_value(preproduction, "composition_by_segment").items()
+        }
+        segments = [Seg(**row["data"]) for row in segment_rows]
+        transcripts = {}
+        for row in transcript_rows:
+            data = row.get("data")
+            if isinstance(data, str):
+                data = json.loads(data)
+            if data:
+                transcripts[row["asset_id"]] = TranscriptArtifact(**data)
+        template = BrandTemplate(**body.brandTemplate.model_dump())
+        graphics = build_graphics_package(
+            treatment, candidate, completed, composition,
+            segments,
+            aspect=body.aspect, template=template,
+        )
+        captions = build_caption_package(candidate, segments, graphics, transcripts)
+        color = build_color_package(candidate, segments, lut=body.lutPreset)
+    except StopIteration:
+        raise HTTPException(409, "selected picture candidate is missing")
+    except (ValidationError, VisualFinishingError, ValueError) as exc:
+        detail = exc.errors(include_url=False) if isinstance(exc, ValidationError) else str(exc)
+        raise HTTPException(422, detail)
+
+    latest_versions = []
+    for table in ("graphics_runs", "caption_runs", "color_runs"):
+        rows = supa.db_select(
+            table, f"project_id=eq.{project_id}&order=version.desc&limit=1",
+        )
+        if rows:
+            latest_versions.append(rows[0]["version"])
+    # One shared lineage version plus DB uniqueness means concurrent requests
+    # collide on graphics before either can create dependent caption/color rows.
+    version = max(latest_versions, default=0) + 1
+    output_path = (f"users/{project['user_id']}/projects/{project_id}/"
+                   f"visual-finishing/v{version}-{uuid4()}.mp4")
+    with tempfile.TemporaryDirectory(prefix="stromation-visual-finishing-") as tmp:
+        source = os.path.join(tmp, "completed-audio-preview.mp4")
+        output = os.path.join(tmp, "visual-finishing-preview.mp4")
+        supa.storage_download("exports", audio_run["preview_storage_path"], source)
+        try:
+            render_qc = render_finishing_preview(source, output, graphics, captions, color)
+        except VisualFinishingError as exc:
+            raise HTTPException(422, str(exc))
+        if not render_qc["videoStreamPresent"] or not render_qc["audioStreamPresent"]:
+            raise HTTPException(422, "visual-finishing preview is missing a required stream")
+        _audit(op, "create_visual_finishing", project_id, {
+            "version": version, "audio_mix_run_id": audio_run["id"],
+            "picture_edit_run_id": picture_run["id"], "aspect": body.aspect,
+            "graphics_events": len(graphics.events), "caption_groups": len(captions.groups),
+            "preview_storage_path": output_path,
+        })
+        supa.storage_upload("exports", output_path, output, content_type="video/mp4")
+
+    headers = {"apikey": supa.SERVICE_KEY,
+               "Authorization": f"Bearer {supa.SERVICE_KEY}",
+               "Content-Type": "application/json", "Prefer": "return=representation"}
+
+    def _insert(table: str, payload: dict):
+        response = _hx.post(f"{supa.SUPABASE_URL}/rest/v1/{table}", headers=headers,
+                            json=payload, timeout=30)
+        if response.status_code == 409:
+            raise HTTPException(409, f"{table} version conflict; retry")
+        response.raise_for_status()
+        return response.json()[0]
+
+    ancestry = {
+        "project_id": project_id, "user_id": project["user_id"],
+        "preproduction_run_id": preproduction["id"],
+        "picture_edit_run_id": picture_run["id"],
+        "music_sound_run_id": music_run["id"], "audio_mix_run_id": audio_run["id"],
+        "selected_candidate_id": audio_run["selected_candidate_id"],
+        "version": version, "created_by": op["id"],
+    }
+    graphics_row = _insert("graphics_runs", {
+        **ancestry, "status": "ready", "request": body.model_dump(mode="json"),
+        "platform_preset": graphics.platform.model_dump(),
+        "brand_template": graphics.brandTemplate.model_dump(),
+        "graphics_timeline": graphics.model_dump(),
+        "picture_timing_changed": False, "audio_changed": False,
+    })
+    caption_row = _insert("caption_runs", {
+        **ancestry, "graphics_run_id": graphics_row["id"],
+        "status": "ready" if captions.groups else "no_speech",
+        "caption_timeline": captions.model_dump(),
+        "timing_provenance": captions.timingProvenance,
+        "overlaps_detected": captions.overlapsDetected, "picture_timing_changed": False,
+    })
+    color_row = _insert("color_runs", {
+        **ancestry, "graphics_run_id": graphics_row["id"],
+        "caption_run_id": caption_row["id"], "status": "qc_passed",
+        "color_instructions": color.model_dump(), "render_qc": render_qc,
+        "preview_storage_bucket": "exports", "preview_storage_path": output_path,
+        "non_destructive": True, "picture_timing_changed": False, "audio_changed": False,
+    })
+    return {
+        "version": version, "status": "qc_passed",
+        "graphicsRunId": graphics_row["id"], "captionRunId": caption_row["id"],
+        "colorRunId": color_row["id"], "previewStoragePath": output_path,
+        "graphics": graphics.model_dump(), "captions": captions.model_dump(),
+        "color": color.model_dump(), "renderQc": render_qc,
+    }
+
+
 class SignBody(BaseModel):
     bucket: str
     path: str

@@ -10,6 +10,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "render-backend"))
 from app.renderer import FFMPEG  # noqa: E402
 from app.renderer2 import render_timeline  # noqa: E402
+from app.pipeline.visual_finishing import (  # noqa: E402
+    BrandTemplate, CaptionPackage, ColorInstruction, ColorPackage,
+    GraphicEvent, GraphicsPackage, PRESETS, NormalizedRegion,
+    render_finishing_preview,
+)
 
 OUT = os.environ.get("CI_ARTIFACT_DIR", "ci-artifacts")
 os.makedirs(OUT, exist_ok=True)
@@ -43,4 +48,30 @@ for profile in ("preview", "final"):
                         os.path.join(OUT, f"{profile}.mp4"), profile=profile)
     print(f"{profile}: {r['width']}x{r['height']} {r['duration']:.1f}s "
           f"{r['size_bytes']} bytes")
+graphics = GraphicsPackage(
+    platform=PRESETS["9:16"], brandTemplate=BrandTemplate(
+        templateId="ci-brand", name="CI Brand"), phraseBoundaries=[0, 4, 8],
+    templateCatalog={"animated_title": {"animation": "slide"}},
+    events=[GraphicEvent(
+        eventId="ci-title", kind="animated_title", text="VISUAL FINISHING",
+        startSeconds=.2, endSeconds=2.5,
+        region=NormalizedRegion(x=.1, y=.1, width=.8, height=.12),
+        animation="slide", phraseAligned=True, subjectOcclusionRisk=0,
+    )], excludedDepartments=["specialized_critics", "tournament_selection"],
+)
+captions = CaptionPackage(groups=[], timingProvenance=[])
+color = ColorPackage(
+    instructions=[ColorInstruction(
+        clipId="ci", segmentId="ci", startSeconds=0, endSeconds=8,
+        exposureEv=.05, temperatureShift=0,
+        contrast=1.04, saturation=1.03, highlightCompression=.05,
+        shadowLift=.02, lutPreset="neutral_social", confidence=1,
+    )], normalizationTarget={"method": "ci_fixture"}, lutPreset="neutral_social",
+)
+finished = render_finishing_preview(
+    os.path.join(OUT, "final.mp4"), os.path.join(OUT, "visual-finishing.mp4"),
+    graphics, captions, color,
+)
+print(f"visual-finishing: {finished['width']}x{finished['height']} "
+      f"{finished['durationSeconds']:.1f}s")
 print("ci artifacts ->", OUT)
