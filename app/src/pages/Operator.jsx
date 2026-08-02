@@ -184,6 +184,8 @@ function ProjectDetail({ project, session }) {
       <MusicSoundSection project={project} refreshKey={artifactRefresh} />
       <AudioRenderSection project={project} session={session} act={act}
         refreshKey={artifactRefresh} />
+      <VisualFinishingSection project={project} session={session} act={act}
+        refreshKey={artifactRefresh} />
       <BlueprintSection project={project} />
       <TimelinesSection project={project} session={session} act={act} post={post} />
       <HumanCeilingSection project={project} session={session} />
@@ -482,6 +484,84 @@ function AudioRenderSection({ project, session, act, refreshKey }) {
           sourceAudio: completed.sourceAudioInstructions, qc }} />
         {previewUrl && <video className="preview" src={previewUrl} controls
           style={{ maxWidth: 480, marginTop: 8 }} />}
+      </>}
+    </Section>
+  )
+}
+
+function VisualFinishingSection({ project, session, act, refreshKey }) {
+  const [graphics, setGraphics] = useState(null)
+  const [captions, setCaptions] = useState(null)
+  const [color, setColor] = useState(null)
+  const [aspect, setAspect] = useState('9:16')
+  const [lutPreset, setLutPreset] = useState('none')
+  const [previewUrl, setPreviewUrl] = useState(null)
+  useEffect(() => {
+    Promise.all([
+      supabase.from('graphics_runs').select('*').eq('project_id', project.id)
+        .order('version', { ascending: false }).limit(1),
+      supabase.from('caption_runs').select('*').eq('project_id', project.id)
+        .order('version', { ascending: false }).limit(1),
+      supabase.from('color_runs').select('*').eq('project_id', project.id)
+        .order('version', { ascending: false }).limit(1),
+    ]).then(([g, c, grade]) => {
+      setGraphics(g.data?.[0] || null)
+      setCaptions(c.data?.[0] || null)
+      setColor(grade.data?.[0] || null)
+    })
+  }, [project.id, refreshKey])
+  useEffect(() => {
+    if (!color?.preview_storage_path) { setPreviewUrl(null); return }
+    api(session, 'POST', `/projects/${project.id}/sign`, {
+      bucket: 'exports', path: color.preview_storage_path, expires_in: 3600,
+    }).then(({ url }) => setPreviewUrl(url)).catch(() => setPreviewUrl(null))
+  }, [color?.preview_storage_path, project.id, session])
+
+  const timeline = graphics?.graphics_timeline || {}
+  const captionTimeline = captions?.caption_timeline || {}
+  const grade = color?.color_instructions || {}
+  const template = graphics?.brand_template || {}
+  return (
+    <Section title="Milestone 5 visual finishing · graphics + captions + color" defaultOpen>
+      <div className="row" style={{ marginBottom: 10 }}>
+        <label className="small">Platform <select value={aspect}
+          onChange={(event) => setAspect(event.target.value)}>
+          <option value="9:16">9:16 vertical</option><option value="1:1">1:1 square</option>
+          <option value="16:9">16:9 landscape</option></select></label>
+        <label className="small">Look <select value={lutPreset}
+          onChange={(event) => setLutPreset(event.target.value)}>
+          <option value="none">Neutral</option><option value="clean_warm">Clean warm</option>
+          <option value="cool_contrast">Cool contrast</option>
+          <option value="neutral_social">Neutral social</option></select></label>
+        <button className="btn btn-secondary" onClick={() => act('build visual finishing',
+          () => api(session, 'POST', `/projects/${project.id}/visual-finishing`, {
+            aspect, lutPreset,
+          }))}>Build finishing preview</button>
+      </div>
+      {!color && <p className="sub">A QC-passed Milestone 4 audio mix is required.</p>}
+      {color && <>
+        <p className="small mono">v{color.version} · {color.status} · immutable ·
+          {' '}picture timing unchanged · audio unchanged</p>
+        {previewUrl && <video className="preview" src={previewUrl} controls
+          style={{ maxWidth: 480, marginTop: 8 }} />}
+        <h3 className="small" style={{ fontWeight: 700 }}>Template preview</h3>
+        <div className="row">
+          {[template.primary, template.secondary, template.accent].filter(Boolean).map((value) =>
+            <div key={value} className="card small" style={{ background: value,
+              color: value === '#FFFFFF' ? '#101820' : '#fff', minWidth: 120 }}>{value}</div>)}
+          <span className="small">{template.fontFamily} · {timeline.platform?.aspect}</span>
+        </div>
+        <h3 className="small" style={{ fontWeight: 700 }}>Graphics timeline</h3>
+        <Json data={{ safeTitle: timeline.platform?.safeTitle,
+          phraseBoundaries: timeline.phraseBoundaries, events: timeline.events }} />
+        <h3 className="small" style={{ fontWeight: 700 }}>Caption preview + timing</h3>
+        <Json data={{ timingProvenance: captions?.timing_provenance,
+          evidenceDecisions: captionTimeline.evidenceDecisions,
+          overlapsDetected: captionTimeline.overlapsDetected, groups: captionTimeline.groups }} />
+        <h3 className="small" style={{ fontWeight: 700 }}>Color preview instructions</h3>
+        <Json data={{ normalizationTarget: grade.normalizationTarget,
+          lutPreset: grade.lutPreset, instructions: grade.instructions,
+          renderQc: color.render_qc }} />
       </>}
     </Section>
   )

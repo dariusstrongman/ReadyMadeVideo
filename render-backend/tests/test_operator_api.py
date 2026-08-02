@@ -549,6 +549,90 @@ def test_audio_render_rejects_cross_project_music_ownership(env):
     assert response.status_code == 403
 
 
+# ---------- audiovisual visual finishing ----------
+def _create_audio_mix(env, monkeypatch):
+    picture, music = _create_music_sound(env)
+    env.fake.insert("media_assets", {
+        "id": "asset-a", "project_id": env.project["id"],
+        "user_id": env.project["user_id"], "filename": "source.mp4",
+        "storage_path": (f"users/{env.project['user_id']}/projects/"
+                         f"{env.project['id']}/raw/asset-a/source.mp4"),
+        "size_bytes": 10,
+    })
+    source_path = env.fake.tables["media_assets"][0]["storage_path"]
+    env.fake.storage["raw-footage/" + source_path] = b"source"
+    _install_audio_render_stubs(monkeypatch)
+    upload = _upload_music(env).json()
+    response = env.client.post(
+        f"/projects/{env.project['id']}/audio-render",
+        json=_audio_render_body(music, upload), headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 200, response.text
+    return picture, response.json()
+
+
+def test_visual_finishing_authorization_uuid_boundary_and_ownership(env):
+    path = f"/projects/{env.project['id']}/visual-finishing"
+    assert env.client.post(path, json={}).status_code == 401
+    assert env.client.post(path, json={}, headers=env.h(env.owner[1])).status_code == 403
+    malformed = env.client.post(path, json={"audioMixRunId": "not-a-uuid"},
+                                headers=env.h(env.operator[1]))
+    assert malformed.status_code == 422
+    injected = env.client.post(path, json={
+        "audioMixRunId": "00000000-0000-0000-0000-000000000001&or=(id.neq.x)"},
+        headers=env.h(env.operator[1]))
+    assert injected.status_code == 422
+    foreign = env.fake.insert("audio_mix_runs", {
+        "project_id": "00000000-0000-0000-0000-000000000099",
+        "user_id": env.other[0],
+        "version": 1, "status": "qc_passed",
+    }).json()[0]
+    cross = env.client.post(path, json={"audioMixRunId": foreign["id"]},
+                            headers=env.h(env.operator[1]))
+    assert cross.status_code == 409
+
+
+def test_operator_creates_complete_immutable_visual_finishing_lineage(env, monkeypatch):
+    from pathlib import Path
+
+    from app.pipeline import visual_finishing as vf
+
+    picture, audio = _create_audio_mix(env, monkeypatch)
+    baseline = env.fake.tables["picture_edit_runs"][0]["candidates"].copy()
+
+    def finishing_stub(source, output, graphics, captions, color):
+        Path(output).write_bytes(b"visual-finishing-preview")
+        return {"durationSeconds": 24, "videoStreamPresent": True,
+                "audioStreamPresent": True, "width": 1080, "height": 1920,
+                "pictureTimingChanged": False, "audioChanged": False,
+                "graphicsEvents": len(graphics.events),
+                "captionGroups": len(captions.groups)}
+
+    monkeypatch.setattr(vf, "render_finishing_preview", finishing_stub)
+    response = env.client.post(
+        f"/projects/{env.project['id']}/visual-finishing",
+        json={"audioMixRunId": audio["id"], "aspect": "9:16",
+              "lutPreset": "clean_warm"}, headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "qc_passed"
+    assert body["graphics"]["pictureTimingChanged"] is False
+    assert body["graphics"]["audioChanged"] is False
+    assert body["color"]["nonDestructive"] is True
+    assert len(env.fake.tables["graphics_runs"]) == 1
+    assert len(env.fake.tables["caption_runs"]) == 1
+    assert len(env.fake.tables["color_runs"]) == 1
+    assert env.fake.tables["caption_runs"][0]["graphics_run_id"] == body["graphicsRunId"]
+    assert env.fake.tables["color_runs"][0]["caption_run_id"] == body["captionRunId"]
+    assert env.fake.tables["graphics_runs"][0]["audio_mix_run_id"] == audio["id"]
+    assert env.fake.tables["picture_edit_runs"][0]["candidates"] == baseline
+    preview = env.fake.tables["color_runs"][0]["preview_storage_path"]
+    assert f"exports/{preview}" in env.fake.storage
+    assert any(item["action"] == "create_visual_finishing"
+               for item in env.fake.tables["operator_audit"])
+
+
 # ---------- timeline op validation ----------
 def _project_timeline(env):
     tl = {"version": 1, "width": 1920, "height": 1080, "fps": 30, "duration": 6,
