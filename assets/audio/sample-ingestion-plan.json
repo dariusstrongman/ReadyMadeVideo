@@ -1,0 +1,26 @@
+{
+  "downloadAuthorized": false,
+  "music": {
+    "ambient": 1,
+    "cinematic": 2,
+    "corporate": 1,
+    "emotional": 1,
+    "energetic": 2,
+    "tension": 1,
+    "uplifting": 2
+  },
+  "notes": "Planning target only. An operator must approve provider access and each license before ingestion.",
+  "schemaVersion": 1,
+  "sfx": {
+    "ambience": 2,
+    "impacts": 5,
+    "movement": 3,
+    "risers": 3,
+    "sports": 3,
+    "transitions": 3,
+    "ui": 2,
+    "whooshes": 4
+  },
+  "targetMusicCount": 10,
+  "targetSfxCount": 25
+}

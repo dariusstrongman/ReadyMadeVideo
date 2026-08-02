@@ -9,7 +9,8 @@ on:
                codex/audiovisual-milestone-3-music-sound,
                codex/audiovisual-milestone-4-audio-rendering,
                codex/audiovisual-milestone-5-motion-graphics,
-               codex/audiovisual-milestone-6-editorial-intelligence]
+               codex/audiovisual-milestone-6-editorial-intelligence,
+               codex/audio-asset-library-ingestion]
 
 jobs:
   frontend:
