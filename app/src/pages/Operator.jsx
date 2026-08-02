@@ -137,6 +137,9 @@ function ProjectDetail({ project, session }) {
         <button className="btn btn-secondary" onClick={() => act('picture edit',
           () => post(`/projects/${project.id}/picture-edit`, {}))}>
           Build picture candidates</button>
+        <button className="btn btn-secondary" onClick={() => act('music and sound plan',
+          () => post(`/projects/${project.id}/music-sound`, {}))}>
+          Build music + sound plan</button>
         <button className="btn btn-secondary" onClick={() => act('generate draft',
           () => post(`/projects/${project.id}/generate-draft`,
             { params: { brief: prompt('Creative brief?') || project.name } }))}>Generate draft</button>
@@ -178,6 +181,7 @@ function ProjectDetail({ project, session }) {
       <SegmentsSection project={project} session={session} act={act} post={post} />
       <PreproductionSection project={project} refreshKey={artifactRefresh} />
       <PictureEditSection project={project} refreshKey={artifactRefresh} />
+      <MusicSoundSection project={project} refreshKey={artifactRefresh} />
       <BlueprintSection project={project} />
       <TimelinesSection project={project} session={session} act={act} post={post} />
       <HumanCeilingSection project={project} session={session} />
@@ -343,6 +347,51 @@ function PictureEditSection({ project, refreshKey }) {
             {candidate.valid ? 'supported' : 'unsupported'}</span>
         </div>
       ))}
+    </Section>
+  )
+}
+
+function MusicSoundSection({ project, refreshKey }) {
+  const [run, setRun] = useState(null)
+  useEffect(() => {
+    supabase.from('music_sound_runs').select('*').eq('project_id', project.id)
+      .order('version', { ascending: false }).limit(1)
+      .then(({ data }) => setRun(data?.[0] || null))
+  }, [project.id, refreshKey])
+  if (!run) return (
+    <Section title="Milestone 3 music supervisor · music and sound plan">
+      <p className="sub">Select a supported Milestone 2 picture candidate first.</p>
+    </Section>
+  )
+  const plan = run.music_plan || {}
+  const analysis = plan.beatPhraseAnalysis || {}
+  const loudness = plan.loudnessTargets || {}
+  const chatter = (plan.naturalAudioEvents || []).filter(
+    (event) => event.classification === 'background_chatter')
+  return (
+    <Section title={`Music + sound v${run.version} — ${run.status}`} defaultOpen>
+      <p className="small">Planning only. Selected picture timing remains immutable; no track
+        file is selected or rendered.</p>
+      <div className="grid-3">
+        <div className="card small"><b>Tempo</b><br />{analysis.tempoBpm || '—'} BPM</div>
+        <div className="card small"><b>Phrases</b><br />{analysis.phrases?.length || 0}</div>
+        <div className="card small"><b>Loudness</b><br />
+          {loudness.integratedLufs || '—'} LUFS</div>
+      </div>
+      <p className="small mono">candidate {plan.selectedCandidateId} ·
+        {' '}{plan.pictureDurationSeconds}s · chatter windows {chatter.length} ·
+        {' '}ducking moves {plan.musicDucking?.length || 0} ·
+        {' '}impact accents {plan.impactEmphasis?.length || 0}</p>
+      <h3 className="small" style={{ fontWeight: 700 }}>Beat + phrase analysis</h3>
+      <Json data={analysis} />
+      <h3 className="small" style={{ fontWeight: 700 }}>Natural audio + mix automation</h3>
+      <Json data={{ events: plan.naturalAudioEvents,
+        sourceInstructions: plan.sourceAudioInstructions,
+        musicDucking: plan.musicDucking,
+        impactEmphasis: plan.impactEmphasis }} />
+      <h3 className="small" style={{ fontWeight: 700 }}>Ending + picture synchronization</h3>
+      <Json data={{ fades: plan.fades, loudnessTargets: plan.loudnessTargets,
+        musicalEnding: plan.musicalEnding, pictureMusicSync: plan.pictureMusicSync }} />
     </Section>
   )
 }

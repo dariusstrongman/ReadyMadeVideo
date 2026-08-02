@@ -1243,6 +1243,110 @@ def op_picture_edit(project_id: str, body: PictureEditBody,
     return {"id": saved["id"], "version": version, **package.model_dump()}
 
 
+class MusicSoundBody(BaseModel):
+    pictureEditRunId: UUID | None = None
+
+
+@app.post("/projects/{project_id}/music-sound")
+def op_music_sound(project_id: str, body: MusicSoundBody,
+                   authorization: str = Header(default="")):
+    """Create the immutable Milestone 3 Music Plan for selected picture."""
+    import httpx as _hx
+
+    from .pipeline.creative_director import CreativeTreatment
+    from .pipeline.music_supervisor import MusicSupervisorError, build_music_plan
+    from .pipeline.picture_editor import PictureCandidateSummary
+    from .pipeline.schemas import Segment as Seg
+
+    op = _require_operator(authorization)
+    _rate_check(op["id"], "music_sound")
+    project = _get_project(project_id)
+    if body.pictureEditRunId:
+        picture_rows = supa.db_select(
+            "picture_edit_runs", f"id=eq.{body.pictureEditRunId}&limit=1",
+        )
+    else:
+        picture_rows = supa.db_select(
+            "picture_edit_runs", f"project_id=eq.{project_id}&order=version.desc&limit=1",
+        )
+    if not picture_rows or picture_rows[0]["project_id"] != project_id:
+        raise HTTPException(409, "Milestone 2 picture-edit run required")
+    picture_run = picture_rows[0]
+    selected_id = picture_run.get("selected_candidate_id")
+    if not selected_id:
+        raise HTTPException(409, "Milestone 2 has no supported selected picture candidate")
+
+    preproduction_rows = supa.db_select(
+        "preproduction_runs", f"id=eq.{picture_run['preproduction_run_id']}&limit=1",
+    )
+    if not preproduction_rows or preproduction_rows[0]["project_id"] != project_id:
+        raise HTTPException(409, "Milestone 1 treatment ancestry is invalid")
+    preproduction = preproduction_rows[0]
+    segment_rows = supa.db_select("segments", f"project_id=eq.{project_id}")
+    if not segment_rows:
+        raise HTTPException(409, "segment catalog required - run analysis first")
+
+    def _json_value(row: dict, key: str):
+        value = row[key]
+        return json.loads(value) if isinstance(value, str) else value
+
+    try:
+        treatment = CreativeTreatment(**_json_value(preproduction, "creative_treatment"))
+        candidate_data = next(
+            candidate for candidate in _json_value(picture_run, "candidates")
+            if candidate.get("candidateId") == selected_id
+        )
+        candidate = PictureCandidateSummary(**candidate_data)
+        plan = build_music_plan(
+            preproduction["id"], picture_run["id"], treatment, candidate,
+            [Seg(**row["data"]) for row in segment_rows],
+        )
+    except StopIteration:
+        raise HTTPException(409, "selected picture candidate is missing")
+    except (ValidationError, MusicSupervisorError, ValueError) as exc:
+        detail = exc.errors(include_url=False) if isinstance(exc, ValidationError) else str(exc)
+        raise HTTPException(422, detail)
+
+    existing = supa.db_select(
+        "music_sound_runs", f"project_id=eq.{project_id}&order=version.desc&limit=1",
+    )
+    version = (existing[0]["version"] + 1) if existing else 1
+    _audit(op, "create_music_sound_plan", project_id, {
+        "version": version,
+        "preproduction_run_id": preproduction["id"],
+        "picture_edit_run_id": picture_run["id"],
+        "selected_candidate_id": selected_id,
+    })
+    payload = {
+        "project_id": project_id,
+        "user_id": project["user_id"],
+        "preproduction_run_id": preproduction["id"],
+        "picture_edit_run_id": picture_run["id"],
+        "selected_candidate_id": selected_id,
+        "version": version,
+        "status": "ready",
+        "request": body.model_dump(mode="json"),
+        "music_plan": plan.model_dump(),
+    }
+    response = _hx.post(
+        f"{supa.SUPABASE_URL}/rest/v1/music_sound_runs",
+        headers={
+            "apikey": supa.SERVICE_KEY,
+            "Authorization": f"Bearer {supa.SERVICE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        },
+        json=payload,
+        timeout=30,
+    )
+    if response.status_code == 409:
+        raise HTTPException(409, "music-sound version conflict; retry")
+    response.raise_for_status()
+    saved = response.json()[0]
+    return {"id": saved["id"], "version": version, "status": "ready",
+            "musicPlan": plan.model_dump()}
+
+
 class SignBody(BaseModel):
     bucket: str
     path: str
