@@ -1,0 +1,72 @@
+/* Matches the marketing site's dark creative-software tokens */
+:root {
+  --bg: #0a0a0f; --bg-1: #111118; --bg-2: #16161f; --bg-3: #1c1c28;
+  --surface: #1e1e2a; --border: rgba(255, 255, 255, 0.07);
+  --border-2: rgba(255, 255, 255, 0.12);
+  --cyan: #00d4ff; --violet: #7c3aed;
+  --text: #f0f0f5; --text-2: #a0a0b8; --text-3: #606078; --text-inv: #0a0a0f;
+  --green: #22c55e; --amber: #f59e0b; --red: #ef4444;
+  --sans: 'Inter', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+  --radius: 10px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); line-height: 1.6; }
+a { color: var(--cyan); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font-family: var(--sans); cursor: pointer; }
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+.nav { display: flex; align-items: center; gap: 12px; height: 60px; padding: 0 24px;
+  border-bottom: 1px solid var(--border); background: var(--bg-1); }
+.nav .logo { font-family: var(--mono); font-weight: 700; letter-spacing: 0.15em; color: var(--text); }
+.nav .spacer { margin-left: auto; }
+.nav .who { color: var(--text-3); font-size: 0.8rem; }
+
+.wrap { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
+.card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px; padding: 24px; }
+.grid { display: grid; gap: 16px; }
+
+h1 { font-size: 1.6rem; letter-spacing: -0.02em; }
+h2 { font-size: 1.05rem; margin-bottom: 12px; }
+.sub { color: var(--text-2); font-size: 0.9rem; }
+.small { color: var(--text-3); font-size: 0.78rem; }
+.mono { font-family: var(--mono); }
+
+.btn { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.88rem;
+  padding: 10px 18px; border-radius: var(--radius); border: none; }
+.btn-primary { background: var(--cyan); color: var(--text-inv); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border-2); }
+.btn-danger { background: rgba(239, 68, 68, 0.15); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.3); }
+
+label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-2); margin: 14px 0 6px; }
+input, textarea, select { width: 100%; background: var(--bg-3); border: 1px solid var(--border-2);
+  border-radius: var(--radius); color: var(--text); font-size: 0.9rem; padding: 10px 14px;
+  font-family: var(--sans); }
+input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
+
+.err { background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius); padding: 10px 14px; color: #fca5a5; font-size: 0.82rem; margin: 12px 0; }
+.ok { background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.25);
+  border-radius: var(--radius); padding: 10px 14px; color: #86efac; font-size: 0.82rem; margin: 12px 0; }
+
+.badge { display: inline-block; font-family: var(--mono); font-size: 0.68rem; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 9px; border-radius: 100px; }
+.badge.queued { background: rgba(245, 158, 11, 0.12); color: var(--amber); }
+.badge.processing { background: rgba(0, 212, 255, 0.12); color: var(--cyan); }
+.badge.completed { background: rgba(34, 197, 94, 0.12); color: var(--green); }
+.badge.failed, .badge.cancelled { background: rgba(239, 68, 68, 0.12); color: var(--red); }
+.badge.cancel_requested { background: rgba(245, 158, 11, 0.2); color: var(--amber); }
+.badge.draft, .badge.ready { background: var(--bg-3); color: var(--text-2); }
+
+.progress { height: 8px; background: var(--bg-3); border-radius: 4px; overflow: hidden; }
+.progress > div { height: 100%; background: var(--cyan); transition: width 0.3s; }
+
+.row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.list-item { display: flex; align-items: center; gap: 12px; padding: 14px 16px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-2); }
+video.preview { width: 100%; border-radius: var(--radius); border: 1px solid var(--border-2);
+  background: #000; }
+.center { min-height: 80vh; display: flex; align-items: center; justify-content: center; }
+.auth-card { width: 380px; max-width: 92vw; }

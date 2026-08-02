@@ -1,0 +1,46 @@
+{
+  "templateId": "fitness_v1",
+  "description": "Fitness / running / workout / transformation edit, 60-90s",
+  "targetDuration": {"min": 60, "max": 90, "default": 75},
+  "shortFormFactor": 0.35,
+  "beats": [
+    {"key": "hook", "title": "Hook", "share": 0.08,
+     "wants": {"storyUses": ["hook", "peak"], "minMotion": 0.4, "prefer": "highest_impact"},
+     "required": true,
+     "notes": "strongest visual moment first, motion or emotion spike"},
+    {"key": "location", "title": "Location and preparation", "share": 0.12,
+     "wants": {"storyUses": ["location", "broll"], "maxMotion": 0.5, "prefer": "establishing"},
+     "required": false,
+     "notes": "where we are, gearing up, calm before effort"},
+    {"key": "early_effort", "title": "Early effort", "share": 0.15,
+     "wants": {"storyUses": ["early_effort", "build"], "minMotion": 0.25},
+     "required": true,
+     "notes": "work begins, controlled pace"},
+    {"key": "build", "title": "Intensity build", "share": 0.2,
+     "wants": {"storyUses": ["build"], "minMotion": 0.45, "prefer": "rising"},
+     "required": true,
+     "notes": "escalating effort, faster cuts acceptable"},
+    {"key": "peak", "title": "Peak effort", "share": 0.2,
+     "wants": {"storyUses": ["peak"], "minMotion": 0.6, "prefer": "highest_motion"},
+     "required": true,
+     "notes": "maximum intensity, the payoff of the build"},
+    {"key": "completion", "title": "Completion", "share": 0.15,
+     "wants": {"storyUses": ["completion", "reflection"], "maxMotion": 0.6},
+     "required": true,
+     "notes": "finishing the effort, relief"},
+    {"key": "reflection", "title": "Reflection / payoff", "share": 0.1,
+     "wants": {"storyUses": ["reflection", "broll"], "maxMotion": 0.4, "prefer": "emotional"},
+     "required": false,
+     "notes": "calm close, achievement, looking back"}
+  ],
+  "pacing": {
+    "minClipSeconds": 1.2,
+    "maxClipSeconds": 8.0,
+    "fasterBeats": ["build", "peak"],
+    "fastClipSeconds": 2.5
+  },
+  "audio": {
+    "musicDuckDb": -10,
+    "preferNaturalSoundBeats": ["peak", "completion"]
+  }
+}

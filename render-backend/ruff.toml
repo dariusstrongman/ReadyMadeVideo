@@ -1,0 +1,18 @@
+# Pragmatic ruleset: hard errors + bugbear + security, minus deliberate patterns
+# (broad exception guards in the worker are intentional; FastAPI Header defaults
+# are idiomatic B008; subprocess without check= is wrapped by explicit rc checks).
+line-length = 100
+[lint]
+select = ["E", "F", "W", "B", "S", "UP"]
+ignore = [
+  "E501",    # long lines in filter-graph strings
+  "B008",    # FastAPI Header(default=...) in signatures — idiomatic
+  "S603", "S607",  # subprocess with fixed arg lists (never shell=True)
+  "S110",    # deliberate best-effort cleanup guards
+  "B904",    # raise-from not critical in handlers
+  "UP007",   # Optional[] style in older files
+  "S310",    # urllib helpers are https-only by construction
+]
+[lint.per-file-ignores]
+"tests/*" = ["S101", "S311"]
+"app/main.py" = ["E402"]  # config.validate() must run before supa import
