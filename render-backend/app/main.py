@@ -20,12 +20,14 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 from datetime import datetime, timezone
+from pathlib import PurePosixPath
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError
 
@@ -1345,6 +1347,238 @@ def op_music_sound(project_id: str, body: MusicSoundBody,
     saved = response.json()[0]
     return {"id": saved["id"], "version": version, "status": "ready",
             "musicPlan": plan.model_dump()}
+
+
+class LicensedMusicMetadataBody(BaseModel):
+    provider: str = Field(min_length=2, max_length=120)
+    licenseType: str = Field(min_length=2, max_length=120)
+    licenseReference: str = Field(min_length=3, max_length=500)
+    confirmedByOperator: Literal[True]
+
+
+class AudioRenderBody(BaseModel):
+    musicSoundRunId: UUID | None = None
+    storagePath: str = Field(min_length=10, max_length=1000)
+    filename: str = Field(min_length=1, max_length=255)
+    contentType: str = Field(min_length=3, max_length=100)
+    sizeBytes: int = Field(gt=0, le=50 * 1024 * 1024)
+    licenseMetadata: LicensedMusicMetadataBody
+
+
+def _licensed_music_path(project: dict, project_id: str, path: str) -> bool:
+    parts = PurePosixPath(path).parts
+    return (
+        len(parts) >= 7
+        and parts[0] == "users"
+        and parts[1] == project["user_id"]
+        and parts[2] == "projects"
+        and parts[3] == project_id
+        and parts[4] == "licensed-music"
+        and ".." not in parts
+    )
+
+
+@app.post("/projects/{project_id}/licensed-music/upload")
+async def op_upload_licensed_music(
+    project_id: str, request: Request, filename: str, content_type: str,
+    authorization: str = Header(default=""),
+):
+    """Receive one bounded operator upload into the project owner's private path."""
+    from .pipeline.audio_rendering import ALLOWED_CONTENT_TYPES, ALLOWED_EXTENSIONS
+
+    op = _require_operator(authorization)
+    _rate_check(op["id"], "licensed_music_upload")
+    project = _get_project(project_id)
+    safe_name = PurePosixPath(filename.replace("\\", "/")).name.replace("\x00", "")
+    if not safe_name or os.path.splitext(safe_name.lower())[1] not in ALLOWED_EXTENSIONS:
+        raise HTTPException(422, "licensed music filename must be WAV, MP3, M4A, AAC, or FLAC")
+    if content_type not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(422, "unsupported licensed music content type")
+    content = await request.body()
+    if not content or len(content) > 50 * 1024 * 1024:
+        raise HTTPException(413, "licensed music must be between 1 byte and 50 MB")
+    path = (f"users/{project['user_id']}/projects/{project_id}/licensed-music/"
+            f"{uuid4()}/{safe_name}")
+    _audit(op, "upload_licensed_music", project_id, {
+        "path": path, "filename": safe_name, "content_type": content_type,
+        "size_bytes": len(content),
+    })
+    with tempfile.TemporaryDirectory(prefix="stromation-music-upload-") as tmp:
+        local = os.path.join(tmp, safe_name)
+        with open(local, "wb") as handle:
+            handle.write(content)
+        supa.storage_upload("raw-footage", path, local, content_type=content_type)
+    return {"storagePath": path, "filename": safe_name,
+            "contentType": content_type, "sizeBytes": len(content)}
+
+
+@app.post("/projects/{project_id}/audio-render")
+def op_audio_render(project_id: str, body: AudioRenderBody,
+                    authorization: str = Header(default="")):
+    """Analyze an actual licensed waveform and render the completed audio preview."""
+    import httpx as _hx
+
+    from .pipeline.audio_rendering import (
+        AudioRenderingError,
+        CompletedAudioMix,
+        LicenseMetadata,
+        analyze_actual_waveform,
+        analyze_audio_qc,
+        match_picture_to_actual_track,
+        probe_music_file,
+        render_completed_mix,
+    )
+    from .pipeline.music_supervisor import MusicPlan
+    from .pipeline.picture_editor import PictureCandidateSummary
+
+    op = _require_operator(authorization)
+    _rate_check(op["id"], "audio_render")
+    project = _get_project(project_id)
+    if not _licensed_music_path(project, project_id, body.storagePath):
+        raise HTTPException(403, "licensed music path does not belong to this project")
+    safe_filename = PurePosixPath(body.filename.replace("\\", "/")).name
+    if safe_filename != body.filename or not safe_filename:
+        raise HTTPException(422, "licensed music filename must not contain a path")
+    if body.musicSoundRunId:
+        music_rows = supa.db_select(
+            "music_sound_runs", f"id=eq.{body.musicSoundRunId}&limit=1",
+        )
+    else:
+        music_rows = supa.db_select(
+            "music_sound_runs", f"project_id=eq.{project_id}&order=version.desc&limit=1",
+        )
+    if not music_rows or music_rows[0]["project_id"] != project_id:
+        raise HTTPException(409, "Milestone 3 music/sound run required")
+    music_run = music_rows[0]
+    picture_rows = supa.db_select(
+        "picture_edit_runs", f"id=eq.{music_run['picture_edit_run_id']}&limit=1",
+    )
+    if not picture_rows or picture_rows[0]["project_id"] != project_id:
+        raise HTTPException(409, "Milestone 2 picture ancestry is invalid")
+    picture_run = picture_rows[0]
+
+    def _json_value(row: dict, key: str):
+        value = row[key]
+        return json.loads(value) if isinstance(value, str) else value
+
+    try:
+        plan = MusicPlan(**_json_value(music_run, "music_plan"))
+        candidate_data = next(
+            item for item in _json_value(picture_run, "candidates")
+            if item.get("candidateId") == music_run["selected_candidate_id"]
+        )
+        candidate = PictureCandidateSummary(**candidate_data)
+        license_metadata = LicenseMetadata(**body.licenseMetadata.model_dump())
+    except StopIteration:
+        raise HTTPException(409, "selected picture candidate is missing")
+    except ValidationError as exc:
+        raise HTTPException(422, exc.errors(include_url=False))
+
+    assets = supa.db_select("media_assets", f"project_id=eq.{project_id}")
+    asset_by_id = {row["id"]: row for row in assets
+                   if row.get("user_id") == project["user_id"]}
+    required_ids = {clip["assetId"] for track in candidate.timeline["tracks"]
+                    if track["type"] == "video" for clip in track["clips"]}
+    if not required_ids.issubset(asset_by_id):
+        raise HTTPException(409, "selected picture references missing or foreign media assets")
+
+    with tempfile.TemporaryDirectory(prefix="stromation-audio-render-") as tmp:
+        music_path = os.path.join(tmp, safe_filename)
+        supa.storage_download("raw-footage", body.storagePath, music_path)
+        actual_size = os.path.getsize(music_path)
+        if actual_size != body.sizeBytes or actual_size > 50 * 1024 * 1024:
+            raise HTTPException(422, "licensed music size metadata does not match stored object")
+        try:
+            media_info = probe_music_file(
+                music_path, filename=body.filename, content_type=body.contentType,
+                picture_duration=candidate.durationSeconds,
+            )
+            analysis = analyze_actual_waveform(music_path)
+            match = match_picture_to_actual_track(
+                candidate, plan, analysis, media_info.durationSeconds,
+            )
+            sources = {}
+            for asset_id in required_ids:
+                row = asset_by_id[asset_id]
+                local = os.path.join(tmp, f"source-{asset_id}.mp4")
+                supa.storage_download("raw-footage", row["storage_path"], local)
+                sources[asset_id] = local
+            preview = os.path.join(tmp, "completed-audio-preview.mp4")
+            measurement, ducking = render_completed_mix(
+                candidate, sources, music_path, plan, match, preview, tmp,
+            )
+            qc = analyze_audio_qc(preview)
+        except (AudioRenderingError, RenderError, subprocess.CalledProcessError) as exc:
+            raise HTTPException(422, str(exc))
+
+        existing = supa.db_select(
+            "audio_mix_runs", f"project_id=eq.{project_id}&order=version.desc&limit=1",
+        )
+        version = (existing[0]["version"] + 1) if existing else 1
+        licensed_existing = supa.db_select(
+            "licensed_music_assets",
+            f"music_sound_run_id=eq.{music_run['id']}&order=version.desc&limit=1",
+        )
+        licensed_version = (licensed_existing[0]["version"] + 1) if licensed_existing else 1
+        output_path = (f"users/{project['user_id']}/projects/{project_id}/"
+                       f"audio-previews/v{version}-{uuid4()}.mp4")
+        _audit(op, "create_completed_audio_mix", project_id, {
+            "version": version, "music_sound_run_id": music_run["id"],
+            "picture_edit_run_id": picture_run["id"], "storage_path": body.storagePath,
+            "preview_storage_path": output_path, "qc_passed": qc.passed,
+        })
+        licensed = _service_insert("licensed_music_assets", {
+            "project_id": project_id, "user_id": project["user_id"],
+            "music_sound_run_id": music_run["id"],
+            "picture_edit_run_id": picture_run["id"],
+            "selected_candidate_id": music_run["selected_candidate_id"],
+            "version": licensed_version, "storage_bucket": "raw-footage",
+            "storage_path": body.storagePath, "filename": body.filename,
+            "content_type": body.contentType, "size_bytes": actual_size,
+            "license_metadata": license_metadata.model_dump(),
+            "media_info": media_info.model_dump(),
+            "waveform_analysis": analysis.model_dump(), "attached_by": op["id"],
+        })
+        supa.storage_upload("exports", output_path, preview, content_type="video/mp4")
+        completed = CompletedAudioMix(
+            analysis=analysis, targetVsActual=match,
+            mergedDuckingEnvelopes=ducking,
+            sourceAudioInstructions=[item.model_dump() for item in plan.sourceAudioInstructions],
+            loudnessMeasurementPass=measurement, qc=qc,
+            previewStoragePath=output_path, pictureTimingChanged=False,
+            excludedDepartments=[
+                "motion_graphics", "captions", "color_grading",
+                "specialized_critics", "tournament_selection",
+            ],
+        )
+        payload = {
+            "project_id": project_id, "user_id": project["user_id"],
+            "preproduction_run_id": music_run["preproduction_run_id"],
+            "picture_edit_run_id": picture_run["id"],
+            "music_sound_run_id": music_run["id"],
+            "licensed_music_asset_id": licensed["id"],
+            "selected_candidate_id": music_run["selected_candidate_id"],
+            "version": version, "status": "qc_passed" if qc.passed else "qc_failed",
+            "target_vs_actual": match.model_dump(),
+            "mix_instructions": completed.model_dump(), "audio_qc": qc.model_dump(),
+            "preview_storage_bucket": "exports", "preview_storage_path": output_path,
+            "picture_timing_changed": False,
+        }
+        response = _hx.post(
+            f"{supa.SUPABASE_URL}/rest/v1/audio_mix_runs",
+            headers={"apikey": supa.SERVICE_KEY,
+                     "Authorization": f"Bearer {supa.SERVICE_KEY}",
+                     "Content-Type": "application/json",
+                     "Prefer": "return=representation"},
+            json=payload, timeout=30,
+        )
+        if response.status_code == 409:
+            raise HTTPException(409, "audio-mix version conflict; retry")
+        response.raise_for_status()
+        saved = response.json()[0]
+    return {"id": saved["id"], "version": version, "status": payload["status"],
+            "licensedMusicAssetId": licensed["id"],
+            "completedAudioMix": completed.model_dump()}
 
 
 class SignBody(BaseModel):

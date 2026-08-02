@@ -182,6 +182,8 @@ function ProjectDetail({ project, session }) {
       <PreproductionSection project={project} refreshKey={artifactRefresh} />
       <PictureEditSection project={project} refreshKey={artifactRefresh} />
       <MusicSoundSection project={project} refreshKey={artifactRefresh} />
+      <AudioRenderSection project={project} session={session} act={act}
+        refreshKey={artifactRefresh} />
       <BlueprintSection project={project} />
       <TimelinesSection project={project} session={session} act={act} post={post} />
       <HumanCeilingSection project={project} session={session} />
@@ -392,6 +394,95 @@ function MusicSoundSection({ project, refreshKey }) {
       <h3 className="small" style={{ fontWeight: 700 }}>Ending + picture synchronization</h3>
       <Json data={{ fades: plan.fades, loudnessTargets: plan.loudnessTargets,
         musicalEnding: plan.musicalEnding, pictureMusicSync: plan.pictureMusicSync }} />
+    </Section>
+  )
+}
+
+function AudioRenderSection({ project, session, act, refreshKey }) {
+  const [run, setRun] = useState(null)
+  const [file, setFile] = useState(null)
+  const [provider, setProvider] = useState('')
+  const [licenseType, setLicenseType] = useState('commercial')
+  const [licenseReference, setLicenseReference] = useState('')
+  const [confirmed, setConfirmed] = useState(false)
+  const [previewUrl, setPreviewUrl] = useState(null)
+  useEffect(() => {
+    supabase.from('audio_mix_runs').select('*').eq('project_id', project.id)
+      .order('version', { ascending: false }).limit(1)
+      .then(({ data }) => setRun(data?.[0] || null))
+  }, [project.id, refreshKey])
+  useEffect(() => {
+    if (!run?.preview_storage_path) { setPreviewUrl(null); return }
+    api(session, 'POST', `/projects/${project.id}/sign`, {
+      bucket: 'exports', path: run.preview_storage_path, expires_in: 3600,
+    }).then(({ url }) => setPreviewUrl(url)).catch(() => setPreviewUrl(null))
+  }, [project.id, run?.preview_storage_path, session])
+
+  async function attachAndRender() {
+    if (!file) throw new Error('choose a licensed music file')
+    if (!provider.trim() || !licenseReference.trim() || !confirmed) {
+      throw new Error('provider, license reference, and license confirmation are required')
+    }
+    const query = new URLSearchParams({ filename: file.name,
+      content_type: file.type || 'application/octet-stream' })
+    const uploadedResponse = await fetch(
+      `${RENDER_API}/projects/${project.id}/licensed-music/upload?${query}`,
+      { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` },
+        body: file },
+    )
+    const uploaded = await uploadedResponse.json().catch(() => ({}))
+    if (!uploadedResponse.ok) throw new Error(uploaded.detail || 'licensed track upload failed')
+    return api(session, 'POST', `/projects/${project.id}/audio-render`, {
+      ...uploaded,
+      licenseMetadata: { provider: provider.trim(), licenseType,
+        licenseReference: licenseReference.trim(), confirmedByOperator: true },
+    })
+  }
+
+  const completed = run?.mix_instructions || {}
+  const analysis = completed.analysis || {}
+  const target = run?.target_vs_actual || {}
+  const qc = run?.audio_qc || {}
+  return (
+    <Section title="Milestone 4 completed audio mix · licensed waveform + preview" defaultOpen>
+      <div className="card" style={{ background: 'var(--bg-3)', marginBottom: 10 }}>
+        <label className="small">Licensed track
+          <input type="file" accept="audio/wav,audio/mpeg,audio/mp4,audio/aac,audio/flac,.m4a"
+            onChange={(event) => setFile(event.target.files?.[0] || null)} />
+        </label>
+        <label className="small">License provider
+          <input value={provider} onChange={(event) => setProvider(event.target.value)}
+            placeholder="Artlist, Musicbed, direct composer…" /></label>
+        <label className="small">License type
+          <input value={licenseType} onChange={(event) => setLicenseType(event.target.value)} /></label>
+        <label className="small">License/reference ID or receipt
+          <input value={licenseReference}
+            onChange={(event) => setLicenseReference(event.target.value)} /></label>
+        <label className="small"><input type="checkbox" checked={confirmed}
+          onChange={(event) => setConfirmed(event.target.checked)} /> I confirm this project
+          is licensed to use this track.</label>
+        <button className="btn btn-secondary" onClick={() => act(
+          run ? 'replace licensed track and rerender' : 'attach licensed track and render',
+          attachAndRender)}>{run ? 'Replace track + render new version' : 'Attach + render preview'}</button>
+      </div>
+      {!run && <p className="sub">No completed Milestone 4 audio mix yet.</p>}
+      {run && <>
+        <p className="small mono">v{run.version} · {run.status} · picture timing unchanged ·
+          {' '}target {target.targetBpm} BPM vs actual {target.actualBpm} BPM ·
+          {' '}actual analysis: {analysis.analysisSource}</p>
+        <div className="grid-3">
+          <div className="card small"><b>Integrated</b><br />{qc.integratedLufs} LUFS</div>
+          <div className="card small"><b>True peak</b><br />{qc.truePeakDbtp} dBTP</div>
+          <div className="card small"><b>QC</b><br />{qc.passed ? 'passed' : 'review required'}</div>
+        </div>
+        <h3 className="small" style={{ fontWeight: 700 }}>Treatment target vs actual waveform</h3>
+        <Json data={{ targetVsActual: target, actualWaveformAnalysis: analysis }} />
+        <h3 className="small" style={{ fontWeight: 700 }}>Completed mix + audio QC</h3>
+        <Json data={{ ducking: completed.mergedDuckingEnvelopes,
+          sourceAudio: completed.sourceAudioInstructions, qc }} />
+        {previewUrl && <video className="preview" src={previewUrl} controls
+          style={{ maxWidth: 480, marginTop: 8 }} />}
+      </>}
     </Section>
   )
 }
