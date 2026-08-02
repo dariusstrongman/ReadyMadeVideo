@@ -86,6 +86,8 @@ jobs:
             psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f "$f"
           done
           echo "all migrations applied cleanly"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260801_0012_audiovisual_motion_graphics.sql
+          echo "migration 0012 reapplied cleanly (idempotency check)"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/human_ceiling_integrity.sql
           echo "human-ceiling PostgreSQL integrity assertions passed"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/picture_editor_integrity.sql

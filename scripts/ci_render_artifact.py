@@ -59,7 +59,7 @@ graphics = GraphicsPackage(
         animation="slide", phraseAligned=True, subjectOcclusionRisk=0,
     )], excludedDepartments=["specialized_critics", "tournament_selection"],
 )
-captions = CaptionPackage(groups=[], timingProvenance=[])
+captions = CaptionPackage(groups=[], timingProvenance=[], evidenceDecisions=[])
 color = ColorPackage(
     instructions=[ColorInstruction(
         clipId="ci", segmentId="ci", startSeconds=0, endSeconds=8,

@@ -18,6 +18,7 @@ from ..renderer import FFMPEG, FFPROBE, _default_font, _ff_escape
 from .audio_rendering import CompletedAudioMix
 from .composition import CompositionMetrics
 from .creative_director import CreativeTreatment
+from .music_supervisor import NaturalAudioEvent
 from .picture_editor import PictureCandidateSummary
 from .schemas import Segment, TranscriptArtifact
 
@@ -142,6 +143,22 @@ class CaptionGroup(BaseModel):
         return self
 
 
+class CaptionEvidenceDecision(BaseModel):
+    clipId: str
+    segmentId: str
+    decision: Literal["included", "excluded"]
+    reasonCode: Literal[
+        "meaningful_dialogue_supported", "meaningful_narration_supported",
+        "milestone3_background_chatter", "unusable_audio",
+        "non_speech_natural_audio", "no_transcript",
+    ]
+    milestone3Classification: str | None = None
+    audioScore: float = Field(ge=0, le=1)
+    semanticRelevance: float = Field(ge=0, le=1)
+    timingSource: Literal["transcript_word_timestamps", "segment_distributed"] | None = None
+    explanation: str
+
+
 class ColorInstruction(BaseModel):
     clipId: str
     segmentId: str
@@ -175,6 +192,7 @@ class CaptionPackage(BaseModel):
     groups: list[CaptionGroup]
     generatedFrom: Literal["automatic_transcript_pipeline"] = "automatic_transcript_pipeline"
     timingProvenance: list[str]
+    evidenceDecisions: list[CaptionEvidenceDecision]
     overlapsDetected: int = 0
     pictureTimingChanged: Literal[False] = False
 
@@ -370,18 +388,92 @@ def _clip_words(clip: dict, segment: Segment, artifact: TranscriptArtifact | Non
 def build_caption_package(
     candidate: PictureCandidateSummary, segments: list[Segment],
     graphics: GraphicsPackage, transcripts: dict[str, TranscriptArtifact] | None = None,
+    natural_audio_events: list[NaturalAudioEvent] | None = None,
 ) -> CaptionPackage:
     segment_by_id = {item.segmentId: item for item in segments}
     transcripts = transcripts or {}
+    event_by_clip = {item.clipId: item for item in (natural_audio_events or [])}
     groups: list[CaptionGroup] = []
+    decisions: list[CaptionEvidenceDecision] = []
     sources: set[str] = set()
     for clip in candidate.timeline["tracks"][0]["clips"]:
         segment = segment_by_id.get(clip.get("segmentId"))
-        if not segment or not segment.transcript:
+        if not segment:
+            continue
+        event = event_by_clip.get(clip["id"])
+        classification = event.classification if event else None
+        transcript = (segment.transcript or "").strip()
+        action = segment.action.lower()
+        problems = {item.lower() for item in segment.problems}
+        narration_marker = any(term in action for term in (
+            "narrat", "voiceover", "voice over",
+        ))
+        background_context = any(term in action for term in (
+            "background", "off camera", "incidental", "crowd", "room chatter",
+        ))
+        speech_marker = not background_context and (
+            narration_marker or any(term in action for term in (
+                "speak", "talk", "dialogue", "interview", "to camera",
+                "explains", "coach says",
+            ))
+        )
+        non_speech_marker = any(term in action for term in (
+            "impact", "strike", "land", "hit", "breath", "recovery", "effort",
+            "grunt", "clap", "slam",
+        )) and not speech_marker
+        supported_speech = (
+            segment.audioScore >= .5
+            and segment.semanticRelevance >= .6
+            and speech_marker
+            and not non_speech_marker
+        )
+
+        reason: str | None = None
+        explanation = ""
+        if not transcript:
+            reason = "non_speech_natural_audio" if classification in {"effort", "impact"} else "no_transcript"
+            explanation = (
+                "Effort/impact audio remains available to the mix but contains no captionable speech"
+                if reason == "non_speech_natural_audio"
+                else "No transcript evidence exists for this selected clip"
+            )
+        elif (classification == "unusable" or segment.audioScore < .35
+              or problems.intersection({"unusable_audio", "operator_unusable"})):
+            reason = "unusable_audio"
+            explanation = "Milestone 3 or source-audio evidence marks this speech as unusable"
+        elif classification in {"effort", "impact"} or non_speech_marker:
+            reason = "non_speech_natural_audio"
+            explanation = "Effort or impact audio belongs in the mix, not in captions"
+        elif classification == "background_chatter" and not supported_speech:
+            reason = "milestone3_background_chatter"
+            explanation = "Milestone 3 chatter lacks sufficient intentional-speech evidence"
+
+        if reason:
+            decisions.append(CaptionEvidenceDecision(
+                clipId=clip["id"], segmentId=segment.segmentId, decision="excluded",
+                reasonCode=reason, milestone3Classification=classification,
+                audioScore=segment.audioScore,
+                semanticRelevance=segment.semanticRelevance, explanation=explanation,
+            ))
             continue
         artifact = transcripts.get(segment.assetId)
         words = _clip_words(clip, segment, artifact)
         source = "transcript_word_timestamps" if artifact and artifact.words else "segment_distributed"
+        reason = (
+            "meaningful_narration_supported"
+            if narration_marker else "meaningful_dialogue_supported"
+        )
+        decisions.append(CaptionEvidenceDecision(
+            clipId=clip["id"], segmentId=segment.segmentId, decision="included",
+            reasonCode=reason, milestone3Classification=classification,
+            audioScore=segment.audioScore, semanticRelevance=segment.semanticRelevance,
+            timingSource=source,
+            explanation=(
+                "Usable audio, semantic relevance, and explicit dialogue evidence support captions"
+                if not narration_marker else
+                "Usable audio, semantic relevance, and explicit narration evidence support captions"
+            ),
+        ))
         sources.add(source)
         for offset in range(0, len(words), 4):
             batch = words[offset:offset + 4]
@@ -410,7 +502,10 @@ def build_caption_package(
             right.words[0].startSeconds = max(right.words[0].startSeconds, left.endSeconds)
             if right.endSeconds <= right.startSeconds:
                 raise VisualFinishingError("caption timing cannot be resolved without overlap")
-    return CaptionPackage(groups=groups, timingProvenance=sorted(sources), overlapsDetected=0)
+    return CaptionPackage(
+        groups=groups, timingProvenance=sorted(sources), evidenceDecisions=decisions,
+        overlapsDetected=0,
+    )
 
 
 def build_color_package(candidate: PictureCandidateSummary, segments: list[Segment],

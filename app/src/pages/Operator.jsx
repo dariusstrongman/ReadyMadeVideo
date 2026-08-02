@@ -556,6 +556,7 @@ function VisualFinishingSection({ project, session, act, refreshKey }) {
           phraseBoundaries: timeline.phraseBoundaries, events: timeline.events }} />
         <h3 className="small" style={{ fontWeight: 700 }}>Caption preview + timing</h3>
         <Json data={{ timingProvenance: captions?.timing_provenance,
+          evidenceDecisions: captionTimeline.evidenceDecisions,
           overlapsDetected: captionTimeline.overlapsDetected, groups: captionTimeline.groups }} />
         <h3 className="small" style={{ fontWeight: 700 }}>Color preview instructions</h3>
         <Json data={{ normalizationTarget: grade.normalizationTarget,

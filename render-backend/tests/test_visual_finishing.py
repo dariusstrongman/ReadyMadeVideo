@@ -19,6 +19,7 @@ from app.pipeline.composition import (
     NormalizedBox,
 )
 from app.pipeline.creative_director import CreativeTreatment, EnergyPoint
+from app.pipeline.music_supervisor import NaturalAudioEvent
 from app.pipeline.picture_editor import PictureCandidateSummary
 from app.pipeline.schemas import Segment, TranscriptArtifact, Word
 from app.pipeline.visual_finishing import (
@@ -86,11 +87,13 @@ def _evidence():
     )
     segments = [
         Segment(segmentId="seg-1", assetId="asset-a", sourceStart=0, sourceEnd=4,
-                transcript="Push through every rep", action="sled push",
-                storyUses=["hook"], exposureScore=.25),
+                transcript="Push through every rep", action="coach voiceover over sled push",
+                storyUses=["hook"], exposureScore=.25, audioScore=.9,
+                semanticRelevance=.9),
         Segment(segmentId="seg-2", assetId="asset-a", sourceStart=4, sourceEnd=8,
-                transcript="Finish strong today", action="finish hold 4 seconds",
-                storyUses=["completion"], exposureScore=.95),
+                transcript="Finish strong today", action="athlete speaking to camera after hold 4 seconds",
+                storyUses=["completion"], exposureScore=.95, audioScore=.9,
+                semanticRelevance=.9),
     ]
     measured = CompositionMetrics(
         subjectProminence=.4, actionVisibility=.9, compositionQuality=.8,
@@ -103,6 +106,18 @@ def _evidence():
             minimumOutputQualityMet=True),
     )
     return treatment, candidate, completed, segments, {"seg-1": measured, "seg-2": measured}
+
+
+def _audio_events(segments, classifications=("background_chatter", "background_chatter")):
+    return [NaturalAudioEvent(
+        clipId=f"clip-{index + 1}", segmentId=segment.segmentId,
+        timelineStart=index * 4, timelineEnd=(index + 1) * 4,
+        classification=classification, audioScore=segment.audioScore,
+        chatterDetected=classification == "background_chatter",
+        reason=f"fixture {classification}",
+    ) for index, (segment, classification) in enumerate(
+        zip(segments, classifications, strict=True)
+    )]
 
 
 def test_brand_palette_typography_and_contrast_are_validated():
@@ -157,12 +172,19 @@ def test_captions_use_exact_word_timing_group_highlight_and_resolve_collisions()
         Word(word="Finish", start=4, end=4.4), Word(word="strong", start=4.4, end=4.8),
         Word(word="today", start=4.8, end=5.2),
     ])
-    captions = build_caption_package(candidate, segments, graphics, {"asset-a": artifact})
+    captions = build_caption_package(
+        candidate, segments, graphics, {"asset-a": artifact}, _audio_events(segments),
+    )
     assert captions.timingProvenance == ["transcript_word_timestamps"]
     assert captions.overlapsDetected == 0
     assert all(len(group.words) <= 5 and len(group.text) <= 42 for group in captions.groups)
     assert all(group.highlightWordIndexes == list(range(len(group.words)))
                for group in captions.groups)
+    assert all(item.timingSource == "transcript_word_timestamps"
+               for item in captions.evidenceDecisions if item.decision == "included")
+    assert {item.reasonCode for item in captions.evidenceDecisions} == {
+        "meaningful_narration_supported", "meaningful_dialogue_supported",
+    }
     assert all(right.startSeconds >= left.endSeconds
                for left, right in zip(captions.groups, captions.groups[1:], strict=False))
     assert not any(event.captionCollision for event in graphics.events)
@@ -171,10 +193,55 @@ def test_captions_use_exact_word_timing_group_highlight_and_resolve_collisions()
 def test_caption_fallback_is_explicit_and_empty_speech_is_supported():
     treatment, candidate, completed, segments, composition = _evidence()
     graphics = build_graphics_package(treatment, candidate, completed, composition, segments)
-    captions = build_caption_package(candidate, segments, graphics)
+    captions = build_caption_package(
+        candidate, segments, graphics, natural_audio_events=_audio_events(segments),
+    )
     assert captions.timingProvenance == ["segment_distributed"]
+    assert all(item.timingSource == "segment_distributed"
+               for item in captions.evidenceDecisions if item.decision == "included")
     empty = [item.model_copy(update={"transcript": None}) for item in segments]
     assert build_caption_package(candidate, empty, graphics).groups == []
+
+
+def test_incidental_chatter_is_excluded_but_meaningful_dialogue_is_captioned():
+    treatment, candidate, completed, segments, composition = _evidence()
+    segments[0] = segments[0].model_copy(update={
+        "action": "people talking in background", "storyUses": ["broll"],
+        "semanticRelevance": .2,
+    })
+    segments[1] = segments[1].model_copy(update={
+        "action": "athlete speaking to camera", "storyUses": ["reflection"],
+        "semanticRelevance": .95, "audioScore": .9,
+    })
+    graphics = build_graphics_package(treatment, candidate, completed, composition, segments)
+    captions = build_caption_package(
+        candidate, segments, graphics,
+        natural_audio_events=_audio_events(segments),
+    )
+    decisions = {item.segmentId: item for item in captions.evidenceDecisions}
+    assert decisions["seg-1"].decision == "excluded"
+    assert decisions["seg-1"].reasonCode == "milestone3_background_chatter"
+    assert decisions["seg-2"].decision == "included"
+    assert decisions["seg-2"].reasonCode == "meaningful_dialogue_supported"
+    assert any("FINISH" in group.text.upper() for group in captions.groups)
+    assert not any("PUSH" in group.text.upper() for group in captions.groups)
+
+
+def test_unusable_audio_and_non_speech_effort_are_not_captioned():
+    treatment, candidate, completed, segments, composition = _evidence()
+    segments[0] = segments[0].model_copy(update={"audioScore": .2})
+    segments[1] = segments[1].model_copy(update={
+        "action": "breathing recovery effort", "storyUses": ["reflection"],
+    })
+    graphics = build_graphics_package(treatment, candidate, completed, composition, segments)
+    events = _audio_events(segments, ("unusable", "effort"))
+    captions = build_caption_package(
+        candidate, segments, graphics, natural_audio_events=events,
+    )
+    decisions = {item.segmentId: item for item in captions.evidenceDecisions}
+    assert decisions["seg-1"].reasonCode == "unusable_audio"
+    assert decisions["seg-2"].reasonCode == "non_speech_natural_audio"
+    assert captions.groups == []
 
 
 def test_color_normalization_is_bounded_protective_and_non_destructive():

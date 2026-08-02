@@ -167,10 +167,13 @@ begin
   return new;
 end $$;
 
+drop trigger if exists graphics_refs_check on public.graphics_runs;
 create trigger graphics_refs_check before insert or update on public.graphics_runs
   for each row execute function public.enforce_graphics_refs();
+drop trigger if exists caption_refs_check on public.caption_runs;
 create trigger caption_refs_check before insert or update on public.caption_runs
   for each row execute function public.enforce_caption_refs();
+drop trigger if exists color_refs_check on public.color_runs;
 create trigger color_refs_check before insert or update on public.color_runs
   for each row execute function public.enforce_color_refs();
 
@@ -180,9 +183,12 @@ begin
   raise exception 'visual-finishing evidence % is immutable', old.id;
 end $$;
 
+drop trigger if exists protect_visual_finishing_evidence on public.graphics_runs;
 create trigger protect_visual_finishing_evidence before update or delete on public.graphics_runs
   for each row execute function public.protect_visual_finishing_evidence();
+drop trigger if exists protect_visual_finishing_evidence on public.caption_runs;
 create trigger protect_visual_finishing_evidence before update or delete on public.caption_runs
   for each row execute function public.protect_visual_finishing_evidence();
+drop trigger if exists protect_visual_finishing_evidence on public.color_runs;
 create trigger protect_visual_finishing_evidence before update or delete on public.color_runs
   for each row execute function public.protect_visual_finishing_evidence();

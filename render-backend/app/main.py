@@ -1608,6 +1608,7 @@ def op_visual_finishing(project_id: str, body: VisualFinishingBody,
     from .pipeline.audio_rendering import CompletedAudioMix
     from .pipeline.composition import CompositionMetrics
     from .pipeline.creative_director import CreativeTreatment
+    from .pipeline.music_supervisor import MusicPlan
     from .pipeline.picture_editor import PictureCandidateSummary
     from .pipeline.schemas import Segment as Seg, TranscriptArtifact
     from .pipeline.visual_finishing import (
@@ -1670,6 +1671,7 @@ def op_visual_finishing(project_id: str, body: VisualFinishingBody,
         candidate = PictureCandidateSummary(**candidate_data)
         treatment = CreativeTreatment(**_json_value(preproduction, "creative_treatment"))
         completed = CompletedAudioMix(**_json_value(audio_run, "mix_instructions"))
+        music_plan = MusicPlan(**_json_value(music_run, "music_plan"))
         composition = {
             key: CompositionMetrics(**value)
             for key, value in _json_value(preproduction, "composition_by_segment").items()
@@ -1688,7 +1690,9 @@ def op_visual_finishing(project_id: str, body: VisualFinishingBody,
             segments,
             aspect=body.aspect, template=template,
         )
-        captions = build_caption_package(candidate, segments, graphics, transcripts)
+        captions = build_caption_package(
+            candidate, segments, graphics, transcripts, music_plan.naturalAudioEvents,
+        )
         color = build_color_package(candidate, segments, lut=body.lutPreset)
     except StopIteration:
         raise HTTPException(409, "selected picture candidate is missing")
