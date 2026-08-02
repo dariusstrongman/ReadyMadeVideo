@@ -221,32 +221,43 @@ class FreesoundProvider(AudioProvider):
         self._require_ingestion_access()
         if asset.sourceProvider != self.name or not asset.sourceAssetId.isdigit():
             raise ValueError("Invalid Freesound asset identity")
-        response = self._request(
-            "GET",
-            f"{self.api_origin}/apiv2/sounds/{asset.sourceAssetId}/download/",
-            stream=True,
-            headers={"Authorization": f"Bearer {self.oauth_token}"},
-        )
-        try:
-            length = response.headers.get("content-length")
-            if length:
-                try:
-                    declared_size = int(length)
-                except ValueError as exc:
-                    raise ValueError("Download has an invalid Content-Length") from exc
-                if declared_size < 0 or declared_size > self.max_download_bytes:
-                    raise ValueError("Download exceeds maximum size")
-            size = _write_bounded_stream(
-                destination,
-                response.iter_bytes(chunk_size=DOWNLOAD_CHUNK_BYTES),
-                maximum_bytes=self.max_download_bytes,
+        body_attempt = 0
+        while True:
+            response = self._request(
+                "GET",
+                f"{self.api_origin}/apiv2/sounds/{asset.sourceAssetId}/download/",
+                stream=True,
+                headers={"Authorization": f"Bearer {self.oauth_token}"},
             )
-            return DownloadResult(
-                destination, response.headers.get("content-type", ""), size,
-                str(response.url),
-            )
-        finally:
-            response.close()
+            try:
+                length = response.headers.get("content-length")
+                if length:
+                    try:
+                        declared_size = int(length)
+                    except ValueError as exc:
+                        raise ValueError(
+                            "Download has an invalid Content-Length"
+                        ) from exc
+                    if declared_size < 0 or declared_size > self.max_download_bytes:
+                        raise ValueError("Download exceeds maximum size")
+                size = _write_bounded_stream(
+                    destination,
+                    response.iter_bytes(chunk_size=DOWNLOAD_CHUNK_BYTES),
+                    maximum_bytes=self.max_download_bytes,
+                )
+                return DownloadResult(
+                    destination, response.headers.get("content-type", ""), size,
+                    str(response.url),
+                )
+            except httpx.TransportError as exc:
+                if body_attempt >= self.retries:
+                    raise RuntimeError(
+                        "Freesound stream failed after bounded retries"
+                    ) from exc
+                self.sleep(2**body_attempt)
+                body_attempt += 1
+            finally:
+                response.close()
 
 
 class ManualImportProvider(AudioProvider):

@@ -104,6 +104,12 @@ class ChunkStream(httpx.SyncByteStream):
         yield from self.chunks
 
 
+class InterruptedStream(httpx.SyncByteStream):
+    def __iter__(self):
+        yield b"partial"
+        raise httpx.ReadError("connection dropped during body")
+
+
 @pytest.fixture
 def store(tmp_path):
     return ManifestStore(AudioLibraryPaths(tmp_path / "audio"))
@@ -515,6 +521,35 @@ def test_streamed_download_preserves_retry_and_safe_redirect_handling(tmp_path):
     assert destination.read_bytes() == b"safe"
     assert len(calls) == 3
     assert calls[-1] == "https://cdn.freesound.org/audio.wav"
+
+
+def test_streamed_download_retries_mid_body_failure_from_clean_file(tmp_path):
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        stream = InterruptedStream() if calls == 1 else ChunkStream([b"complete"])
+        return httpx.Response(
+            200, headers={"content-type": "audio/wav"},
+            stream=stream, request=request,
+        )
+
+    provider = FreesoundProvider(
+        api_key="test-api-key", oauth_token="test-oauth-token",  # noqa: S106
+        commercial_api_approved=True, approval_reference="contract",
+        terms_reviewed_at="2026-08-02",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        retries=1, rate_limit_seconds=0, max_download_bytes=20,
+        sleep=lambda _: None,
+    )
+    destination = tmp_path / "recovered.wav"
+    provider.download(
+        asset(sourceProvider="freesound", sourceAssetId="123"), destination,
+    )
+    assert calls == 2
+    assert destination.read_bytes() == b"complete"
+    assert not destination.with_name("recovered.wav.part").exists()
 
 
 def test_manual_import_uses_same_running_limit_and_cleans_partial_file(tmp_path):
