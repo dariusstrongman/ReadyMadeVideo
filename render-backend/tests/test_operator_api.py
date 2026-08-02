@@ -401,6 +401,154 @@ def test_music_sound_rejects_cross_project_picture_reference(env):
     assert response.status_code == 409
 
 
+# ---------- audiovisual real licensed-audio rendering ----------
+def _create_music_sound(env):
+    _, picture = _create_picture_edit(env)
+    response = env.client.post(
+        f"/projects/{env.project['id']}/music-sound",
+        json={"pictureEditRunId": picture["id"]},
+        headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 200, response.text
+    return picture, response.json()
+
+
+def _install_audio_render_stubs(monkeypatch):
+    from pathlib import Path
+
+    from app.pipeline import audio_rendering as ar
+
+    analysis = ar.ActualWaveformAnalysis(
+        bpm=120, bpmConfidence=0.95,
+        beatLocations=[ar.ActualBeat(
+            timeSeconds=index * 0.5, strength=1, beatIndex=index,
+            beatInBar=index % 4 + 1, barIndex=index // 4,
+            isDownbeat=index % 4 == 0,
+        ) for index in range(4)],
+        downbeatLocations=[0], barLocations=[0], phraseBoundaries=[24],
+        energyEnvelope=[ar.ActualEnergyPoint(timeSeconds=0, energy=0.4),
+                        ar.ActualEnergyPoint(timeSeconds=24, energy=1)],
+    )
+    monkeypatch.setattr(ar, "probe_music_file", lambda *a, **k: ar.TrackMediaInfo(
+        codec="pcm_s16le", durationSeconds=30, channels=2, sampleRateHz=48000,
+        contentType="audio/wav", filename="licensed.wav",
+    ))
+    monkeypatch.setattr(ar, "analyze_actual_waveform", lambda path: analysis)
+    monkeypatch.setattr(ar, "match_picture_to_actual_track", lambda *a, **k: ar.TrackMatch(
+        targetAnalysisSource="treatment_derived_music_brief", targetBpm=120,
+        actualBpm=120, bpmDifference=0, musicSourceStartSeconds=0,
+        musicSourceEndSeconds=24, endingPhraseBoundarySeconds=24,
+        phraseResolvedEnding=True, syncInstructions=[], energyComparison=[],
+    ))
+    def render_stub(candidate, sources, music, plan, match, output, workdir):
+        Path(output).write_bytes(b"real-preview")
+        return {"input_i": "-14.10", "input_tp": "-1.10"}, []
+    monkeypatch.setattr(ar, "render_completed_mix", render_stub)
+    monkeypatch.setattr(ar, "analyze_audio_qc", lambda path: ar.AudioQC(
+        integratedLufs=-14.1, truePeakDbtp=-1.1, clippingDetected=False,
+        silenceRanges=[], abruptGainChanges=[], missingAudioStream=False,
+        missingVideoStream=False, durationSeconds=24, passed=True,
+    ))
+
+
+def _upload_music(env, filename="licensed.wav", content_type="audio/wav", content=b"wave"):
+    return env.client.post(
+        f"/projects/{env.project['id']}/licensed-music/upload",
+        params={"filename": filename, "content_type": content_type},
+        content=content, headers={**env.h(env.operator[1]),
+                                  "Content-Type": "application/octet-stream"},
+    )
+
+
+def _audio_render_body(music, upload):
+    return {
+        "musicSoundRunId": music["id"], "storagePath": upload["storagePath"],
+        "filename": upload["filename"], "contentType": upload["contentType"],
+        "sizeBytes": upload["sizeBytes"],
+        "licenseMetadata": {"provider": "Artlist", "licenseType": "commercial",
+                            "licenseReference": "license-123",
+                            "confirmedByOperator": True},
+    }
+
+
+def test_operator_attaches_replaces_and_renders_licensed_music(env, monkeypatch):
+    picture, music = _create_music_sound(env)
+    env.fake.insert("media_assets", {
+        "id": "asset-a", "project_id": env.project["id"],
+        "user_id": env.project["user_id"], "filename": "source.mp4",
+        "storage_path": (f"users/{env.project['user_id']}/projects/"
+                         f"{env.project['id']}/raw/asset-a/source.mp4"),
+        "size_bytes": 10,
+    })
+    env.fake.storage["raw-footage/" + env.fake.tables["media_assets"][0][
+        "storage_path"]] = b"source"
+    baseline = env.fake.tables["picture_edit_runs"][0]["candidates"].copy()
+    _install_audio_render_stubs(monkeypatch)
+    uploaded = _upload_music(env)
+    assert uploaded.status_code == 200, uploaded.text
+    response = env.client.post(
+        f"/projects/{env.project['id']}/audio-render",
+        json=_audio_render_body(music, uploaded.json()),
+        headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "qc_passed"
+    assert payload["completedAudioMix"]["analysis"]["analysisSource"] == "actual_waveform"
+    assert payload["completedAudioMix"]["pictureTimingChanged"] is False
+    assert env.fake.tables["picture_edit_runs"][0]["candidates"] == baseline
+    assert env.fake.tables["licensed_music_assets"][0]["music_sound_run_id"] == music["id"]
+    assert env.fake.tables["audio_mix_runs"][0]["picture_edit_run_id"] == picture["id"]
+    preview_path = env.fake.tables["audio_mix_runs"][0]["preview_storage_path"]
+    assert f"exports/{preview_path}" in env.fake.storage
+
+    replacement = _upload_music(env, content=b"new-wave").json()
+    second = env.client.post(
+        f"/projects/{env.project['id']}/audio-render",
+        json=_audio_render_body(music, replacement), headers=env.h(env.operator[1]),
+    )
+    assert second.status_code == 200 and second.json()["version"] == 2
+    assert [row["version"] for row in env.fake.tables["licensed_music_assets"]] == [1, 2]
+
+
+def test_audio_upload_and_render_authorization_and_metadata(env):
+    path = f"/projects/{env.project['id']}/licensed-music/upload"
+    params = {"filename": "licensed.wav", "content_type": "audio/wav"}
+    assert env.client.post(path, params=params, content=b"x").status_code == 401
+    assert env.client.post(path, params=params, content=b"x",
+                           headers=env.h(env.owner[1])).status_code == 403
+    assert _upload_music(env, filename="malware.exe",
+                         content_type="application/octet-stream").status_code == 422
+    _, music = _create_music_sound(env)
+    upload = _upload_music(env).json()
+    body = _audio_render_body(music, upload)
+    body["licenseMetadata"]["confirmedByOperator"] = False
+    response = env.client.post(f"/projects/{env.project['id']}/audio-render",
+                               json=body, headers=env.h(env.operator[1]))
+    assert response.status_code == 422
+    del body["licenseMetadata"]["licenseReference"]
+    body["licenseMetadata"]["confirmedByOperator"] = True
+    missing = env.client.post(f"/projects/{env.project['id']}/audio-render",
+                              json=body, headers=env.h(env.operator[1]))
+    assert missing.status_code == 422
+    body = _audio_render_body(music, upload)
+    body["filename"] = "../licensed.wav"
+    traversal = env.client.post(f"/projects/{env.project['id']}/audio-render",
+                                json=body, headers=env.h(env.operator[1]))
+    assert traversal.status_code == 422
+
+
+def test_audio_render_rejects_cross_project_music_ownership(env):
+    _, music = _create_music_sound(env)
+    upload = _upload_music(env).json()
+    other = env.fake.add_project(env.project["user_id"], "Other", status="ready")
+    response = env.client.post(
+        f"/projects/{other['id']}/audio-render",
+        json=_audio_render_body(music, upload), headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 403
+
+
 # ---------- timeline op validation ----------
 def _project_timeline(env):
     tl = {"version": 1, "width": 1920, "height": 1080, "fps": 30, "duration": 6,

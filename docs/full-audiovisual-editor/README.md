@@ -11,7 +11,7 @@ contract recorded.
 1. [Creative Treatment and capture report](MILESTONE-1.md)
 2. [Deterministic picture editor](MILESTONE-2.md)
 3. [Music and sound supervisor](MILESTONE-3.md)
-4. Graphics and color
+4. [Licensed audio rendering](MILESTONE-4.md)
 5. Specialized critics and tournament selection
 6. Immutable Project One replay and three-way comparison
 
