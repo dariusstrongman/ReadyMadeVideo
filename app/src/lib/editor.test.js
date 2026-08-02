@@ -134,4 +134,19 @@ describe('editor operation reducer', () => {
     }
     expect(state.past).toHaveLength(100)
   })
+
+  it('persists undo of a clip deletion after autosave with a typed restore operation', () => {
+    const deletion = makeOperation('delete_clip', 'b', 1)
+    const changed = apply(createEditorState(document, 1), deletion)
+    const savedDocument = applyLocal(document, deletion)
+    const saved = editorReducer(changed, { type: 'save_succeeded', document: savedDocument,
+      version: 2, operationIds: [deletion.operationId] })
+    const undone = editorReducer(saved, { type: 'undo' })
+    expect(undone.document.tracks[0].items.map((item) => item.id)).toEqual(['a', 'b', 'c'])
+    expect(undone.pending).toHaveLength(1)
+    expect(undone.pending[0]).toMatchObject({
+      type: 'restore_clip', targetId: 'b', baseVersion: 2, toIndex: 1,
+    })
+    expect(undone.pending[0].clip.id).toBe('b')
+  })
 })

@@ -31,7 +31,9 @@ export function applyLocal(document, operation) {
     : operation.type === 'set_music_gain' ? 'music'
       : operation.type === 'toggle_graphic' ? 'graphics' : 'picture').items
   const index = items.findIndex((item) => item.id === operation.targetId)
-  if (index < 0) throw new Error('Timeline item no longer exists.')
+  if (index < 0 && operation.type !== 'restore_clip') {
+    throw new Error('Timeline item no longer exists.')
+  }
   if (operation.type === 'reorder_clip') {
     const [clip] = items.splice(index, 1)
     items.splice(Math.min(operation.toIndex, items.length), 0, clip)
@@ -46,6 +48,8 @@ export function applyLocal(document, operation) {
     items.splice(index + 1, 0, right)
   } else if (operation.type === 'delete_clip') {
     items.splice(index, 1)
+  } else if (operation.type === 'restore_clip') {
+    items.splice(Math.min(operation.toIndex, items.length), 0, structuredClone(operation.clip))
   } else if (operation.type === 'update_caption') {
     items[index].text = operation.text
   } else if (operation.type === 'set_music_gain') {
@@ -101,9 +105,13 @@ function operationsBetween(fromDocument, toDocument, version) {
   }
   const fromPicture = track(working, 'picture').items
   const toPicture = track(toDocument, 'picture').items
-  if (toPicture.some((clip) => !fromPicture.some((item) => item.id === clip.id))) return null
   fromPicture.filter((clip) => !toPicture.some((item) => item.id === clip.id))
     .forEach((clip) => add('delete_clip', clip.id))
+  toPicture.filter((clip) => !track(working, 'picture').items
+    .some((item) => item.id === clip.id))
+    .forEach((clip) => add('restore_clip', clip.id, {
+      clip, toIndex: toPicture.findIndex((item) => item.id === clip.id),
+    }))
   toPicture.forEach((clip, toIndex) => {
     const current = track(working, 'picture').items.find((item) => item.id === clip.id)
     const currentIndex = track(working, 'picture').items.findIndex((item) => item.id === clip.id)

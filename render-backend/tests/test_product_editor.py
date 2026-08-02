@@ -16,6 +16,7 @@ from app.product_editor import (  # noqa: E402
     DeleteClip,
     EditorError,
     ReorderClip,
+    RestoreClip,
     SplitClip,
     TrimClip,
     apply_batch,
@@ -71,6 +72,26 @@ def test_reorder_trim_split_delete_and_reflow():
     assert [item["id"] for item in clips][0] == "clip-b"
     assert clips[0]["timelineStart"] == 0
     assert result["duration"] == 5
+
+
+def test_restore_clip_is_typed_ancestry_bounded_and_reflows():
+    document = make_document()
+    clip = document["tracks"][0]["items"][0]
+    deleted = apply_batch(document, [
+        DeleteClip(type="delete_clip", actor="user", targetId=clip["id"], baseVersion=1),
+    ])
+    restored = apply_batch(deleted, [
+        RestoreClip(type="restore_clip", actor="user", targetId=clip["id"], baseVersion=2,
+                    clip=clip, toIndex=0),
+    ])
+    assert [item["id"] for item in restored["tracks"][0]["items"]] == ["clip-a", "clip-b"]
+    assert restored["duration"] == document["duration"]
+    foreign = {**clip, "id": "foreign", "assetId": str(uuid4())}
+    with pytest.raises(EditorError, match="ancestry"):
+        apply_batch(deleted, [
+            RestoreClip(type="restore_clip", actor="user", targetId="foreign",
+                        baseVersion=2, clip=foreign, toIndex=0),
+        ])
 
 
 @pytest.mark.parametrize("start,end", [(5, 5), (0, 11)])

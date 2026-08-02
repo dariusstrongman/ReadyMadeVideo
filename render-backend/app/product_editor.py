@@ -83,6 +83,12 @@ class DeleteClip(OperationBase):
     type: Literal["delete_clip"]
 
 
+class RestoreClip(OperationBase):
+    type: Literal["restore_clip"]
+    clip: dict
+    toIndex: int = Field(ge=0)
+
+
 class UpdateCaption(OperationBase):
     type: Literal["update_caption"]
     text: str = Field(min_length=1, max_length=240)
@@ -99,7 +105,7 @@ class ToggleGraphic(OperationBase):
 
 
 EditorOperation = Annotated[
-    Union[ReorderClip, TrimClip, SplitClip, DeleteClip, UpdateCaption,
+    Union[ReorderClip, TrimClip, SplitClip, DeleteClip, RestoreClip, UpdateCaption,
           SetMusicGain, ToggleGraphic],
     Field(discriminator="type"),
 ]
@@ -170,6 +176,21 @@ def apply_operation(document: dict, operation: EditorOperation) -> dict:
         if len(items) == 1:
             raise EditorError("cannot delete the last picture clip")
         items.pop(index)
+    elif isinstance(operation, RestoreClip):
+        items = _track(result, "picture")["items"]
+        clip = copy.deepcopy(operation.clip)
+        if clip.get("id") != operation.targetId:
+            raise EditorError("restored clip identity does not match target")
+        if any(item.get("id") == operation.targetId for item in items):
+            raise EditorError("restored clip already exists")
+        if str(clip.get("assetId")) not in {str(value) for value in result["sourceAssetIds"]}:
+            raise EditorError("restored clip is outside source asset ancestry")
+        source_start = float(clip.get("sourceStart", -1))
+        source_end = float(clip.get("sourceEnd", -1))
+        asset_duration = float(clip.get("assetDuration", source_end))
+        if source_start < 0 or source_end <= source_start or source_end > asset_duration:
+            raise EditorError("restored clip has invalid source bounds")
+        items.insert(min(operation.toIndex, len(items)), clip)
     elif isinstance(operation, UpdateCaption):
         _, _, caption = _find(result, "captions", operation.targetId)
         caption["text"] = operation.text
