@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -15,6 +16,32 @@ from .models import ProviderAsset, ProviderTermsEvidence, SearchQuery
 
 MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024
 FREESOUND_HOSTS = {"freesound.org", "www.freesound.org", "cdn.freesound.org"}
+DOWNLOAD_CHUNK_BYTES = 64 * 1024
+
+
+def _write_bounded_stream(
+    destination: Path, chunks: Iterable[bytes], *, maximum_bytes: int,
+) -> int:
+    """Write an iterable of bytes atomically while enforcing a running limit."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    partial = destination.with_name(f"{destination.name}.part")
+    if destination.exists() or partial.exists():
+        raise FileExistsError(f"Refusing to overwrite download path: {destination}")
+    total = 0
+    try:
+        with partial.open("xb") as handle:
+            for chunk in chunks:
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > maximum_bytes:
+                    raise ValueError("Download exceeds maximum size")
+                handle.write(chunk)
+        os.replace(partial, destination)
+        return total
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
 
 
 @dataclass(frozen=True)
@@ -52,6 +79,7 @@ class FreesoundProvider(AudioProvider):
         client: httpx.Client | None = None,
         retries: int = 3,
         rate_limit_seconds: float = 0.25,
+        max_download_bytes: int = MAX_DOWNLOAD_BYTES,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self.api_key = api_key
@@ -62,6 +90,7 @@ class FreesoundProvider(AudioProvider):
         self.client = client or httpx.Client(timeout=httpx.Timeout(30, read=120))
         self.retries = max(0, min(retries, 5))
         self.rate_limit_seconds = max(0.0, rate_limit_seconds)
+        self.max_download_bytes = max(1, min(max_download_bytes, MAX_DOWNLOAD_BYTES))
         self.sleep = sleep
 
     def _require_search_access(self) -> None:
@@ -80,7 +109,9 @@ class FreesoundProvider(AudioProvider):
         if not self.terms_reviewed_at:
             raise RuntimeError("FREESOUND_TERMS_REVIEWED_AT is required")
 
-    def _request(self, method: str, url: str, **kwargs: object) -> httpx.Response:
+    def _request(
+        self, method: str, url: str, *, stream: bool = False, **kwargs: object,
+    ) -> httpx.Response:
         parsed = urlparse(url)
         if parsed.scheme != "https" or parsed.hostname not in FREESOUND_HOSTS:
             raise RuntimeError(f"Unsafe Freesound URL: {url}")
@@ -88,7 +119,10 @@ class FreesoundProvider(AudioProvider):
         redirects = 0
         while True:
             try:
-                response = self.client.request(method, url, follow_redirects=False, **kwargs)
+                request = self.client.build_request(method, url, **kwargs)
+                response = self.client.send(
+                    request, follow_redirects=False, stream=stream,
+                )
             except httpx.TransportError as exc:
                 if attempt >= self.retries:
                     raise RuntimeError("Freesound request failed after bounded retries") from exc
@@ -96,6 +130,7 @@ class FreesoundProvider(AudioProvider):
                 attempt += 1
                 continue
             if response.status_code in {301, 302, 303, 307, 308}:
+                response.close()
                 redirects += 1
                 if redirects > 3:
                     raise RuntimeError("Freesound redirect limit exceeded")
@@ -112,8 +147,13 @@ class FreesoundProvider(AudioProvider):
                     delay = min(float(retry_after), 30.0) if retry_after and retry_after.isdigit() else 2**attempt
                     self.sleep(delay)
                     attempt += 1
+                    response.close()
                     continue
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError:
+                response.close()
+                raise
             if self.rate_limit_seconds:
                 self.sleep(self.rate_limit_seconds)
             return response
@@ -147,13 +187,18 @@ class FreesoundProvider(AudioProvider):
                     sourceAssetId=str(raw["id"]),
                     sourceUrl=source_url,
                     filename=str(raw.get("name") or f"{raw['id']}.audio"),
+                    title=str(raw.get("name") or raw["id"]),
                     assetType=query.assetType or "sfx",
                     category=query.categories[0] if query.categories else ("ambient" if query.assetType == "music" else "ambience"),
                     creatorName=creator,
                     creatorUrl=f"{self.api_origin}/people/{creator}/",
                     licenseName=license_url.rstrip("/").split("/")[-2] if license_url else "unknown",
                     licenseUrl=license_url or None,
-                    attributionText=f'"{raw.get("name", raw["id"])}" by {creator}, {license_url}',
+                    attributionText=(
+                        f'"{raw.get("name", raw["id"])}" by {creator} '
+                        f"({self.api_origin}/people/{creator}/). Source: {source_url}. "
+                        f"License: {license_url}."
+                    ),
                     declaredCommercialUseAllowed=None,
                     declaredModificationAllowed=None,
                     tags=[str(tag) for tag in raw.get("tags", [])],
@@ -179,17 +224,29 @@ class FreesoundProvider(AudioProvider):
         response = self._request(
             "GET",
             f"{self.api_origin}/apiv2/sounds/{asset.sourceAssetId}/download/",
+            stream=True,
             headers={"Authorization": f"Bearer {self.oauth_token}"},
         )
-        length = response.headers.get("content-length")
-        if length and int(length) > MAX_DOWNLOAD_BYTES:
-            raise ValueError("Download exceeds maximum size")
-        content = response.content
-        if len(content) > MAX_DOWNLOAD_BYTES:
-            raise ValueError("Download exceeds maximum size")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(content)
-        return DownloadResult(destination, response.headers.get("content-type", ""), len(content), str(response.url))
+        try:
+            length = response.headers.get("content-length")
+            if length:
+                try:
+                    declared_size = int(length)
+                except ValueError as exc:
+                    raise ValueError("Download has an invalid Content-Length") from exc
+                if declared_size < 0 or declared_size > self.max_download_bytes:
+                    raise ValueError("Download exceeds maximum size")
+            size = _write_bounded_stream(
+                destination,
+                response.iter_bytes(chunk_size=DOWNLOAD_CHUNK_BYTES),
+                maximum_bytes=self.max_download_bytes,
+            )
+            return DownloadResult(
+                destination, response.headers.get("content-type", ""), size,
+                str(response.url),
+            )
+        finally:
+            response.close()
 
 
 class ManualImportProvider(AudioProvider):
@@ -197,8 +254,11 @@ class ManualImportProvider(AudioProvider):
 
     name = "manual"
 
-    def __init__(self, import_root: Path) -> None:
+    def __init__(
+        self, import_root: Path, *, max_download_bytes: int = MAX_DOWNLOAD_BYTES,
+    ) -> None:
         self.import_root = import_root.resolve()
+        self.max_download_bytes = max(1, min(max_download_bytes, MAX_DOWNLOAD_BYTES))
 
     def search(self, query: SearchQuery) -> list[ProviderAsset]:
         results: list[ProviderAsset] = []
@@ -221,6 +281,14 @@ class ManualImportProvider(AudioProvider):
         source = (self.import_root / (asset.localSourcePath or asset.filename)).resolve()
         if self.import_root not in source.parents or not source.is_file():
             raise ValueError("Manual import path is missing or outside the approved import directory")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(source.read_bytes())
-        return DownloadResult(destination, "application/octet-stream", destination.stat().st_size, source.as_uri())
+        if source.stat().st_size > self.max_download_bytes:
+            raise ValueError("Download exceeds maximum size")
+        with source.open("rb") as handle:
+            size = _write_bounded_stream(
+                destination,
+                iter(lambda: handle.read(DOWNLOAD_CHUNK_BYTES), b""),
+                maximum_bytes=self.max_download_bytes,
+            )
+        return DownloadResult(
+            destination, "application/octet-stream", size, source.as_uri(),
+        )

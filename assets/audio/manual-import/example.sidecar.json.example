@@ -5,6 +5,7 @@
   "sourceUrl": "https://provider.example/asset/receipt-id",
   "sourceAssetId": "receipt-or-provider-asset-id",
   "filename": "operator-provided-file.wav",
+  "title": "Operator-provided sound title",
   "localSourcePath": "operator-provided-file.wav",
   "creatorName": "Creator name",
   "creatorUrl": "https://provider.example/creator",

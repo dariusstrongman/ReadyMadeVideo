@@ -90,6 +90,8 @@ class CompleteCandidateManifest(BaseModel):
     revisionInstructions: list[RevisionInstruction] = Field(default_factory=list)
     renderQc: dict = Field(default_factory=dict)
     previewStoragePath: str | None = None
+    musicAssetSelection: dict | None = None
+    attributionRendered: bool = False
     fabricatedFootage: Literal[False] = False
 
     @model_validator(mode="after")
@@ -147,8 +149,10 @@ class PublishabilityReport(BaseModel):
     blockingIssues: list[str]
     technicalQcPassed: bool
     renderedMediaQcPassed: bool
+    attributionCompliancePassed: bool
     tournamentEligible: bool
     renderedMediaQc: dict
+    attributionCompliance: dict
 
 
 class PairwiseComparison(BaseModel):
@@ -343,6 +347,8 @@ def generate_initial_candidates(
                 captionLayout=layouts[index % 3], colorPreset=presets[index % 3],
             ),
             pictureTimeline=timeline, graphics=graphics, captions=captions, color=color,
+            musicAssetSelection=copy.deepcopy(music_plan.libraryAssetSelection),
+            attributionRendered=False,
         ))
     return manifests
 
@@ -591,15 +597,26 @@ def run_specialized_critics(
     render_qc = candidate.renderQc
     stream_ok = bool(render_qc.get("videoStreamPresent") and render_qc.get("audioStreamPresent"))
     duration = float(candidate.pictureTimeline.get("duration") or 0)
+    attribution_required = bool(
+        candidate.musicAssetSelection
+        and candidate.musicAssetSelection.get("attributionRequired") is True
+    )
+    attribution_compliant = not attribution_required or candidate.attributionRendered
     reports.append(_report("publishability", candidate, [
-        _metric_evidence("required_streams", stream_ok, True, "candidate render QC", .4,
+        _metric_evidence("required_streams", stream_ok, True, "candidate render QC", .3,
                          1 if stream_ok else 0, "Publishable video needs picture and audio"),
         _metric_evidence("social_duration", duration, "15-60 seconds",
-                         "candidate timeline", .3, 1 if 15 <= duration <= 60 else .3,
+                         "candidate timeline", .2, 1 if 15 <= duration <= 60 else .3,
                          "Output duration must match the social brief"),
         _metric_evidence("fabricated_footage", candidate.fabricatedFootage, False,
                          "candidate manifest", .3, 1 if not candidate.fabricatedFootage else 0,
                          "Editorial intelligence may only reuse real source clips"),
+        _metric_evidence(
+            "required_attribution_rendered", attribution_compliant, True,
+            "candidate.musicAssetSelection", .2,
+            1 if attribution_compliant else 0,
+            "Attribution-required library music must have rendered attribution evidence",
+        ),
     ]))
     return reports
 
@@ -671,13 +688,21 @@ def build_publishability_report(candidate: CompleteCandidateManifest,
         render_blockers.append("render_qc: explicit_blocking_failure")
     rendered_media_qc = not render_blockers
     blockers.extend(render_blockers)
+    selection = candidate.musicAssetSelection or {}
+    attribution_required = selection.get("attributionRequired") is True
+    attribution_rendered = candidate.attributionRendered is True
+    attribution_compliance = not attribution_required or attribution_rendered
+    if not attribution_compliance:
+        blockers.append("attribution: required_attribution_not_rendered")
     return PublishabilityReport(
         candidateKey=candidate.candidateKey, dimensions=dimensions,
         overallPublishabilityScore=overall,
-        publishable=(overall >= 75 and technical and rendered_media_qc and not blockers),
+        publishable=(overall >= 75 and technical and rendered_media_qc
+                     and attribution_compliance and not blockers),
         blockingIssues=blockers, technicalQcPassed=technical,
         renderedMediaQcPassed=rendered_media_qc,
-        tournamentEligible=rendered_media_qc,
+        attributionCompliancePassed=attribution_compliance,
+        tournamentEligible=rendered_media_qc and attribution_compliance,
         renderedMediaQc={
             "videoStreamPresent": candidate.renderQc.get("videoStreamPresent") is True,
             "audioStreamPresent": candidate.renderQc.get("audioStreamPresent") is True,
@@ -687,6 +712,17 @@ def build_publishability_report(candidate: CompleteCandidateManifest,
             "durationToleranceSeconds": RENDER_DURATION_TOLERANCE_SECONDS,
             "explicitBlockingFailure": explicit_failure,
             "passed": rendered_media_qc,
+        },
+        attributionCompliance={
+            "assetId": selection.get("assetId"),
+            "required": attribution_required,
+            "rendered": attribution_rendered,
+            "status": (
+                "not_required" if not attribution_required else
+                "rendered" if attribution_rendered else "requires_attribution"
+            ),
+            "attribution": selection.get("attribution"),
+            "passed": attribution_compliance,
         },
     )
 

@@ -9,6 +9,7 @@ No provider downloads run by default. The checked-in sample plan has `downloadAu
 - A central license policy for CC0, CC BY 3.0/4.0, and explicitly approved commercial royalty-free licenses
 - Official Freesound API discovery and original-file download support
 - Operator-controlled local file import with JSON sidecars
+- Streamed downloads with a running 100 MB limit and partial-file cleanup
 - Safe FFmpeg validation and normalization to 48 kHz, 24-bit WAV
 - SHA-256 and normalized PCM fingerprint duplicate detection
 - Deterministic manifests, attribution reports, rejection reports, and ingestion summaries
@@ -60,6 +61,7 @@ Rejected:
 
 - Creative Commons NonCommercial variants
 - Creative Commons NoDerivatives variants
+- Creative Commons ShareAlike and other copyleft licenses
 - Sampling+
 - Unknown or unclear licenses
 - Missing creator or license metadata
@@ -73,7 +75,9 @@ This system records evidence and enforces the configured policy. It does not pro
 
 ## Media processing
 
-Downloads go to a random file under `assets/audio/temp/`. The pipeline then:
+Downloads are streamed to a random `.part` file under `assets/audio/temp/`. A running byte counter stops the transfer at 100 MB even when `Content-Length` is missing or incorrect. Failed and oversized transfers remove the partial file. A successful transfer is moved to its final temporary path before media inspection.
+
+The pipeline then:
 
 1. Checks the extension, MIME type, and 100 MB size cap.
 2. Uses FFprobe to require exactly one audio stream, no video stream, mono or stereo, 32 to 96 kHz input, and a duration no longer than 10 minutes.
@@ -125,9 +129,13 @@ Runtime media and reports are gitignored because licensed material and operator 
 
 ## Milestone 3 integration
 
-`AudioLibraryAdapter.search_for_music_plan()` accepts a Milestone 3 music plan. It maps the track brief tone, tempo target, energy arc, and candidate duration into a local manifest query. Results include the asset ID, normalized path, source identity, license fields, hashes, and ingestion version.
+`AudioLibraryAdapter.search_for_music_plan()` accepts a Milestone 3 music plan. It maps the track brief tone, tempo target, energy arc, and candidate duration into a local manifest query. Results are ordered by BPM distance, energy distance, then stable asset ID. Results include the asset ID, normalized path, source identity, license fields, hashes, ingestion version, and structured attribution metadata.
 
-The adapter is read-only. It does not change the music plan or claim a match when no eligible asset exists. Milestone 3 remains responsible for the final operator selection and licensed-track attachment.
+Milestone 3 now calls the adapter while building its plan and stores the first eligible deterministic match as `libraryAssetSelection`. An empty library keeps the prior treatment-derived plan with a null selection. The adapter reads accepted manifests only. It does not claim a match when no eligible asset exists.
+
+The selection and its license ancestry flow into complete Milestone 6 candidate manifests. CC0 selections need no attribution. CC BY selections are labeled `requires_attribution`. The current finishing pipeline does not render music attribution, so a candidate using CC BY receives `attribution: required_attribution_not_rendered`, becomes non-publishable, and cannot enter the tournament. No code marks attribution as rendered.
+
+Attribution records follow TASL where the source provides enough evidence: title, author/creator, source URL, license name/URL, and a complete display string. The original provider-supplied attribution string remains in the immutable asset manifest.
 
 ## Adding a provider
 
@@ -142,6 +150,7 @@ The adapter is read-only. It does not change the music plan or claim a match whe
 ## Current limits
 
 - The repository contains no licensed audio and the sample plan does not authorize downloads.
+- CC BY selection is supported, but publishing stays blocked until a later approved graphics workflow renders and records the attribution.
 - Freesound production ingestion needs written commercial API approval.
 - The PCM fingerprint catches identical decoded audio. It is not an acoustic similarity detector for remasters, time shifts, pitch shifts, or edits.
 - Music normalization uses FFmpeg loudness normalization during ingestion. Final program loudness and true-peak QC still belong to Milestone 4.
