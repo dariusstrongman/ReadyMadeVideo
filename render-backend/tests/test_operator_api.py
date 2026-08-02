@@ -333,6 +333,74 @@ def test_picture_edit_rejects_cross_project_preproduction_reference(env):
     assert response.status_code == 409
 
 
+# ---------- audiovisual music and sound supervisor ----------
+def _create_picture_edit(env):
+    preproduction = _create_preproduction(env)
+    response = env.client.post(
+        f"/projects/{env.project['id']}/picture-edit",
+        json={"preproductionRunId": preproduction["id"]},
+        headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 200, response.text
+    return preproduction, response.json()
+
+
+def test_operator_creates_versioned_audited_music_sound_plan(env):
+    preproduction, picture = _create_picture_edit(env)
+    baseline_candidates = env.fake.tables["picture_edit_runs"][0]["candidates"].copy()
+    path = f"/projects/{env.project['id']}/music-sound"
+    response = env.client.post(
+        path, json={"pictureEditRunId": picture["id"]},
+        headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["version"] == 1
+    plan = payload["musicPlan"]
+    assert plan["preproductionRunId"] == preproduction["id"]
+    assert plan["pictureEditRunId"] == picture["id"]
+    assert plan["selectedCandidateId"] == picture["selectedCandidateId"]
+    assert plan["beatPhraseAnalysis"]["phrases"]
+    assert plan["loudnessTargets"]["integratedLufs"] == -14
+    saved = env.fake.tables["music_sound_runs"][0]
+    assert saved["picture_edit_run_id"] == picture["id"]
+    assert env.fake.tables["picture_edit_runs"][0]["candidates"] == baseline_candidates
+    assert any(a["action"] == "create_music_sound_plan"
+               for a in env.fake.tables["operator_audit"])
+
+    second = env.client.post(path, json={}, headers=env.h(env.operator[1]))
+    assert second.status_code == 200, second.text
+    assert second.json()["version"] == 2
+
+
+def test_music_sound_requires_operator_and_picture_edit(env):
+    path = f"/projects/{env.project['id']}/music-sound"
+    assert env.client.post(path, json={}).status_code == 401
+    assert env.client.post(path, json={}, headers=env.h(env.owner[1])).status_code == 403
+    missing = env.client.post(path, json={}, headers=env.h(env.operator[1]))
+    assert missing.status_code == 409
+
+
+def test_music_sound_rejects_malformed_picture_run_uuid(env):
+    response = env.client.post(
+        f"/projects/{env.project['id']}/music-sound",
+        json={"pictureEditRunId": "bad&id=neq.injected"},
+        headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 422
+
+
+def test_music_sound_rejects_cross_project_picture_reference(env):
+    _, picture = _create_picture_edit(env)
+    other_project = env.fake.add_project(env.project["user_id"], "Other", status="ready")
+    response = env.client.post(
+        f"/projects/{other_project['id']}/music-sound",
+        json={"pictureEditRunId": picture["id"]},
+        headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 409
+
+
 # ---------- timeline op validation ----------
 def _project_timeline(env):
     tl = {"version": 1, "width": 1920, "height": 1080, "fps": 30, "duration": 6,

@@ -43,7 +43,8 @@ class FakeSupabase:
                             "stage_metrics", "project_status_events", "profiles",
                             "preproduction_runs",
                             "human_edit_sessions", "human_edit_timing_events",
-                            "timeline_scorecards", "picture_edit_runs")}
+                            "timeline_scorecards", "picture_edit_runs",
+                            "music_sound_runs")}
         self.storage: dict[str, bytes] = {}          # "bucket/path" -> data
         self.fail_tables: set[str] = set()           # simulate write failures
         self.conflict_once_tables: set[str] = set()  # simulate one unique collision
@@ -131,6 +132,12 @@ class FakeSupabase:
                              and r.get("version") == b.get("version")]
                 if duplicate:
                     return resp(409, {"message": "duplicate picture-edit version"})
+            if table == "music_sound_runs":
+                duplicate = [r for r in self.tables[table]
+                             if r["project_id"] == b["project_id"]
+                             and r.get("version") == b.get("version")]
+                if duplicate:
+                    return resp(409, {"message": "duplicate music-sound version"})
             if table == "user_corrections" and b.get("human_edit_session_id"):
                 duplicate = [r for r in self.tables[table]
                              if r.get("human_edit_session_id") == b["human_edit_session_id"]
