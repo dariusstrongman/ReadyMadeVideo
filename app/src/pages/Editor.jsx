@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
-import { editorApi, editorReducer, makeOperation, track } from '../lib/editor'
+import { createEditorState, editorApi, editorReducer, makeOperation, reorderArguments,
+  track, trimArguments } from '../lib/editor'
 
-const initialState = { document: null, past: [], future: [], pending: [] }
+const initialState = createEditorState()
 const COLORS = { picture: '#00d4ff', captions: '#a78bfa', music: '#f59e0b',
   sfx: '#fb7185', graphics: '#34d399' }
 
@@ -31,7 +32,8 @@ export default function Editor() {
       editorApi(`/projects/${id}/editor/${target}`, session),
       editorApi(`/projects/${id}/workspace`, session),
     ])
-    setRow(doc); setWorkspace(ws); dispatch({ type: 'load', document: doc.document })
+    setRow(doc); setWorkspace(ws); dispatch({ type: 'load', document: doc.document,
+      version: doc.version })
     setStatus(`Saved · revision ${doc.version}`)
     const candidate = ws.candidates.find((item) => item.id === doc.candidate_run_id)
     if (candidate?.preview_storage_path) {
@@ -45,16 +47,19 @@ export default function Editor() {
 
   const save = useCallback(async () => {
     if (!row || !state.pending.length || saving.current) return
-    saving.current = true; setStatus('Saving revision…'); setError('')
+    const batch = state.pending
+    const operationIds = batch.map((operation) => operation.operationId)
+    saving.current = operationIds; setStatus('Saving revision…'); setError('')
     try {
       const saved = await editorApi(`/projects/${id}/editor/${row.id}/operations`, session, {
         method: 'POST', body: JSON.stringify({ expectedVersion: row.version,
-                                              operations: state.pending }),
+                                              operations: batch }),
       })
       setRow(saved); setWorkspace((current) => current ? {
         ...current, editorDocuments: [saved, ...current.editorDocuments],
       } : current)
-      dispatch({ type: 'load', document: saved.document })
+      dispatch({ type: 'save_succeeded', document: saved.document, version: saved.version,
+        operationIds })
       setStatus(`Saved · revision ${saved.version}`)
       history.replaceState(null, '', `/project/${id}/editor/${saved.id}`)
     } catch (e) {
@@ -196,23 +201,24 @@ function Timeline({ document, zoom, playhead, setPlayhead, snap, selected, setSe
     <div className="playhead" style={{ left: playhead * zoom }} />
     {document.tracks.map((lane) => <div className="timeline-lane" key={lane.type}>
       <b>{lane.type}</b><div className="lane-items">
-        {lane.items.map((item, index) => {
+        {lane.items.map((item) => {
           const start = item.timelineStart ?? item.startSeconds ?? 0
           const end = item.timelineEnd ?? item.endSeconds ?? duration
           const left = lane.type === 'picture' ? start * zoom : start * zoom
           const itemWidth = Math.max(28, (end - start) * zoom)
           return <button key={item.id} className={selected?.id === item.id ? 'clip selected' : 'clip'}
             style={{ left, width: itemWidth, '--clip-color': COLORS[lane.type] }}
-            onClick={(e) => { e.stopPropagation(); setSelected({ ...item, lane: lane.type, index }) }}>
+            onClick={(e) => { e.stopPropagation(); setSelected({ id: item.id, lane: lane.type }) }}>
             <span>{item.text || item.displayText || item.kind || item.id}</span>
             {lane.type === 'picture' && <i>{(end - start).toFixed(1)}s</i>}
           </button>
         })}
       </div></div>)}
     {selected?.lane === 'picture' && <div className="clip-actions">
-      <button onClick={() => apply('reorder_clip', selected.id, { toIndex: Math.max(0, selected.index - 1) })}>Move left</button>
-      <button onClick={() => apply('reorder_clip', selected.id, { toIndex: selected.index + 1 })}>Move right</button>
-      <button onClick={() => apply('split_clip', selected.id, { sourceTime: selected.sourceStart + (selected.sourceEnd - selected.sourceStart) / 2 })}>Split</button>
+      <button onClick={() => apply('reorder_clip', selected.id, reorderArguments(document, selected.id, -1))}>Move left</button>
+      <button onClick={() => apply('reorder_clip', selected.id, reorderArguments(document, selected.id, 1))}>Move right</button>
+      <button onClick={() => { const clip = track(document, 'picture').items.find((item) => item.id === selected.id)
+        apply('split_clip', selected.id, { sourceTime: clip.sourceStart + (clip.sourceEnd - clip.sourceStart) / 2 }) }}>Split</button>
       <button onClick={() => apply('delete_clip', selected.id)}>Delete</button>
     </div>}
   </div></div>
@@ -220,18 +226,20 @@ function Timeline({ document, zoom, playhead, setPlayhead, snap, selected, setSe
 
 function Inspector({ document, selected, apply }) {
   if (!selected) return <aside className="edit-inspector"><span className="edit-eyebrow">Inspector</span><p>Select a timeline item.</p></aside>
+  const current = track(document, selected.lane)?.items.find((item) => item.id === selected.id)
+  if (!current) return <aside className="edit-inspector"><span className="edit-eyebrow">Inspector</span><p>The selected item no longer exists.</p></aside>
   return <aside className="edit-inspector"><span className="edit-eyebrow">Inspector · {selected.lane}</span><h2>{selected.id}</h2>
-    {selected.lane === 'picture' && <><label>In point<input type="number" step=".1" defaultValue={selected.sourceStart}
-      onBlur={(e) => apply('trim_clip', selected.id, { sourceStart: Number(e.target.value), sourceEnd: selected.sourceEnd })} /></label>
-      <label>Out point<input type="number" step=".1" defaultValue={selected.sourceEnd}
-        onBlur={(e) => apply('trim_clip', selected.id, { sourceStart: selected.sourceStart, sourceEnd: Number(e.target.value) })} /></label></>}
-    {selected.lane === 'captions' && <label>Caption<textarea defaultValue={selected.text || selected.displayText}
+    {selected.lane === 'picture' && <><label>In point<input key={`in-${current.sourceStart}`} type="number" step=".1" defaultValue={current.sourceStart}
+      onBlur={(e) => apply('trim_clip', selected.id, trimArguments(document, selected.id, 'start', Number(e.target.value)))} /></label>
+      <label>Out point<input key={`out-${current.sourceEnd}`} type="number" step=".1" defaultValue={current.sourceEnd}
+        onBlur={(e) => apply('trim_clip', selected.id, trimArguments(document, selected.id, 'end', Number(e.target.value)))} /></label></>}
+    {selected.lane === 'captions' && <label>Caption<textarea defaultValue={current.text || current.displayText}
       onBlur={(e) => apply('update_caption', selected.id, { text: e.target.value })} /></label>}
-    {selected.lane === 'music' && <label>Music gain (dB)<input type="range" min="-60" max="6" defaultValue={selected.gainDb}
+    {selected.lane === 'music' && <label>Music gain (dB)<input type="range" min="-60" max="6" defaultValue={current.gainDb}
       onChange={(e) => apply('set_music_gain', selected.id, { gainDb: Number(e.target.value) })} /></label>}
     {selected.lane === 'graphics' && <button className="btn btn-ghost"
-      onClick={() => apply('toggle_graphic', selected.id, { enabled: !selected.enabled })}>
-      {selected.enabled ? 'Hide graphic' : 'Show graphic'}</button>}
+      onClick={() => apply('toggle_graphic', selected.id, { enabled: !current.enabled })}>
+      {current.enabled ? 'Hide graphic' : 'Show graphic'}</button>}
   </aside>
 }
 

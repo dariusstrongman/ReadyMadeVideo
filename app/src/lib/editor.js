@@ -63,24 +63,141 @@ export function applyLocal(document, operation) {
   return next
 }
 
+export const MAX_EDITOR_HISTORY = 100
+
+export function createEditorState(document = null, version = null) {
+  return { document, savedDocument: document, version, past: [], future: [], pending: [] }
+}
+
+function rebaseOperations(operations, version) {
+  return operations.map((operation) => ({ ...operation, baseVersion: version }))
+}
+
+function replay(document, operations) {
+  return operations.reduce((current, operation) => applyLocal(current, operation), document)
+}
+
+function reconcileHistory(entries, savedIds, version) {
+  return entries.map((entry) => ({
+    document: entry.document,
+    pending: rebaseOperations(
+      entry.pending.filter((operation) => !savedIds.has(operation.operationId)), version,
+    ),
+  }))
+}
+
+function pendingPrefix(prefix, operations) {
+  return prefix.every((operation, index) =>
+    operations[index]?.operationId === operation.operationId)
+}
+
+function operationsBetween(fromDocument, toDocument, version) {
+  const operations = []
+  let working = fromDocument
+  const add = (type, targetId, args) => {
+    const operation = makeOperation(type, targetId, version, args)
+    operations.push(operation)
+    working = applyLocal(working, operation)
+  }
+  const fromPicture = track(working, 'picture').items
+  const toPicture = track(toDocument, 'picture').items
+  if (toPicture.some((clip) => !fromPicture.some((item) => item.id === clip.id))) return null
+  fromPicture.filter((clip) => !toPicture.some((item) => item.id === clip.id))
+    .forEach((clip) => add('delete_clip', clip.id))
+  toPicture.forEach((clip, toIndex) => {
+    const current = track(working, 'picture').items.find((item) => item.id === clip.id)
+    const currentIndex = track(working, 'picture').items.findIndex((item) => item.id === clip.id)
+    if (currentIndex !== toIndex) add('reorder_clip', clip.id, { toIndex })
+    if (current.sourceStart !== clip.sourceStart || current.sourceEnd !== clip.sourceEnd) {
+      add('trim_clip', clip.id, { sourceStart: clip.sourceStart, sourceEnd: clip.sourceEnd })
+    }
+  })
+  const scalarTracks = [
+    ['captions', 'text', 'update_caption', 'text'],
+    ['music', 'gainDb', 'set_music_gain', 'gainDb'],
+    ['graphics', 'enabled', 'toggle_graphic', 'enabled'],
+  ]
+  scalarTracks.forEach(([lane, field, type, argument]) => {
+    track(toDocument, lane).items.forEach((target) => {
+      const current = track(working, lane).items.find((item) => item.id === target.id)
+      if (current && current[field] !== target[field]) add(type, target.id, {
+        [argument]: target[field],
+      })
+    })
+  })
+  return operations
+}
+
 export function editorReducer(state, action) {
-  if (action.type === 'load') return { document: action.document, past: [], future: [], pending: [] }
+  if (action.type === 'load') return createEditorState(action.document, action.version)
   if (action.type === 'apply') return {
+    ...state,
     document: applyLocal(state.document, action.operation),
-    past: [...state.past, { document: state.document, pending: state.pending }], future: [],
+    past: [...state.past, { document: state.document, pending: state.pending }]
+      .slice(-MAX_EDITOR_HISTORY), future: [],
     pending: [...state.pending, action.operation],
   }
-  if (action.type === 'undo' && state.past.length) return {
-    document: state.past.at(-1).document, past: state.past.slice(0, -1),
-    future: [{ document: state.document, pending: state.pending }, ...state.future],
-    pending: state.past.at(-1).pending,
+  if (action.type === 'undo' && state.past.length) {
+    const target = state.past.at(-1)
+    const unsavedSnapshot = target.pending.length < state.pending.length
+      && pendingPrefix(target.pending, state.pending)
+    const delta = unsavedSnapshot ? []
+      : operationsBetween(state.document, target.document, state.version)
+    return {
+      ...state,
+      document: target.document, past: state.past.slice(0, -1),
+      future: [{ document: state.document, pending: state.pending }, ...state.future]
+        .slice(0, MAX_EDITOR_HISTORY),
+      pending: unsavedSnapshot ? target.pending : [...state.pending, ...(delta || [])],
+    }
   }
-  if (action.type === 'redo' && state.future.length) return {
-    document: state.future[0].document,
-    past: [...state.past, { document: state.document, pending: state.pending }],
-    future: state.future.slice(1), pending: state.future[0].pending,
+  if (action.type === 'redo' && state.future.length) {
+    const target = state.future[0]
+    const unsavedSnapshot = target.pending.length > state.pending.length
+      && pendingPrefix(state.pending, target.pending)
+    const delta = unsavedSnapshot ? []
+      : operationsBetween(state.document, target.document, state.version)
+    return {
+      ...state,
+      document: target.document,
+      past: [...state.past, { document: state.document, pending: state.pending }]
+        .slice(-MAX_EDITOR_HISTORY),
+      future: state.future.slice(1),
+      pending: unsavedSnapshot ? target.pending : [...state.pending, ...(delta || [])],
+    }
+  }
+  if (action.type === 'save_succeeded') {
+    const savedIds = new Set(action.operationIds)
+    const pending = rebaseOperations(
+      state.pending.filter((operation) => !savedIds.has(operation.operationId)),
+      action.version,
+    )
+    return {
+      ...state,
+      savedDocument: action.document,
+      version: action.version,
+      document: replay(action.document, pending),
+      pending,
+      past: reconcileHistory(state.past, savedIds, action.version),
+      future: reconcileHistory(state.future, savedIds, action.version),
+    }
   }
   return state
+}
+
+export function trimArguments(document, targetId, boundary, value) {
+  const clip = track(document, 'picture').items.find((item) => item.id === targetId)
+  if (!clip) throw new Error('Timeline item no longer exists.')
+  return boundary === 'start'
+    ? { sourceStart: value, sourceEnd: clip.sourceEnd }
+    : { sourceStart: clip.sourceStart, sourceEnd: value }
+}
+
+export function reorderArguments(document, targetId, direction) {
+  const items = track(document, 'picture').items
+  const index = items.findIndex((item) => item.id === targetId)
+  if (index < 0) throw new Error('Timeline item no longer exists.')
+  return { toIndex: Math.max(0, Math.min(items.length - 1, index + direction)) }
 }
 
 export function makeOperation(type, targetId, baseVersion, args = {}, actor = 'user') {

@@ -11,7 +11,7 @@ os.environ["WORKER_ENABLED"] = "0"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.main import app  # noqa: E402
+from app.main import _editor_existing_document_filter, app  # noqa: E402
 from app.product_editor import (  # noqa: E402
     DeleteClip,
     EditorError,
@@ -153,6 +153,33 @@ def test_customer_auth_and_candidate_ancestry(env):
     assert response.json()["document"]["tracks"][0]["type"] == "picture"
 
 
+def test_editor_start_reopens_existing_document_with_exact_project_filter(env, monkeypatch):
+    """Assert raw PostgREST generation; FakeSupabase parsing is intentionally not trusted."""
+    from app import main
+
+    created = start(env)
+    assert created.status_code == 200, created.text
+    original_select = main.supa.db_select
+    captured = []
+
+    def capture(table, filters=""):
+        if table == "editor_documents":
+            captured.append(filters)
+        return original_select(table, filters)
+
+    monkeypatch.setattr(main.supa, "db_select", capture)
+    reopened = start(env)
+    expected = _editor_existing_document_filter(
+        env["candidate"]["id"], env["project"]["id"],
+    )
+    assert reopened.status_code == 200, reopened.text
+    assert reopened.json()["id"] == created.json()["id"]
+    assert len(env["fake"].tables["editor_documents"]) == 1
+    assert captured[0] == expected
+    assert f"project_id=eq.{env['project']['id']}" in captured[0]
+    assert "{project_id}" not in captured[0]
+
+
 def test_all_customer_editor_mutations_require_project_owner(env):
     current = start(env).json()
     cases = [
@@ -229,16 +256,56 @@ def test_ai_actor_cannot_be_spoofed_without_proposal(env):
     assert "proposal" in response.text.lower()
 
 
-def test_attribution_required_blocks_export(env):
+def test_cc_by_selection_propagates_attribution_and_blocks_export(env):
+    env["candidate"]["manifest"]["musicAssetSelection"] = {
+        "assetId": "music-cc-by", "attributionRequired": True,
+        "attributionStatus": "requires_attribution",
+        "attribution": {
+            "sourceUrl": "https://provider.example/tracks/1", "creator": "A Creator",
+            "title": "Licensed pulse", "license": "CC BY 4.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+            "text": "Licensed pulse by A Creator, CC BY 4.0",
+        },
+    }
+    # A client-shaped top-level claim must not satisfy the server-derived gate.
+    env["candidate"]["manifest"]["attribution"] = [{
+        "required": True, "rendered": True,
+    }]
     current = start(env).json()
-    current["document"]["attribution"] = [{"required": True, "rendered": False}]
-    env["fake"].tables["editor_documents"][0]["document"] = current["document"]
+    evidence = current["document"]["attribution"][0]
+    assert evidence == {
+        "assetId": "music-cc-by", "required": True, "rendered": False,
+        "status": "requires_attribution",
+        "sourceUrl": "https://provider.example/tracks/1", "creator": "A Creator",
+        "title": "Licensed pulse", "license": "CC BY 4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "attributionText": "Licensed pulse by A Creator, CC BY 4.0",
+    }
     response = env["client"].post(
         f"/projects/{env['project']['id']}/editor/render",
         json={"documentId": current["id"]}, headers=headers(env["owner"][1]),
     )
     assert response.status_code == 409
     assert "attribution" in response.text
+
+
+def test_cc0_selection_is_not_blocked_by_attribution_gate(env):
+    env["candidate"]["manifest"]["musicAssetSelection"] = {
+        "assetId": "music-cc0", "attributionRequired": False,
+        "attributionStatus": "not_required",
+        "attribution": {
+            "sourceUrl": "https://provider.example/tracks/cc0", "creator": "Creator",
+            "title": "Public-domain pulse", "license": "CC0 1.0",
+            "text": "Public-domain pulse by Creator, CC0 1.0",
+        },
+    }
+    current = start(env).json()
+    assert current["document"]["attribution"][0]["required"] is False
+    response = env["client"].post(
+        f"/projects/{env['project']['id']}/editor/render",
+        json={"documentId": current["id"]}, headers=headers(env["owner"][1]),
+    )
+    assert response.status_code == 200, response.text
 
 
 def test_failed_export_retry_preserves_saved_version(env):

@@ -2067,6 +2067,11 @@ def _editor_document(document_id: str, project_id: str) -> dict:
     return rows[0]
 
 
+def _editor_existing_document_filter(candidate_run_id: str, project_id: str) -> str:
+    return (f"candidate_run_id=eq.{candidate_run_id}&project_id=eq.{project_id}"
+            "&order=version.desc&limit=1")
+
+
 class EditorStartBody(BaseModel):
     candidateRunId: UUID
 
@@ -2120,8 +2125,7 @@ def customer_editor_start(project_id: str, body: EditorStartBody,
         raise HTTPException(409, "candidate ancestry does not belong to this project")
     candidate = rows[0]
     existing = supa.db_select(
-        "editor_documents", f"candidate_run_id=eq.{candidate['id']}"
-        "&project_id=eq.{project_id}&order=version.desc&limit=1",
+        "editor_documents", _editor_existing_document_filter(candidate["id"], project_id),
     )
     if existing:
         return existing[0]

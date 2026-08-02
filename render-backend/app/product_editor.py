@@ -212,6 +212,25 @@ def document_from_candidate(project_id: str, candidate: dict,
         item.setdefault("enabled", True)
     music = [{"id": "music-main", "gainDb": -12.0,
               "source": "completed_audio_mix", "lockedAncestry": True}]
+    selection = manifest.get("musicAssetSelection")
+    attribution = []
+    if isinstance(selection, dict):
+        evidence = selection.get("attribution") or {}
+        required = bool(selection.get("attributionRequired"))
+        attribution = [{
+            "assetId": selection.get("assetId"),
+            "required": required,
+            # Phase 1 does not render attribution. Never accept satisfaction from
+            # candidate/client JSON; a future trusted renderer must persist it.
+            "rendered": False,
+            "status": "requires_attribution" if required else "not_required",
+            "sourceUrl": evidence.get("sourceUrl") or selection.get("sourceUrl"),
+            "creator": evidence.get("creator") or selection.get("creatorName"),
+            "title": evidence.get("title") or selection.get("title"),
+            "license": evidence.get("license") or selection.get("licenseName"),
+            "licenseUrl": evidence.get("licenseUrl") or selection.get("licenseUrl"),
+            "attributionText": evidence.get("text") or selection.get("attributionText"),
+        }]
     doc = {
         "schemaVersion": 1, "projectId": project_id,
         "candidateRunId": candidate["id"],
@@ -225,7 +244,7 @@ def document_from_candidate(project_id: str, candidate: dict,
             {"id": "graphics", "type": "graphics", "items": graphics},
         ],
         "sourceAssetIds": manifest.get("sourceAssetIds") or [],
-        "attribution": manifest.get("attribution") or [],
+        "attribution": attribution,
     }
     _reflow(doc)
     return EditorDocument(**doc).model_dump(mode="json")
