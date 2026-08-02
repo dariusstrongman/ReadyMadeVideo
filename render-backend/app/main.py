@@ -2038,6 +2038,333 @@ def op_editorial_intelligence(
     }
 
 
+# ==================== customer Product Editor API ====================
+
+
+def _owned_project(project_id: str, authorization: str) -> tuple[dict, dict]:
+    user = _auth_user(authorization)
+    project = _get_project(project_id)
+    if project["user_id"] != user["id"]:
+        raise HTTPException(403, "project ownership check failed")
+    return user, project
+
+
+def _editor_audit(user_id: str, project_id: str, action: str,
+                  details: dict | None = None) -> None:
+    try:
+        _service_insert("editor_audit_events", {
+            "user_id": user_id, "project_id": project_id,
+            "action": action, "details": details or {},
+        })
+    except Exception as exc:
+        raise HTTPException(503, "action aborted: editor audit unavailable") from exc
+
+
+def _editor_document(document_id: str, project_id: str) -> dict:
+    rows = supa.db_select("editor_documents", f"id=eq.{document_id}&limit=1")
+    if not rows or rows[0]["project_id"] != project_id:
+        raise HTTPException(404, "editor document not found")
+    return rows[0]
+
+
+def _editor_existing_document_filter(candidate_run_id: str, project_id: str) -> str:
+    return (f"candidate_run_id=eq.{candidate_run_id}&project_id=eq.{project_id}"
+            "&order=version.desc&limit=1")
+
+
+class EditorStartBody(BaseModel):
+    candidateRunId: UUID
+
+
+class EditorRevisionBody(BaseModel):
+    documentId: UUID
+    expectedVersion: int = Field(ge=1)
+    prompt: str = Field(min_length=1, max_length=500)
+
+
+class EditorRenderBody(BaseModel):
+    documentId: UUID
+
+
+@app.get("/projects/{project_id}/workspace")
+def customer_workspace(project_id: str, authorization: str = Header(default="")):
+    user, project = _owned_project(project_id, authorization)
+    candidates = supa.db_select(
+        "candidate_runs", f"project_id=eq.{project_id}&order=created_at.desc",
+    )
+    reports = supa.db_select(
+        "publishability_reports", f"project_id=eq.{project_id}&order=created_at.desc",
+    )
+    report_by_candidate = {row["candidate_run_id"]: row for row in reports}
+    documents = supa.db_select(
+        "editor_documents", f"project_id=eq.{project_id}&order=version.desc",
+    )
+    jobs = supa.db_select(
+        "pipeline_jobs", f"project_id=eq.{project_id}&kind=eq.final_render"
+        "&order=created_at.desc&limit=10",
+    )
+    return {
+        "project": project,
+        "candidates": [{**row, "publishability": report_by_candidate.get(row["id"])}
+                       for row in candidates],
+        "editorDocuments": documents,
+        "renderJobs": jobs,
+        "viewerUserId": user["id"],
+    }
+
+
+@app.post("/projects/{project_id}/editor/start")
+def customer_editor_start(project_id: str, body: EditorStartBody,
+                          authorization: str = Header(default="")):
+    from .product_editor import EditorDocument, document_from_candidate, renderer_timeline
+
+    user, project = _owned_project(project_id, authorization)
+    _rate_check(user["id"], "editor_write")
+    rows = supa.db_select("candidate_runs", f"id=eq.{body.candidateRunId}&limit=1")
+    if not rows or rows[0]["project_id"] != project_id or rows[0]["user_id"] != user["id"]:
+        raise HTTPException(409, "candidate ancestry does not belong to this project")
+    candidate = rows[0]
+    existing = supa.db_select(
+        "editor_documents", _editor_existing_document_filter(candidate["id"], project_id),
+    )
+    if existing:
+        return existing[0]
+    assets = supa.db_select("media_assets", f"project_id=eq.{project_id}")
+    durations = {row["id"]: float(row.get("duration_seconds") or 0) for row in assets}
+    manifest = candidate.get("manifest") or {}
+    source_ids = {str(value) for value in manifest.get("sourceAssetIds", [])}
+    if (manifest.get("fabricatedFootage") is not False or not source_ids
+            or not source_ids.issubset(durations)):
+        raise HTTPException(409, "candidate source assets are missing, foreign, or fabricated")
+    try:
+        document = document_from_candidate(project_id, candidate, durations)
+        EditorDocument(**document)
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(422, str(exc))
+    _editor_audit(user["id"], project_id, "start_editor", {"candidate": candidate["id"]})
+    timeline_existing = supa.db_select(
+        "timelines", f"project_id=eq.{project_id}&order=version.desc&limit=1",
+    )
+    timeline_version = int(timeline_existing[0]["version"] + 1) if timeline_existing else 1
+    timeline = _service_insert("timelines", {
+        "project_id": project_id, "user_id": user["id"], "version": timeline_version,
+        "timeline_json": renderer_timeline(document), "lineage": "product_editor",
+        "is_immutable": True,
+    })
+    row = _service_insert("editor_documents", {
+        "project_id": project_id, "user_id": user["id"],
+        "candidate_run_id": candidate["id"], "timeline_id": timeline["id"],
+        "version": 1, "document": document, "created_by": user["id"],
+    })
+    return row
+
+
+@app.get("/projects/{project_id}/editor/{document_id}")
+def customer_editor_get(project_id: str, document_id: UUID,
+                        authorization: str = Header(default="")):
+    user, _ = _owned_project(project_id, authorization)
+    row = _editor_document(str(document_id), project_id)
+    if row["user_id"] != user["id"]:
+        raise HTTPException(403, "editor document ownership check failed")
+    return row
+
+
+@app.post("/projects/{project_id}/editor/{document_id}/operations")
+def customer_editor_operations(project_id: str, document_id: UUID, body: dict,
+                               authorization: str = Header(default="")):
+    from .product_editor import (EditorError, OperationBatch, apply_batch,
+                                 renderer_timeline)
+
+    user, _ = _owned_project(project_id, authorization)
+    _rate_check(user["id"], "editor_write")
+    current = _editor_document(str(document_id), project_id)
+    if current["user_id"] != user["id"]:
+        raise HTTPException(403, "editor document ownership check failed")
+    try:
+        batch = OperationBatch(**body)
+    except ValidationError as exc:
+        raise HTTPException(422, exc.errors(include_url=False))
+    ai_operations = [operation for operation in batch.operations if operation.actor == "ai"]
+    if ai_operations:
+        proposal_ids = {str(operation.proposalId) for operation in ai_operations
+                        if operation.proposalId}
+        if len(proposal_ids) != 1 or len(ai_operations) != len(batch.operations):
+            raise HTTPException(422, "AI operations require one persisted revision proposal")
+        proposals = supa.db_select(
+            "editor_revision_proposals", f"id=eq.{next(iter(proposal_ids))}&limit=1",
+        )
+        submitted = [operation.model_dump(mode="json") for operation in batch.operations]
+        if (not proposals or proposals[0]["project_id"] != project_id
+                or proposals[0]["user_id"] != user["id"]
+                or proposals[0]["base_document_id"] != current["id"]
+                or proposals[0]["operations"] != submitted):
+            raise HTTPException(422, "AI operation proposal evidence is invalid")
+    elif any(operation.proposalId for operation in batch.operations):
+        raise HTTPException(422, "user operations cannot claim AI proposal evidence")
+    if batch.expectedVersion != current["version"] or any(
+            op.baseVersion != current["version"] for op in batch.operations):
+        raise HTTPException(409, {"message": "editor version conflict",
+                                  "latestDocumentId": current["id"],
+                                  "latestVersion": current["version"]})
+    latest = supa.db_select(
+        "editor_documents", f"candidate_run_id=eq.{current['candidate_run_id']}"
+        "&order=version.desc&limit=1",
+    )
+    if not latest or latest[0]["id"] != current["id"]:
+        raise HTTPException(409, {"message": "editor version conflict",
+                                  "latestDocumentId": latest[0]["id"],
+                                  "latestVersion": latest[0]["version"]})
+    try:
+        document = apply_batch(current["document"], batch.operations)
+    except EditorError as exc:
+        raise HTTPException(422, str(exc))
+    _editor_audit(user["id"], project_id, "apply_editor_operations", {
+        "base_document_id": current["id"], "operation_count": len(batch.operations),
+    })
+    timelines = supa.db_select(
+        "timelines", f"project_id=eq.{project_id}&order=version.desc&limit=1",
+    )
+    timeline = _service_insert("timelines", {
+        "project_id": project_id, "user_id": user["id"],
+        "version": int(timelines[0]["version"] + 1) if timelines else 1,
+        "timeline_json": renderer_timeline(document), "lineage": "product_editor",
+        "parent_timeline_id": current["timeline_id"], "is_immutable": True,
+    })
+    try:
+        created = _service_insert("editor_documents", {
+            "project_id": project_id, "user_id": user["id"],
+            "candidate_run_id": current["candidate_run_id"],
+            "parent_document_id": current["id"], "timeline_id": timeline["id"],
+            "version": current["version"] + 1, "document": document,
+            "created_by": user["id"],
+        })
+    except Exception as exc:
+        raise HTTPException(409, "editor version conflict; reload the latest revision") from exc
+    for index, operation in enumerate(batch.operations, 1):
+        _service_insert("editor_operations", {
+            "project_id": project_id, "user_id": user["id"],
+            "candidate_run_id": current["candidate_run_id"],
+            "base_document_id": current["id"], "result_document_id": created["id"],
+            "operation_id": str(operation.operationId), "operation_index": index,
+            "operation_type": operation.type, "target_id": operation.targetId,
+            "actor": operation.actor, "operation": operation.model_dump(mode="json"),
+            "client_timestamp": operation.timestamp.isoformat(),
+        })
+    return created
+
+
+@app.post("/projects/{project_id}/editor/revisions/propose")
+def customer_editor_propose(project_id: str, body: EditorRevisionBody,
+                            authorization: str = Header(default="")):
+    from .product_editor import EditorError, translate_revision
+
+    user, _ = _owned_project(project_id, authorization)
+    _rate_check(user["id"], "editor_revision")
+    document = _editor_document(str(body.documentId), project_id)
+    if document["user_id"] != user["id"] or document["version"] != body.expectedVersion:
+        raise HTTPException(409, "editor version conflict")
+    try:
+        proposal_id = uuid4()
+        operations = translate_revision(body.prompt, document["document"],
+                                        body.expectedVersion, proposal_id=proposal_id)
+    except EditorError as exc:
+        raise HTTPException(422, str(exc))
+    _editor_audit(user["id"], project_id, "propose_editor_revision", {
+        "document_id": document["id"], "operation_count": len(operations),
+    })
+    _service_insert("editor_revision_proposals", {
+        "id": str(proposal_id), "project_id": project_id, "user_id": user["id"],
+        "candidate_run_id": document["candidate_run_id"],
+        "base_document_id": document["id"], "prompt": body.prompt,
+        "operations": operations,
+    })
+    return {"proposalId": str(proposal_id), "documentId": document["id"],
+            "baseVersion": document["version"], "operations": operations,
+            "providerCalled": False}
+
+
+@app.post("/projects/{project_id}/editor/render")
+def customer_editor_render(project_id: str, body: EditorRenderBody,
+                           authorization: str = Header(default="")):
+    from . import jobs as job_service
+
+    user, _ = _owned_project(project_id, authorization)
+    _rate_check(user["id"], "editor_render")
+    document = _editor_document(str(body.documentId), project_id)
+    if document["user_id"] != user["id"]:
+        raise HTTPException(403, "editor document ownership check failed")
+    blockers = [item for item in document["document"].get("attribution", [])
+                if item.get("required") and not item.get("rendered")]
+    if blockers:
+        raise HTTPException(409, "export blocked: required attribution has not been rendered")
+    _editor_audit(user["id"], project_id, "render_editor_document", {
+        "document_id": document["id"], "version": document["version"],
+    })
+    try:
+        job = job_service.enqueue_job(
+            project_id, user["id"], "final_render",
+            {"timeline_id": document["timeline_id"], "editor_document_id": document["id"],
+             "editor_document_version": document["version"]},
+        )
+    except job_service.ConcurrencyLimit as exc:
+        raise HTTPException(429, str(exc))
+    _service_insert("editor_render_requests", {
+        "project_id": project_id, "user_id": user["id"],
+        "editor_document_id": document["id"], "editor_document_version": document["version"],
+        "pipeline_job_id": job["id"],
+    })
+    return job
+
+
+@app.post("/projects/{project_id}/editor/renders/{job_id}/retry")
+def customer_editor_render_retry(project_id: str, job_id: UUID,
+                                 authorization: str = Header(default="")):
+    user, _ = _owned_project(project_id, authorization)
+    rows = supa.db_select("pipeline_jobs", f"id=eq.{job_id}&limit=1")
+    if not rows or rows[0]["project_id"] != project_id or rows[0]["user_id"] != user["id"]:
+        raise HTTPException(404, "editor render job not found")
+    job = rows[0]
+    if job["kind"] != "final_render" or not (job.get("params") or {}).get("editor_document_id"):
+        raise HTTPException(409, "job is not a Product Editor export")
+    if job["status"] != "failed":
+        raise HTTPException(409, f"job is {job['status']}, not retryable")
+    if int(job.get("attempt_count") or 0) >= int(job.get("max_attempts") or 3):
+        raise HTTPException(409, "job has exhausted its retry limit")
+    _editor_audit(user["id"], project_id, "retry_editor_render", {"job_id": job["id"]})
+    supa.db_update("pipeline_jobs", f"id=eq.{job['id']}&status=eq.failed", {
+        "status": "queued", "progress": 0, "error_message": None,
+        "current_stage": "retry queued", "completed_at": None,
+    })
+    return supa.db_select("pipeline_jobs", f"id=eq.{job['id']}")[0]
+
+
+@app.post("/projects/{project_id}/editor/renders/{job_id}/sign")
+def customer_editor_render_sign(project_id: str, job_id: UUID,
+                                authorization: str = Header(default="")):
+    import httpx as _hx
+    user, _ = _owned_project(project_id, authorization)
+    rows = supa.db_select("pipeline_jobs", f"id=eq.{job_id}&limit=1")
+    if not rows or rows[0]["project_id"] != project_id or rows[0]["user_id"] != user["id"]:
+        raise HTTPException(404, "editor render job not found")
+    job = rows[0]
+    path = (job.get("artifacts") or {}).get("output")
+    expected = f"users/{user['id']}/projects/{project_id}/renders/"
+    if job["status"] != "completed" or not path or not path.startswith(expected):
+        raise HTTPException(409, "completed export is not available")
+    _editor_audit(user["id"], project_id, "sign_editor_export", {"job_id": job["id"]})
+    response = _hx.post(
+        f"{supa.SUPABASE_URL}/storage/v1/object/sign/exports/{path}",
+        headers={"apikey": supa.SERVICE_KEY,
+                 "Authorization": f"Bearer {supa.SERVICE_KEY}",
+                 "Content-Type": "application/json"},
+        json={"expiresIn": 3600}, timeout=30,
+    )
+    if response.status_code != 200:
+        raise HTTPException(404, "export could not be signed")
+    return {"url": f"{supa.SUPABASE_URL}/storage/v1{response.json()['signedURL']}",
+            "expiresIn": 3600}
+
+
 class SignBody(BaseModel):
     bucket: str
     path: str

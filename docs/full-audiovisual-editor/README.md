@@ -15,5 +15,8 @@ contract recorded.
 5. [Motion graphics, captions, and color finishing](MILESTONE-5.md)
 6. [Editorial intelligence, specialized critics, tournament selection, and human-ceiling comparison](MILESTONE-6.md)
 
+The customer-facing workflow that consumes a Milestone 6 candidate is
+documented in [Product Editor Phase 1](../product-editor/PHASE-1.md).
+
 Project One's existing outputs remain baseline evidence. No file under a local
 Project One artifact directory belongs in Git.

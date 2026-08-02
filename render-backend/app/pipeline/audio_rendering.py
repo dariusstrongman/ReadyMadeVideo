@@ -411,6 +411,7 @@ def _apply_source_gains(timeline: dict, instructions: list[dict]) -> dict:
 def render_completed_mix(
     candidate: PictureCandidateSummary, sources: dict[str, str], music_path: str,
     plan: MusicPlan, match: TrackMatch, output_path: str, workdir: str,
+    music_gain_db: float = -8.0,
 ) -> tuple[dict, list[DuckingEnvelope]]:
     duration = candidate.durationSeconds
     ducking = merge_ducking_envelopes(
@@ -429,7 +430,7 @@ def render_completed_mix(
         "aresample=48000,aformat=channel_layouts=stereo,afade=t=in:st=0:d=0.05[src];"
         f"[1:a]atrim=start={match.musicSourceStartSeconds:.3f}:"
         f"end={match.musicSourceEndSeconds:.3f},asetpts=PTS-STARTPTS,"
-        "aresample=48000,aformat=channel_layouts=stereo,volume=-8dB,"
+        f"aresample=48000,aformat=channel_layouts=stereo,volume={music_gain_db:.3f}dB,"
         f"volume='{expression}':eval=frame,"
         f"afade=t=in:st=0:d={plan.fades.musicFadeInSeconds:.3f},"
         f"afade=t=out:st={fade_out_start:.3f}:d={plan.fades.musicFadeOutSeconds:.3f}[music];"
