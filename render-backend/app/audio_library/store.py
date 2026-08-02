@@ -128,7 +128,13 @@ class ManifestStore:
         lines = ["# Audio attribution report", "", f"Eligible assets: {len(assets)}", ""]
         for item in assets:
             if item.attributionRequired:
-                lines.extend([f"## {item.filename}", "", item.attributionText or "", f"License: {item.licenseUrl}", ""])
+                lines.extend([
+                    f"## {item.title}", "",
+                    f"Source: {item.sourceUrl}",
+                    f"Creator: {item.creatorName}",
+                    f"License: {item.licenseName} ({item.licenseUrl})",
+                    f"Attribution: {item.attributionText or ''}", "",
+                ])
         _atomic_write(self.paths.root / "attribution-report.md", "\n".join(lines).rstrip() + "\n")
         return report
 

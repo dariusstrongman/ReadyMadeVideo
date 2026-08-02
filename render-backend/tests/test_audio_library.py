@@ -64,10 +64,14 @@ def asset(asset_id: str = "one", **overrides):
     return ProviderAsset(**data)
 
 
-def make_tone(path: Path, *, codec: str | None = None, frequency: int = 440) -> None:
+def make_tone(
+    path: Path, *, codec: str | None = None, frequency: int = 440,
+    duration: float = 0.25,
+) -> None:
     command = [
         "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
-        f"sine=frequency={frequency}:duration=0.25", "-ar", "48000", "-ac", "1",
+        f"sine=frequency={frequency}:duration={duration}",
+        "-ar", "48000", "-ac", "1",
     ]
     if codec:
         command.extend(["-c:a", codec])
@@ -92,6 +96,20 @@ class FileProvider:
         return DownloadResult(destination, self.content_type, destination.stat().st_size, str(item.sourceUrl))
 
 
+class ChunkStream(httpx.SyncByteStream):
+    def __init__(self, chunks: list[bytes]):
+        self.chunks = chunks
+
+    def __iter__(self):
+        yield from self.chunks
+
+
+class InterruptedStream(httpx.SyncByteStream):
+    def __iter__(self):
+        yield b"partial"
+        raise httpx.ReadError("connection dropped during body")
+
+
 @pytest.fixture
 def store(tmp_path):
     return ManifestStore(AudioLibraryPaths(tmp_path / "audio"))
@@ -113,6 +131,26 @@ def test_accepts_cc_by_with_complete_attribution():
     decision = LicensePolicy().evaluate(item)
     assert decision.accepted is True
     assert decision.attributionRequired is True
+
+
+@pytest.mark.parametrize(
+    ("license_name", "license_url"),
+    [
+        ("CC BY-SA 4.0", "https://creativecommons.org/licenses/by-sa/4.0/"),
+        ("GNU General Public License v3", "https://www.gnu.org/licenses/gpl-3.0.html"),
+    ],
+    ids=["cc-by-sa", "gpl-copyleft"],
+)
+def test_rejects_share_alike_and_other_copyleft_licenses(
+    license_name, license_url,
+):
+    decision = LicensePolicy().evaluate(asset(
+        licenseName=license_name,
+        licenseUrl=license_url,
+        attributionText="Complete attribution supplied",
+    ))
+    assert decision.accepted is False
+    assert decision.reasonCode == "copyleft_license"
 
 
 @pytest.mark.parametrize(
@@ -199,6 +237,30 @@ def test_real_ffmpeg_ingestion_and_normalization(store, tmp_path):
     assert manifest.licenseApprovalReference == "policy:cc0-1.0"
     assert manifest.originalFilename == "one.wav"
     assert manifest.sourceSampleRate == 48000
+
+
+def test_cc_by_manifest_and_report_include_structured_tasl_fields(store, tmp_path):
+    source = tmp_path / "credited.wav"
+    make_tone(source)
+    credited = asset(
+        title="Steel impact",
+        licenseName="CC BY 4.0",
+        licenseUrl="https://creativecommons.org/licenses/by/4.0/",
+        attributionText="Provider-supplied credit",
+    )
+    AudioIngestor(store=store, policy=LicensePolicy(), clock=lambda: FIXED_TIME).ingest(
+        FileProvider({"one": source}), [credited],
+    )
+    manifest = store.load_manifests()[0]
+    assert manifest.title == "Steel impact"
+    assert manifest.providerAttributionText == "Provider-supplied credit"
+    assert str(credited.sourceUrl) in manifest.attributionText
+    assert "Creator" in manifest.attributionText
+    assert "CC BY 4.0" in manifest.attributionText
+    report = (store.paths.root / "attribution-report.md").read_text(encoding="utf-8")
+    assert "## Steel impact" in report
+    assert f"Source: {credited.sourceUrl}" in report
+    assert "Creator: Creator" in report
 
 
 def test_source_identity_duplicate_does_not_download_again(store, tmp_path):
@@ -381,6 +443,129 @@ def test_freesound_retries_transport_error():
     assert calls == 2
 
 
+def test_freesound_download_streams_to_disk_without_full_buffering(tmp_path):
+    def handler(request):
+        return httpx.Response(
+            200, headers={"content-type": "audio/wav", "content-length": "6"},
+            stream=ChunkStream([b"ab", b"cd", b"ef"]), request=request,
+        )
+
+    provider = FreesoundProvider(
+        api_key="test-api-key", oauth_token="test-oauth-token",  # noqa: S106
+        commercial_api_approved=True, approval_reference="contract",
+        terms_reviewed_at="2026-08-02",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        rate_limit_seconds=0, max_download_bytes=6,
+    )
+    destination = tmp_path / "streamed.wav"
+    result = provider.download(
+        asset(sourceProvider="freesound", sourceAssetId="123"), destination,
+    )
+    assert result.size_bytes == 6
+    assert destination.read_bytes() == b"abcdef"
+    assert not destination.with_name("streamed.wav.part").exists()
+
+
+def test_freesound_running_limit_stops_stream_and_cleans_partial_file(tmp_path):
+    def handler(request):
+        return httpx.Response(
+            200, headers={"content-type": "audio/wav"},
+            stream=ChunkStream([b"123", b"456"]), request=request,
+        )
+
+    provider = FreesoundProvider(
+        api_key="test-api-key", oauth_token="test-oauth-token",  # noqa: S106
+        commercial_api_approved=True, approval_reference="contract",
+        terms_reviewed_at="2026-08-02",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        rate_limit_seconds=0, max_download_bytes=5,
+    )
+    destination = tmp_path / "blocked.wav"
+    with pytest.raises(ValueError, match="maximum size"):
+        provider.download(
+            asset(sourceProvider="freesound", sourceAssetId="123"), destination,
+        )
+    assert not destination.exists()
+    assert not destination.with_name("blocked.wav.part").exists()
+
+
+def test_streamed_download_preserves_retry_and_safe_redirect_handling(tmp_path):
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        if len(calls) == 1:
+            return httpx.Response(429, headers={"retry-after": "0"}, request=request)
+        if len(calls) == 2:
+            return httpx.Response(
+                302, headers={"location": "https://cdn.freesound.org/audio.wav"},
+                request=request,
+            )
+        return httpx.Response(
+            200, headers={"content-type": "audio/wav"},
+            stream=ChunkStream([b"safe"]), request=request,
+        )
+
+    provider = FreesoundProvider(
+        api_key="test-api-key", oauth_token="test-oauth-token",  # noqa: S106
+        commercial_api_approved=True, approval_reference="contract",
+        terms_reviewed_at="2026-08-02",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        retries=1, rate_limit_seconds=0, max_download_bytes=10,
+        sleep=lambda _: None,
+    )
+    destination = tmp_path / "retried.wav"
+    provider.download(
+        asset(sourceProvider="freesound", sourceAssetId="123"), destination,
+    )
+    assert destination.read_bytes() == b"safe"
+    assert len(calls) == 3
+    assert calls[-1] == "https://cdn.freesound.org/audio.wav"
+
+
+def test_streamed_download_retries_mid_body_failure_from_clean_file(tmp_path):
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        stream = InterruptedStream() if calls == 1 else ChunkStream([b"complete"])
+        return httpx.Response(
+            200, headers={"content-type": "audio/wav"},
+            stream=stream, request=request,
+        )
+
+    provider = FreesoundProvider(
+        api_key="test-api-key", oauth_token="test-oauth-token",  # noqa: S106
+        commercial_api_approved=True, approval_reference="contract",
+        terms_reviewed_at="2026-08-02",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        retries=1, rate_limit_seconds=0, max_download_bytes=20,
+        sleep=lambda _: None,
+    )
+    destination = tmp_path / "recovered.wav"
+    provider.download(
+        asset(sourceProvider="freesound", sourceAssetId="123"), destination,
+    )
+    assert calls == 2
+    assert destination.read_bytes() == b"complete"
+    assert not destination.with_name("recovered.wav.part").exists()
+
+
+def test_manual_import_uses_same_running_limit_and_cleans_partial_file(tmp_path):
+    source_root = tmp_path / "manual"
+    source_root.mkdir()
+    (source_root / "large.wav").write_bytes(b"123456")
+    provider = ManualImportProvider(source_root, max_download_bytes=5)
+    destination = tmp_path / "copy.wav"
+    with pytest.raises(ValueError, match="maximum size"):
+        provider.download(
+            asset(filename="large.wav", localSourcePath="large.wav"), destination,
+        )
+    assert not destination.exists()
+    assert not destination.with_name("copy.wav.part").exists()
+
+
 def test_resume_skips_completed_identity(store, tmp_path):
     source = tmp_path / "tone.wav"
     make_tone(source)
@@ -406,20 +591,30 @@ def test_reports_are_deterministic(store, tmp_path):
 
 def test_milestone_three_adapter_returns_license_provenance(store, tmp_path):
     source = tmp_path / "music.wav"
+    alternate_source = tmp_path / "alternate.wav"
     make_tone(source)
+    make_tone(alternate_source, frequency=880)
     music = asset(
         assetType="music", category="energetic", durationSeconds=0.2,
         mood=["energetic"], bpm=120, filename="music.wav",
     )
+    alternate = asset(
+        "two", assetType="music", category="energetic", durationSeconds=0.2,
+        mood=["energetic"], bpm=128, filename="alternate.wav",
+    )
     AudioIngestor(store=store, policy=LicensePolicy(), clock=lambda: FIXED_TIME).ingest(
-        FileProvider({"one": source}), [music]
+        FileProvider({"one": source, "two": alternate_source}), [alternate, music]
     )
     results = AudioLibraryAdapter(store).search_for_music_plan({
         "pictureDurationSeconds": 0.2,
         "trackBrief": {"tone": ["energetic"], "tempoBpm": 120, "energyArc": [{"energy": 0.8}]},
     })
     assert results[0]["assetId"].startswith("aud_")
+    assert results[0]["sourceAssetId"] == "one"
     assert results[0]["licenseUrl"].endswith("/zero/1.0/")
+    assert results[0]["attributionRequired"] is False
+    assert results[0]["attributionStatus"] == "not_required"
+    assert results[0]["attribution"]["sourceUrl"].endswith("/assets/one")
     assert len(results[0]["sha256"]) == 64
 
 

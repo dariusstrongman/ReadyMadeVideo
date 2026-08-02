@@ -33,6 +33,16 @@ def _safe_stem(filename: str) -> str:
     return value[:80] or "audio"
 
 
+def _tasl_attribution(asset: ProviderAsset, license_name: str, license_url: str) -> str:
+    title = asset.title or Path(asset.filename).stem
+    creator = asset.creatorName or "Unknown creator"
+    creator_ref = f" ({asset.creatorUrl})" if asset.creatorUrl else ""
+    return (
+        f'"{title}" by {creator}{creator_ref}. '
+        f"Source: {asset.sourceUrl}. Licensed under {license_name} ({license_url})."
+    )
+
+
 class AudioIngestor:
     def __init__(
         self,
@@ -181,6 +191,7 @@ class AudioIngestor:
                     assetId=asset_id,
                     filename=filename,
                     originalFilename=asset.filename,
+                    title=asset.title or Path(asset.filename).stem,
                     assetType=asset.assetType,
                     category=asset.category,
                     sourceProvider=asset.sourceProvider,
@@ -191,7 +202,12 @@ class AudioIngestor:
                     licenseName=decision.licenseName,
                     licenseUrl=decision.licenseUrl or "",
                     attributionRequired=decision.attributionRequired,
-                    attributionText=decision.attributionText,
+                    attributionText=(
+                        _tasl_attribution(
+                            asset, decision.licenseName, decision.licenseUrl or "",
+                        ) if decision.attributionRequired else decision.attributionText
+                    ),
+                    providerAttributionText=asset.attributionText,
                     providerTermsUrl=str(terms.termsUrl),
                     providerTermsReviewedAt=terms.reviewedAt,
                     providerApprovalReference=terms.approvalReference or "",

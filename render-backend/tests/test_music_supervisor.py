@@ -3,6 +3,10 @@ import copy
 
 import pytest
 
+from app.audio_library.ingestion import AudioIngestor
+from app.audio_library.integration import AudioLibraryAdapter
+from app.audio_library.licenses import LicensePolicy
+from app.audio_library.store import AudioLibraryPaths, ManifestStore
 from app.pipeline.creative_director import (
     CreativeTreatment,
     EnergyPoint,
@@ -11,6 +15,7 @@ from app.pipeline.creative_director import (
 from app.pipeline.music_supervisor import MusicSupervisorError, build_music_plan
 from app.pipeline.picture_editor import PictureCandidateSummary
 from app.pipeline.schemas import Segment
+from tests.test_audio_library import FIXED_TIME, FileProvider, asset, make_tone
 
 
 def segment(sid, *, action, uses, audio=0.8, transcript=None):
@@ -143,6 +148,43 @@ def test_plan_excludes_later_departments(evidence):
     assert any("planning instructions only" in boundary for boundary in plan["boundaries"])
     assert not ({"captionPlan", "motionGraphicsPlan", "colorGrade",
                  "specializedCritics", "tournamentSelection"} & plan.keys())
+
+
+def test_milestone_three_selects_deterministic_eligible_asset_with_provenance(
+    evidence, tmp_path,
+):
+    paths = AudioLibraryPaths(tmp_path / "audio")
+    store = ManifestStore(paths)
+    source = tmp_path / "credited-music.wav"
+    make_tone(source, duration=18.2)
+    music = asset(
+        assetType="music", category="energetic", filename=source.name,
+        title="Credited pulse", mood=["intense"], energy=0.7, bpm=134,
+        licenseName="CC BY 4.0",
+        licenseUrl="https://creativecommons.org/licenses/by/4.0/",
+        attributionText="Credited pulse by Creator, CC BY 4.0",
+    )
+    AudioIngestor(
+        store=store, policy=LicensePolicy(), clock=lambda: FIXED_TIME,
+    ).ingest(FileProvider({"one": source}), [music])
+    treatment, candidate, segments = evidence
+    adapter = AudioLibraryAdapter(store)
+    first = build_music_plan(
+        "preprod-1", "picture-1", treatment, candidate, segments,
+        audio_library=adapter,
+    )
+    second = build_music_plan(
+        "preprod-1", "picture-1", treatment, candidate, segments,
+        audio_library=adapter,
+    )
+    assert first.libraryAssetSelection == second.libraryAssetSelection
+    selection = first.libraryAssetSelection
+    assert selection["licenseEligible"] is True
+    assert selection["validationStatus"] == "accepted"
+    assert selection["attributionStatus"] == "requires_attribution"
+    assert selection["attribution"]["title"] == "Credited pulse"
+    assert selection["attribution"]["creator"] == "Creator"
+    assert selection["sourceAssetId"] == "one"
 
 
 def test_invalid_or_missing_picture_evidence_is_rejected(evidence):

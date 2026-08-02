@@ -34,6 +34,7 @@ class ProviderAsset(BaseModel):
     sourceUrl: HttpUrl
     sourceAssetId: str = Field(min_length=1, max_length=200)
     filename: str = Field(min_length=1, max_length=255)
+    title: str | None = Field(default=None, max_length=255)
     creatorName: str | None = None
     creatorUrl: HttpUrl | None = None
     licenseName: str = Field(min_length=1)
@@ -146,6 +147,7 @@ class AssetManifest(BaseModel):
     assetId: str
     filename: str
     originalFilename: str
+    title: str
     assetType: AssetType
     category: str
     sourceProvider: str
@@ -157,6 +159,7 @@ class AssetManifest(BaseModel):
     licenseUrl: str
     attributionRequired: bool
     attributionText: str | None
+    providerAttributionText: str | None
     commercialUseAllowed: Literal[True] = True
     modificationAllowed: Literal[True] = True
     providerTermsUrl: str
