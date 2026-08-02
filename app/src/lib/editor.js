@@ -1,4 +1,4 @@
-import { RENDER_API } from './supabase'
+import { RENDER_API } from './config'
 
 export async function editorApi(path, session, options = {}) {
   const response = await fetch(`${RENDER_API}${path}`, {
