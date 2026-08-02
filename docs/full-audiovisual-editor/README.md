@@ -9,7 +9,7 @@ earlier contract, but it must not silently change or overwrite the evidence that
 contract recorded.
 
 1. [Creative Treatment and capture report](MILESTONE-1.md)
-2. Better picture editing
+2. [Deterministic picture editor](MILESTONE-2.md)
 3. Music and sound
 4. Graphics and color
 5. Specialized critics and tournament selection

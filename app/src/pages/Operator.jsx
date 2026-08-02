@@ -95,6 +95,7 @@ function ProjectDetail({ project, session }) {
   const [jobs, setJobs] = useState([])
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
+  const [artifactRefresh, setArtifactRefresh] = useState(0)
 
   const refresh = useCallback(async () => {
     const [{ data: prof }, { data: a }, { data: j }] = await Promise.all([
@@ -109,7 +110,7 @@ function ProjectDetail({ project, session }) {
 
   async function act(label, fn) {
     setErr(''); setMsg('')
-    try { await fn(); setMsg(`${label}: ok`); await refresh() }
+    try { await fn(); setMsg(`${label}: ok`); setArtifactRefresh((value) => value + 1); await refresh() }
     catch (e) { setErr(`${label}: ${e.message}`) }
   }
   const post = (path, body) => api(session, 'POST', path, body)
@@ -133,6 +134,9 @@ function ProjectDetail({ project, session }) {
             purpose: prompt('Purpose?') || 'cinematic fitness recap',
             targetPlatform: 'vertical',
           }))}>Build creative treatment</button>
+        <button className="btn btn-secondary" onClick={() => act('picture edit',
+          () => post(`/projects/${project.id}/picture-edit`, {}))}>
+          Build picture candidates</button>
         <button className="btn btn-secondary" onClick={() => act('generate draft',
           () => post(`/projects/${project.id}/generate-draft`,
             { params: { brief: prompt('Creative brief?') || project.name } }))}>Generate draft</button>
@@ -172,7 +176,8 @@ function ProjectDetail({ project, session }) {
 
       <ArtifactsSection project={project} assets={assets} />
       <SegmentsSection project={project} session={session} act={act} post={post} />
-      <PreproductionSection project={project} />
+      <PreproductionSection project={project} refreshKey={artifactRefresh} />
+      <PictureEditSection project={project} refreshKey={artifactRefresh} />
       <BlueprintSection project={project} />
       <TimelinesSection project={project} session={session} act={act} post={post} />
       <HumanCeilingSection project={project} session={session} />
@@ -263,13 +268,13 @@ function SegmentsSection({ project, session, act, post }) {
   )
 }
 
-function PreproductionSection({ project }) {
+function PreproductionSection({ project, refreshKey }) {
   const [run, setRun] = useState(null)
   useEffect(() => {
     supabase.from('preproduction_runs').select('*').eq('project_id', project.id)
       .order('version', { ascending: false }).limit(1)
       .then(({ data }) => setRun(data?.[0] || null))
-  }, [project.id])
+  }, [project.id, refreshKey])
   if (!run) return (
     <Section title="Creative Treatment + capture ceiling + story variants">
       <p className="sub">No Milestone 1 preproduction run yet.</p>
@@ -296,6 +301,46 @@ function PreproductionSection({ project }) {
           <span className={`badge ${variant.valid ? 'completed' : 'failed'}`}>
             {variant.valid ? 'supported' : 'unsupported'}
           </span>
+        </div>
+      ))}
+    </Section>
+  )
+}
+
+function PictureEditSection({ project, refreshKey }) {
+  const [run, setRun] = useState(null)
+  useEffect(() => {
+    supabase.from('picture_edit_runs').select('*').eq('project_id', project.id)
+      .order('version', { ascending: false }).limit(1)
+      .then(({ data }) => setRun(data?.[0] || null))
+  }, [project.id, refreshKey])
+  if (!run) return (
+    <Section title="Milestone 2 picture edit · visual rhythm + three candidates">
+      <p className="sub">Build a Creative Treatment first, then generate picture-only candidates.</p>
+    </Section>
+  )
+  return (
+    <Section title={`Picture edit v${run.version} — ${run.status}`} defaultOpen>
+      <p className="small">Picture-only timelines. No music, sound design, graphics, captions,
+        color, or critic output has been added.</p>
+      {(run.warnings || []).map((warning) => <div className="err" key={warning}>{warning}</div>)}
+      <h3 className="small" style={{ fontWeight: 700 }}>Visual rhythm plans</h3>
+      <Json data={run.visual_rhythm_plans} />
+      <h3 className="small" style={{ fontWeight: 700 }}>Picture-edit candidates</h3>
+      {(run.candidates || []).map((candidate) => (
+        <div className="list-item" key={candidate.candidateId} style={{ marginBottom: 8 }}>
+          <div style={{ flex: 1 }}>
+            <b className="small">{candidate.label}</b>
+            <div className="small mono">{candidate.storyVariantId} · {candidate.clipCount} clips ·
+              {' '}{candidate.durationSeconds}s · score {candidate.editorialScore}</div>
+            <div className="small">coverage {(candidate.coverageRatio * 100).toFixed(0)}%
+              {candidate.rejectionReasons?.length
+                ? ` · ${candidate.rejectionReasons.join('; ')}` : ''}</div>
+          </div>
+          {run.selected_candidate_id === candidate.candidateId &&
+            <span className="badge processing">selected default</span>}
+          <span className={`badge ${candidate.valid ? 'completed' : 'failed'}`}>
+            {candidate.valid ? 'supported' : 'unsupported'}</span>
         </div>
       ))}
     </Section>

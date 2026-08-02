@@ -23,6 +23,7 @@ import shutil
 import tempfile
 from datetime import datetime, timezone
 from typing import Literal
+from uuid import UUID
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -1134,6 +1135,109 @@ def op_preproduction(project_id: str, body: PreproductionBody,
     )
     if response.status_code == 409:
         raise HTTPException(409, "preproduction version conflict; retry")
+    response.raise_for_status()
+    saved = response.json()[0]
+    return {"id": saved["id"], "version": version, **package.model_dump()}
+
+
+class PictureEditBody(BaseModel):
+    preproductionRunId: UUID | None = None
+
+
+@app.post("/projects/{project_id}/picture-edit")
+def op_picture_edit(project_id: str, body: PictureEditBody,
+                    authorization: str = Header(default="")):
+    """Build three Milestone 2 picture candidates without rendering or finishing."""
+    import httpx as _hx
+
+    from .pipeline.capture_quality import CaptureQualityReport
+    from .pipeline.composition import CompositionMetrics
+    from .pipeline.creative_director import CreativeTreatment
+    from .pipeline.picture_editor import (
+        PictureEditorError,
+        build_picture_edit_package,
+    )
+    from .pipeline.schemas import Segment as Seg
+    from .pipeline.story_editor import StoryVariantSet
+
+    op = _require_operator(authorization)
+    _rate_check(op["id"], "picture_edit")
+    project = _get_project(project_id)
+    segment_rows = supa.db_select("segments", f"project_id=eq.{project_id}")
+    if not segment_rows:
+        raise HTTPException(409, "segment catalog required - run analysis first")
+
+    if body.preproductionRunId:
+        preproduction_rows = supa.db_select(
+            "preproduction_runs", f"id=eq.{body.preproductionRunId}&limit=1",
+        )
+    else:
+        preproduction_rows = supa.db_select(
+            "preproduction_runs",
+            f"project_id=eq.{project_id}&order=version.desc&limit=1",
+        )
+    if not preproduction_rows or preproduction_rows[0]["project_id"] != project_id:
+        raise HTTPException(409, "Milestone 1 preproduction run required")
+    preproduction = preproduction_rows[0]
+
+    def _json_value(key: str):
+        value = preproduction[key]
+        return json.loads(value) if isinstance(value, str) else value
+
+    try:
+        treatment = CreativeTreatment(**_json_value("creative_treatment"))
+        capture = CaptureQualityReport(**_json_value("capture_quality_report"))
+        composition = {
+            key: CompositionMetrics(**value)
+            for key, value in _json_value("composition_by_segment").items()
+        }
+        variants = StoryVariantSet(**_json_value("story_variants"))
+        package = build_picture_edit_package(
+            preproduction["id"], treatment, capture, composition, variants,
+            [Seg(**row["data"]) for row in segment_rows],
+        )
+    except (ValidationError, PictureEditorError, ValueError) as exc:
+        detail = exc.errors(include_url=False) if isinstance(exc, ValidationError) else str(exc)
+        raise HTTPException(422, detail)
+
+    existing = supa.db_select(
+        "picture_edit_runs",
+        f"project_id=eq.{project_id}&order=version.desc&limit=1",
+    )
+    version = (existing[0]["version"] + 1) if existing else 1
+    _audit(op, "create_picture_edit", project_id, {
+        "version": version,
+        "preproduction_run_id": preproduction["id"],
+        "status": package.status,
+        "selected_candidate_id": package.selectedCandidateId,
+    })
+    payload = {
+        "project_id": project_id,
+        "user_id": project["user_id"],
+        "preproduction_run_id": preproduction["id"],
+        "version": version,
+        "status": package.status,
+        "request": body.model_dump(mode="json"),
+        "visual_rhythm_plans": {
+            key: value.model_dump() for key, value in package.visualRhythmPlans.items()
+        },
+        "candidates": [candidate.model_dump() for candidate in package.candidates],
+        "selected_candidate_id": package.selectedCandidateId,
+        "warnings": package.warnings,
+    }
+    response = _hx.post(
+        f"{supa.SUPABASE_URL}/rest/v1/picture_edit_runs",
+        headers={
+            "apikey": supa.SERVICE_KEY,
+            "Authorization": f"Bearer {supa.SERVICE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        },
+        json=payload,
+        timeout=30,
+    )
+    if response.status_code == 409:
+        raise HTTPException(409, "picture-edit version conflict; retry")
     response.raise_for_status()
     saved = response.json()[0]
     return {"id": saved["id"], "version": version, **package.model_dump()}
