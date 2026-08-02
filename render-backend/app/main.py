@@ -23,6 +23,7 @@ import shutil
 import tempfile
 from datetime import datetime, timezone
 from typing import Literal
+from uuid import UUID
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -1140,7 +1141,7 @@ def op_preproduction(project_id: str, body: PreproductionBody,
 
 
 class PictureEditBody(BaseModel):
-    preproductionRunId: str | None = None
+    preproductionRunId: UUID | None = None
 
 
 @app.post("/projects/{project_id}/picture-edit")
@@ -1216,7 +1217,7 @@ def op_picture_edit(project_id: str, body: PictureEditBody,
         "preproduction_run_id": preproduction["id"],
         "version": version,
         "status": package.status,
-        "request": body.model_dump(),
+        "request": body.model_dump(mode="json"),
         "visual_rhythm_plans": {
             key: value.model_dump() for key, value in package.visualRhythmPlans.items()
         },

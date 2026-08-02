@@ -276,6 +276,39 @@ def test_operator_creates_versioned_audited_picture_candidates(env):
     assert [row["version"] for row in env.fake.tables["picture_edit_runs"]] == [1, 2]
 
 
+def test_picture_edit_accepts_valid_preproduction_uuid(env):
+    preproduction = _create_preproduction(env)
+    response = env.client.post(
+        f"/projects/{env.project['id']}/picture-edit",
+        json={"preproductionRunId": preproduction["id"]},
+        headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 200, response.text
+    assert env.fake.tables["picture_edit_runs"][0]["preproduction_run_id"] == (
+        preproduction["id"]
+    )
+
+
+def test_picture_edit_rejects_malformed_preproduction_uuid_with_422(env):
+    response = env.client.post(
+        f"/projects/{env.project['id']}/picture-edit",
+        json={"preproductionRunId": "not-a-uuid"},
+        headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 422
+    assert env.fake.tables["picture_edit_runs"] == []
+
+
+def test_picture_edit_rejects_query_injection_as_invalid_uuid(env):
+    response = env.client.post(
+        f"/projects/{env.project['id']}/picture-edit",
+        json={"preproductionRunId": "00000000-0000-0000-0000-000000000001&or=(id.neq.x)"},
+        headers=env.h(env.operator[1]),
+    )
+    assert response.status_code == 422
+    assert env.fake.tables["picture_edit_runs"] == []
+
+
 def test_picture_edit_requires_operator_catalog_and_preproduction(env):
     path = f"/projects/{env.project['id']}/picture-edit"
     assert env.client.post(path, json={}).status_code == 401
