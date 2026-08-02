@@ -32,13 +32,20 @@ No trim extension, generated insert, or fabricated footage is permitted.
 
 The tournament stores all `n × (n-1) / 2` pairwise comparisons before running a
 deterministic elimination bracket. Ties are resolved by stable candidate key.
-Each comparison records score deltas and decisive evidence. The winner retains
-the complete bracket and winner reasoning.
+Every tie is labeled and records the rule
+`lexicographically_greater_candidate_key` plus the winning key. Candidate input
+order is canonicalized before pairwise comparison, so shuffling inputs cannot
+change the matrix, bracket, or winner. Each comparison records score deltas and
+decisive evidence. The winner retains the complete bracket and winner reasoning.
 
 Publishability reports score hook quality, pacing, emotional payoff, clarity,
 graphics, captions, music fit, audio, and technical QC. The weighted overall
 score is publishable only at 75 or higher with technical QC passing and no
-blocking issue.
+blocking issue. Rendered-media integrity is a separate mandatory gate. Video and
+audio streams must both exist, rendered duration must match the candidate
+timeline within 0.15 seconds, and render QC must contain no explicit blocking
+failure. A candidate that fails this gate is non-publishable and cannot enter
+the eligible tournament bracket, regardless of its editorial score.
 
 ## Human-ceiling comparison
 

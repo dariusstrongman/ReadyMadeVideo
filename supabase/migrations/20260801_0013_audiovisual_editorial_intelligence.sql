@@ -61,10 +61,21 @@ create table if not exists public.publishability_reports (
   publishable boolean not null,
   blocking_issues jsonb not null,
   technical_qc_passed boolean not null,
+  rendered_media_qc_passed boolean not null default false,
+  tournament_eligible boolean not null default false,
+  rendered_media_qc jsonb not null default '{}'::jsonb,
   created_by uuid not null references auth.users(id) on delete restrict,
   created_at timestamptz not null default clock_timestamp(),
+  check (not publishable or
+         (technical_qc_passed and rendered_media_qc_passed and tournament_eligible)),
+  check (not tournament_eligible or rendered_media_qc_passed),
   unique (candidate_run_id, version)
 );
+
+alter table public.publishability_reports
+  add column if not exists rendered_media_qc_passed boolean not null default false,
+  add column if not exists tournament_eligible boolean not null default false,
+  add column if not exists rendered_media_qc jsonb not null default '{}'::jsonb;
 
 create table if not exists public.tournament_runs (
   id uuid primary key default gen_random_uuid(),
@@ -156,7 +167,7 @@ end $$;
 
 create or replace function public.enforce_tournament_refs()
 returns trigger language plpgsql security definer set search_path=public as $$
-declare cid uuid; c record; base record;
+declare cid uuid; c record; base record; winner_eligible boolean;
 begin
   select project_id,user_id,preproduction_run_id,picture_edit_run_id,music_sound_run_id,
          audio_mix_run_id,graphics_run_id,caption_run_id into base
@@ -169,6 +180,13 @@ begin
     raise exception 'tournament ancestry is outside Milestones 1-5';
   end if;
   if not new.winner_candidate_run_id=any(new.candidate_run_ids) then raise exception 'winner is outside tournament'; end if;
+  select tournament_eligible into winner_eligible
+    from public.publishability_reports
+    where candidate_run_id=new.winner_candidate_run_id and batch_id=new.batch_id
+    order by version desc limit 1;
+  if winner_eligible is distinct from true then
+    raise exception 'tournament winner failed rendered-media eligibility';
+  end if;
   foreach cid in array new.candidate_run_ids loop
     select batch_id,project_id,user_id,color_run_id into c from public.candidate_runs where id=cid;
     if c.batch_id is null or (c.batch_id,c.project_id,c.user_id,c.color_run_id) is distinct from

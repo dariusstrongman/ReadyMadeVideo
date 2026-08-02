@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 import os
 import statistics
 import subprocess
@@ -39,6 +40,10 @@ from .visual_finishing import (
 
 class EditorialIntelligenceError(ValueError):
     pass
+
+
+RENDER_DURATION_TOLERANCE_SECONDS = 0.15
+TIEBREAK_RULE = "lexicographically_greater_candidate_key"
 
 
 CriticKind = Literal[
@@ -141,16 +146,22 @@ class PublishabilityReport(BaseModel):
     publishable: bool
     blockingIssues: list[str]
     technicalQcPassed: bool
+    renderedMediaQcPassed: bool
+    tournamentEligible: bool
+    renderedMediaQc: dict
 
 
 class PairwiseComparison(BaseModel):
     leftCandidateKey: str
     rightCandidateKey: str
-    winnerCandidateKey: str
+    winnerCandidateKey: str | None
     leftScore: float
     rightScore: float
     dimensionDeltas: dict[str, float]
     decisiveEvidence: list[str]
+    tieOccurred: bool = False
+    tiebreakRule: str | None = None
+    tournamentEligibilityApplied: bool = False
 
 
 class TournamentMatch(BaseModel):
@@ -168,6 +179,7 @@ class TournamentResult(BaseModel):
     pairwiseComparisons: list[PairwiseComparison]
     bracket: list[TournamentMatch]
     eliminatedCandidateKeys: list[str]
+    ineligibleCandidateKeys: list[str]
     winnerCandidateKey: str
     winnerReasoning: list[str]
 
@@ -623,11 +635,59 @@ def build_publishability_report(candidate: CompleteCandidateManifest,
     overall = round(sum(dimensions[key].score * weight for key, weight in weights.items()), 3)
     blockers = [f"{item.criticKind}: {issue}" for item in critics for issue in item.issues]
     technical = dimensions["technical_qc"].score >= 70
+    expected_duration = float(candidate.pictureTimeline.get("duration") or 0)
+    actual_duration_raw = candidate.renderQc.get("durationSeconds")
+    try:
+        actual_duration = float(actual_duration_raw)
+    except (TypeError, ValueError):
+        actual_duration = None
+    if actual_duration is not None and (not math.isfinite(actual_duration)
+                                        or actual_duration <= 0):
+        actual_duration = None
+    duration_delta = (None if actual_duration is None else
+                      abs(actual_duration - expected_duration))
+    render_blockers = []
+    if candidate.renderQc.get("videoStreamPresent") is not True:
+        render_blockers.append("render_qc: missing_video_stream")
+    if candidate.renderQc.get("audioStreamPresent") is not True:
+        render_blockers.append("render_qc: missing_audio_stream")
+    if actual_duration is None:
+        render_blockers.append("render_qc: missing_rendered_duration")
+    elif duration_delta > RENDER_DURATION_TOLERANCE_SECONDS:
+        render_blockers.append(
+            "render_qc: duration_mismatch "
+            f"expected={expected_duration:.3f}s actual={actual_duration:.3f}s "
+            f"tolerance={RENDER_DURATION_TOLERANCE_SECONDS:.3f}s"
+        )
+    explicit_failure = (
+        candidate.renderQc.get("renderFailed") is True
+        or candidate.renderQc.get("qcFailed") is True
+        or candidate.renderQc.get("passed") is False
+        or candidate.renderQc.get("status") in {"failed", "qc_failed", "render_failed"}
+        or bool(candidate.renderQc.get("blockingIssues"))
+        or bool(candidate.renderQc.get("error"))
+    )
+    if explicit_failure:
+        render_blockers.append("render_qc: explicit_blocking_failure")
+    rendered_media_qc = not render_blockers
+    blockers.extend(render_blockers)
     return PublishabilityReport(
         candidateKey=candidate.candidateKey, dimensions=dimensions,
         overallPublishabilityScore=overall,
-        publishable=overall >= 75 and technical and not blockers,
+        publishable=(overall >= 75 and technical and rendered_media_qc and not blockers),
         blockingIssues=blockers, technicalQcPassed=technical,
+        renderedMediaQcPassed=rendered_media_qc,
+        tournamentEligible=rendered_media_qc,
+        renderedMediaQc={
+            "videoStreamPresent": candidate.renderQc.get("videoStreamPresent") is True,
+            "audioStreamPresent": candidate.renderQc.get("audioStreamPresent") is True,
+            "expectedDurationSeconds": expected_duration,
+            "actualDurationSeconds": actual_duration,
+            "durationDeltaSeconds": None if duration_delta is None else round(duration_delta, 6),
+            "durationToleranceSeconds": RENDER_DURATION_TOLERANCE_SECONDS,
+            "explicitBlockingFailure": explicit_failure,
+            "passed": rendered_media_qc,
+        },
     )
 
 
@@ -701,31 +761,56 @@ def apply_bounded_revision(
 def _compare(left: PublishabilityReport, right: PublishabilityReport) -> PairwiseComparison:
     deltas = {key: round(left.dimensions[key].score - right.dimensions[key].score, 3)
               for key in left.dimensions}
-    left_tuple = (left.overallPublishabilityScore, left.candidateKey)
-    right_tuple = (right.overallPublishabilityScore, right.candidateKey)
-    winner = left if left_tuple >= right_tuple else right
+    tie = left.overallPublishabilityScore == right.overallPublishabilityScore
+    eligibility_applied = left.tournamentEligible != right.tournamentEligible
+    if eligibility_applied:
+        winner = left if left.tournamentEligible else right
+    elif not left.tournamentEligible and not right.tournamentEligible:
+        winner = None
+    elif tie:
+        winner = max((left, right), key=lambda item: item.candidateKey)
+    else:
+        winner = max((left, right), key=lambda item: item.overallPublishabilityScore)
     strongest = sorted(deltas, key=lambda key: abs(deltas[key]), reverse=True)[:3]
+    decisive = [f"{key}: left-right {deltas[key]:+.3f}" for key in strongest]
+    if eligibility_applied:
+        decisive.insert(0, "rendered-media eligibility overrides comparison score")
+    elif winner is None:
+        decisive.insert(0, "both candidates are rendered-media ineligible")
+    elif tie:
+        decisive.insert(0, f"exact score tie; {TIEBREAK_RULE}={winner.candidateKey}")
     return PairwiseComparison(
         leftCandidateKey=left.candidateKey, rightCandidateKey=right.candidateKey,
-        winnerCandidateKey=winner.candidateKey,
+        winnerCandidateKey=winner.candidateKey if winner else None,
         leftScore=left.overallPublishabilityScore,
         rightScore=right.overallPublishabilityScore,
         dimensionDeltas=deltas,
-        decisiveEvidence=[f"{key}: left-right {deltas[key]:+.3f}" for key in strongest],
+        decisiveEvidence=decisive, tieOccurred=tie,
+        tiebreakRule=(TIEBREAK_RULE if tie and winner and not eligibility_applied else None),
+        tournamentEligibilityApplied=eligibility_applied,
     )
 
 
 def run_tournament(reports: list[PublishabilityReport]) -> TournamentResult:
     if len(reports) < 2:
         raise EditorialIntelligenceError("tournament requires at least two reports")
-    by_key = {item.candidateKey: item for item in reports}
-    pairwise = [_compare(left, right) for left, right in combinations(reports, 2)]
-    seeds = sorted(reports, key=lambda item: (
+    canonical = sorted(reports, key=lambda item: item.candidateKey)
+    by_key = {item.candidateKey: item for item in canonical}
+    if len(by_key) != len(reports):
+        raise EditorialIntelligenceError("tournament candidate keys must be unique")
+    pairwise = [_compare(left, right) for left, right in combinations(canonical, 2)]
+    ineligible = sorted(item.candidateKey for item in canonical
+                        if not item.tournamentEligible)
+    seeds = sorted((item for item in canonical if item.tournamentEligible), key=lambda item: (
         item.overallPublishabilityScore, item.candidateKey,
     ), reverse=True)
+    if not seeds:
+        raise EditorialIntelligenceError(
+            "tournament has no rendered-media-eligible candidates"
+        )
     current = [item.candidateKey for item in seeds]
     bracket = []
-    eliminated = []
+    eliminated = list(ineligible)
     round_number = 1
     while len(current) > 1:
         next_round = []
@@ -741,14 +826,22 @@ def run_tournament(reports: list[PublishabilityReport]) -> TournamentResult:
                 continue
             right = current[match_index + 1]
             comparison = _compare(by_key[left], by_key[right])
+            if comparison.winnerCandidateKey is None:
+                raise EditorialIntelligenceError("eligible tournament match has no winner")
             loser = right if comparison.winnerCandidateKey == left else left
+            tie_reason = (
+                f" Exact score tie; {TIEBREAK_RULE} selected "
+                f"{comparison.winnerCandidateKey}."
+                if comparison.tieOccurred else ""
+            )
             bracket.append(TournamentMatch(
                 roundNumber=round_number, matchNumber=match_index // 2 + 1,
                 leftCandidateKey=left, rightCandidateKey=right,
                 winnerCandidateKey=comparison.winnerCandidateKey,
                 eliminationReason=(
                     f"{loser} eliminated: {comparison.winnerCandidateKey} scored "
-                    f"{by_key[comparison.winnerCandidateKey].overallPublishabilityScore:.3f}"
+                    f"{by_key[comparison.winnerCandidateKey].overallPublishabilityScore:.3f}."
+                    f"{tie_reason}"
                 ),
             ))
             eliminated.append(loser)
@@ -758,12 +851,22 @@ def run_tournament(reports: list[PublishabilityReport]) -> TournamentResult:
     winner = by_key[current[0]]
     strongest = sorted(winner.dimensions.items(), key=lambda item: item[1].score,
                        reverse=True)[:3]
+    tie_reasoning = [
+        f"Tie detected: {item.leftCandidateKey} and {item.rightCandidateKey} scored "
+        f"{item.leftScore:.3f}; rule={item.tiebreakRule}; "
+        f"winning_key={item.winnerCandidateKey}"
+        for item in pairwise if item.tieOccurred and item.tiebreakRule
+    ]
     return TournamentResult(
-        candidateKeys=[item.candidateKey for item in reports],
+        candidateKeys=[item.candidateKey for item in canonical],
         pairwiseComparisons=pairwise, bracket=bracket,
-        eliminatedCandidateKeys=eliminated, winnerCandidateKey=winner.candidateKey,
+        eliminatedCandidateKeys=eliminated, ineligibleCandidateKeys=ineligible,
+        winnerCandidateKey=winner.candidateKey,
         winnerReasoning=[
             f"Overall publishability {winner.overallPublishabilityScore:.3f}",
+            *([f"Rendered-media-ineligible candidates: {', '.join(ineligible)}"]
+              if ineligible else []),
+            *tie_reasoning,
             *[f"{name} {dimension.score:.3f}: {dimension.explanation}"
               for name, dimension in strongest],
         ],
@@ -786,7 +889,15 @@ def build_four_way_comparison(human_report: dict | None,
             "schema_version": 1, "status": "human_ceiling_unavailable",
             "missing_versions": ["autonomous_initial", "human_approved"],
             "versions": {"editorial_intelligence_winner": winner_metrics},
-            "measurable_improvements": {},
+            "measurable_improvements": {
+                "winner_vs_initial_score_points": None,
+                "winner_vs_revised_score_points": None,
+                "winner_vs_human_score_points": None,
+                "winner_vs_initial_duration_seconds": None,
+                "winner_vs_revised_duration_seconds": None,
+                "winner_vs_human_duration_seconds": None,
+                "human_correction_minutes": None,
+            },
         }
     versions = copy.deepcopy(human_report.get("versions", {}))
     versions["editorial_intelligence_winner"] = winner_metrics

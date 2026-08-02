@@ -1,11 +1,13 @@
 """Milestone 6 candidate, critic, revision, tournament, and render tests."""
 import copy
 import os
+import random
 import subprocess
 
 import pytest
 
 from app.pipeline.editorial_intelligence import (
+    CompleteCandidateManifest,
     RevisionInstruction,
     apply_bounded_revision,
     build_four_way_comparison,
@@ -168,6 +170,78 @@ def test_publishability_and_tournament_compare_every_candidate_and_select_maximu
     assert all(item.decisiveEvidence for item in tournament.pairwiseComparisons)
 
 
+@pytest.mark.parametrize(
+    ("qc_change", "blocking_code"),
+    [
+        ({"videoStreamPresent": False}, "missing_video_stream"),
+        ({"audioStreamPresent": False}, "missing_audio_stream"),
+        ({"durationSeconds": 99}, "duration_mismatch"),
+        ({"passed": False}, "explicit_blocking_failure"),
+    ],
+    ids=["missing-video", "missing-audio", "duration-mismatch", "blocking-render-failure"],
+)
+def test_failed_rendered_media_is_non_publishable_and_cannot_win(
+    qc_change, blocking_code,
+):
+    manifests, completed, segments, composition = _manifests()
+    good = manifests[0]
+    failed = manifests[0].model_copy(deep=True)
+    good.candidateKey = "eligible-a"
+    failed.candidateKey = "ineligible-z"
+    failed.renderQc.update(qc_change)
+    good_report = build_publishability_report(
+        good, run_specialized_critics(good, segments, composition, completed),
+    )
+    failed_report = build_publishability_report(
+        failed, run_specialized_critics(failed, segments, composition, completed),
+    )
+    assert failed_report.publishable is False
+    assert failed_report.renderedMediaQcPassed is False
+    assert failed_report.tournamentEligible is False
+    assert any(blocking_code in item for item in failed_report.blockingIssues)
+    tournament = run_tournament([failed_report, good_report])
+    assert tournament.winnerCandidateKey == good_report.candidateKey
+    assert failed_report.candidateKey in tournament.ineligibleCandidateKeys
+    comparison = tournament.pairwiseComparisons[0]
+    assert comparison.winnerCandidateKey == good_report.candidateKey
+    assert comparison.tournamentEligibilityApplied is True
+
+
+def test_exact_score_tie_is_explicit_and_uses_documented_candidate_key_rule():
+    manifests, completed, segments, composition = _manifests()
+    left = manifests[0].model_copy(deep=True)
+    right = manifests[0].model_copy(deep=True)
+    left.candidateKey = "tie-a"
+    right.candidateKey = "tie-z"
+    reports = [build_publishability_report(
+        item, run_specialized_critics(item, segments, composition, completed),
+    ) for item in (left, right)]
+    tournament = run_tournament(reports)
+    comparison = tournament.pairwiseComparisons[0]
+    assert comparison.tieOccurred is True
+    assert comparison.tiebreakRule == "lexicographically_greater_candidate_key"
+    assert comparison.winnerCandidateKey == "tie-z"
+    assert tournament.winnerCandidateKey == "tie-z"
+    assert any("Tie detected" in item and "winning_key=tie-z" in item
+               for item in tournament.winnerReasoning)
+    assert "Exact score tie" in tournament.bracket[0].eliminationReason
+
+
+def test_shuffled_candidate_order_produces_identical_tournament():
+    manifests, completed, segments, composition = _manifests()
+    reports = [build_publishability_report(
+        item, run_specialized_critics(item, segments, composition, completed),
+    ) for item in manifests]
+    expected = run_tournament(reports)
+    shuffled = reports.copy()
+    random.Random(481516).shuffle(shuffled)
+    actual = run_tournament(shuffled)
+    assert actual.winnerCandidateKey == expected.winnerCandidateKey
+    assert actual.bracket == expected.bracket
+    assert actual.pairwiseComparisons == expected.pairwiseComparisons
+    assert actual.winnerReasoning == expected.winnerReasoning
+
+
 def test_four_way_human_ceiling_comparison_reports_measurable_improvements():
     manifests, completed, segments, composition = _manifests()
     winner = manifests[0]
@@ -196,6 +270,31 @@ def test_four_way_human_ceiling_comparison_reports_measurable_improvements():
     }
     assert comparison["measurable_improvements"]["human_correction_minutes"] == 12.5
     assert "winner_vs_human_score_points" in comparison["measurable_improvements"]
+
+
+def test_missing_human_ceiling_is_explicit_and_has_only_null_deltas():
+    manifests, completed, segments, composition = _manifests()
+    winner = manifests[0]
+    publication = build_publishability_report(
+        winner, run_specialized_critics(winner, segments, composition, completed),
+    )
+    comparison = build_four_way_comparison(None, winner, publication)
+    assert comparison["status"] == "human_ceiling_unavailable"
+    assert comparison["missing_versions"] == ["autonomous_initial", "human_approved"]
+    assert all(value is None
+               for value in comparison["measurable_improvements"].values())
+
+
+def test_candidate_manifest_rejects_fabrication_and_source_ancestry_mismatch():
+    manifests, _, _, _ = _manifests()
+    payload = manifests[0].model_dump()
+    payload["fabricatedFootage"] = True
+    with pytest.raises(ValueError, match="False"):
+        CompleteCandidateManifest(**payload)
+    payload = manifests[0].model_dump()
+    payload["sourceAssetIds"] = ["foreign-asset"]
+    with pytest.raises(ValueError, match="source ancestry"):
+        CompleteCandidateManifest(**payload)
 
 
 def test_real_complete_candidate_fixture_render_has_audio_video_and_no_fabrication(tmp_path):

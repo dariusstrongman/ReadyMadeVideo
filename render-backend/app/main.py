@@ -1928,7 +1928,10 @@ def op_editorial_intelligence(
         except (EditorialIntelligenceError, RenderError, subprocess.CalledProcessError) as exc:
             raise HTTPException(422, str(exc))
 
-        tournament = run_tournament(list(publishability_by_key.values()))
+        try:
+            tournament = run_tournament(list(publishability_by_key.values()))
+        except EditorialIntelligenceError as exc:
+            raise HTTPException(422, str(exc))
         winner = next(item for item in candidates
                       if item.candidateKey == tournament.winnerCandidateKey)
         human_report = None
@@ -2007,6 +2010,9 @@ def op_editorial_intelligence(
             "publishable": publishability.publishable,
             "blocking_issues": publishability.blockingIssues,
             "technical_qc_passed": publishability.technicalQcPassed,
+            "rendered_media_qc_passed": publishability.renderedMediaQcPassed,
+            "tournament_eligible": publishability.tournamentEligible,
+            "rendered_media_qc": publishability.renderedMediaQc,
             "created_by": op["id"],
         })
     tournament_row = _service_insert("tournament_runs", {
