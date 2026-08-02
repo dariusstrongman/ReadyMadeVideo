@@ -4,4 +4,5 @@ export const SUPABASE_ANON_KEY =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
   'sb_publishable_8qa-nssfdtEkCz-42wOSWQ_2P7S4Zj7'
 export const RENDER_API =
-  import.meta.env.VITE_RENDER_API || 'http://localhost:8787'
+  import.meta.env.VITE_RENDER_API ||
+  (import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.stromation.com')
