@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../App'
 import { RENDER_API, supabase, uploadWithProgress } from '../lib/supabase'
+import { editorApi } from '../lib/editor'
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024 // 50 MB — current Supabase plan cap
 const ACCEPTED = ['video/mp4', 'video/quicktime']
@@ -45,10 +46,63 @@ export default function Project() {
       <div className="grid" style={{ marginTop: 20 }}>
         <Uploader projectId={id} session={session} onDone={load} />
         <AssetList assets={assets} />
+        <CandidateWorkspace projectId={id} session={session} />
         {assets.length > 0 && <TimelinePanel projectId={id} session={session} assets={assets} />}
       </div>
     </div>
   )
+}
+
+function CandidateWorkspace({ projectId, session }) {
+  const navigate = useNavigate()
+  const [workspace, setWorkspace] = useState(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState('')
+
+  useEffect(() => {
+    editorApi(`/projects/${projectId}/workspace`, session)
+      .then(setWorkspace).catch((e) => setError(e.message))
+  }, [projectId, session])
+
+  async function openCandidate(candidate) {
+    setBusy(candidate.id); setError('')
+    try {
+      const row = await editorApi(`/projects/${projectId}/editor/start`, session, {
+        method: 'POST', body: JSON.stringify({ candidateRunId: candidate.id }),
+      })
+      navigate(`/project/${projectId}/editor/${row.id}`)
+    } catch (e) { setError(e.message) } finally { setBusy('') }
+  }
+
+  return <section className="card candidate-workspace">
+    <div className="row"><div style={{ flex: 1 }}><p className="small mono">PRODUCT EDITOR</p>
+      <h2>Finished candidates</h2>
+      <p className="small">Choose a Milestone 6 result. Its source remains immutable while your edits create a separate revision chain.</p></div>
+      <span className="badge completed">Phase 1</span></div>
+    {error && <div className="err">{error}</div>}
+    {!workspace && !error && <p className="sub">Loading candidates…</p>}
+    {workspace?.candidates.length === 0 && <div className="editor-empty">
+      No complete candidates yet. Run the editorial-intelligence workflow before opening the customer editor.
+    </div>}
+    <div className="candidate-grid">
+      {workspace?.candidates.map((candidate) => {
+        const report = candidate.publishability
+        const existing = workspace.editorDocuments.find((doc) => doc.candidate_run_id === candidate.id)
+        return <article key={candidate.id} className="candidate-card">
+          <div className="candidate-card-head"><span>{candidate.candidate_key}</span>
+            <b>{report?.overall_publishability_score ?? '—'}</b></div>
+          <p>{report?.publishable ? 'Publishability gate passed' : 'Review required before publishing'}</p>
+          <div className="row"><span className={`badge ${report?.tournament_eligible ? 'completed' : 'failed'}`}>
+            {report?.tournament_eligible ? 'eligible' : 'blocked'}</span>
+            <span className="small">{candidate.generation_kind}</span></div>
+          <button className="btn btn-primary" disabled={busy === candidate.id}
+            onClick={() => openCandidate(candidate)}>
+            {busy === candidate.id ? 'Opening…' : existing ? `Continue revision ${existing.version}` : 'Open in editor'}
+          </button>
+        </article>
+      })}
+    </div>
+  </section>
 }
 
 /* ---------------- upload ---------------- */

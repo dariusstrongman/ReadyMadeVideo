@@ -96,4 +96,59 @@ select pg_temp.expect_editorial_rejected($$delete from public.publishability_rep
 select pg_temp.expect_editorial_rejected($$update public.tournament_runs set version=2 where id='e5000000-0000-0000-0000-000000000001'$$,'immutable tournament update');
 select pg_temp.expect_editorial_rejected($$delete from public.tournament_runs where id='e5000000-0000-0000-0000-000000000001'$$,'immutable tournament delete');
 
+-- Product Editor Phase 1: real PostgreSQL ancestry, concurrency, immutable
+-- revisions, append-only operations, and exact render-version binding.
+insert into public.timelines
+ (id,project_id,user_id,version,timeline_json,lineage,is_immutable) values
+ ('f5000000-0000-0000-0000-000000000001','25000000-0000-0000-0000-000000000001','15000000-0000-0000-0000-000000000001',10,'{"version":1}','product_editor',true),
+ ('f5000000-0000-0000-0000-000000000002','25000000-0000-0000-0000-000000000001','15000000-0000-0000-0000-000000000001',11,'{"version":1}','product_editor',true);
+insert into public.editor_documents
+ (id,project_id,user_id,candidate_run_id,timeline_id,version,document,created_by) values
+ ('f6000000-0000-0000-0000-000000000001','25000000-0000-0000-0000-000000000001','15000000-0000-0000-0000-000000000001','b5000000-0000-0000-0000-000000000001','f5000000-0000-0000-0000-000000000001',1,
+  '{"schemaVersion":1,"projectId":"25000000-0000-0000-0000-000000000001","candidateRunId":"b5000000-0000-0000-0000-000000000001"}',
+  '15000000-0000-0000-0000-000000000001');
+insert into public.editor_documents
+ (id,project_id,user_id,candidate_run_id,parent_document_id,timeline_id,version,document,created_by) values
+ ('f6000000-0000-0000-0000-000000000002','25000000-0000-0000-0000-000000000001','15000000-0000-0000-0000-000000000001','b5000000-0000-0000-0000-000000000001','f6000000-0000-0000-0000-000000000001','f5000000-0000-0000-0000-000000000002',2,
+  '{"schemaVersion":1,"projectId":"25000000-0000-0000-0000-000000000001","candidateRunId":"b5000000-0000-0000-0000-000000000001"}',
+  '15000000-0000-0000-0000-000000000001');
+select pg_temp.expect_editorial_rejected($$insert into public.editor_documents
+ (project_id,user_id,candidate_run_id,timeline_id,version,document,created_by) values
+ ('25000000-0000-0000-0000-000000000002','15000000-0000-0000-0000-000000000002','b5000000-0000-0000-0000-000000000001','f5000000-0000-0000-0000-000000000001',3,
+  '{"schemaVersion":1,"projectId":"25000000-0000-0000-0000-000000000002","candidateRunId":"b5000000-0000-0000-0000-000000000001"}',
+  '15000000-0000-0000-0000-000000000002')$$,'cross-project editor candidate');
+select pg_temp.expect_editorial_rejected($$insert into public.editor_documents
+ (project_id,user_id,candidate_run_id,parent_document_id,timeline_id,version,document,created_by) values
+ ('25000000-0000-0000-0000-000000000001','15000000-0000-0000-0000-000000000001','b5000000-0000-0000-0000-000000000001','f6000000-0000-0000-0000-000000000001','f5000000-0000-0000-0000-000000000002',4,
+  '{"schemaVersion":1,"projectId":"25000000-0000-0000-0000-000000000001","candidateRunId":"b5000000-0000-0000-0000-000000000001"}',
+  '15000000-0000-0000-0000-000000000001')$$,'invalid editor parent version');
+select pg_temp.expect_editorial_rejected($$insert into public.editor_documents
+ (project_id,user_id,candidate_run_id,parent_document_id,timeline_id,version,document,created_by) values
+ ('25000000-0000-0000-0000-000000000001','15000000-0000-0000-0000-000000000001','b5000000-0000-0000-0000-000000000001','f6000000-0000-0000-0000-000000000001','f5000000-0000-0000-0000-000000000002',2,
+  '{"schemaVersion":1,"projectId":"25000000-0000-0000-0000-000000000001","candidateRunId":"b5000000-0000-0000-0000-000000000001"}',
+  '15000000-0000-0000-0000-000000000001')$$,'duplicate editor version');
+insert into public.editor_operations
+ (id,project_id,user_id,candidate_run_id,base_document_id,result_document_id,operation_id,operation_index,operation_type,target_id,actor,operation,client_timestamp) values
+ ('f7000000-0000-0000-0000-000000000001','25000000-0000-0000-0000-000000000001','15000000-0000-0000-0000-000000000001','b5000000-0000-0000-0000-000000000001','f6000000-0000-0000-0000-000000000001','f6000000-0000-0000-0000-000000000002','f8000000-0000-0000-0000-000000000001',1,'trim_clip','clip-a','user','{"type":"trim_clip"}',clock_timestamp());
+select pg_temp.expect_editorial_rejected($$insert into public.editor_operations
+ (project_id,user_id,candidate_run_id,base_document_id,result_document_id,operation_id,operation_index,operation_type,target_id,actor,operation,client_timestamp) values
+ ('25000000-0000-0000-0000-000000000001','15000000-0000-0000-0000-000000000001','b5000000-0000-0000-0000-000000000001','f6000000-0000-0000-0000-000000000002','f6000000-0000-0000-0000-000000000001','f8000000-0000-0000-0000-000000000002',2,'delete_clip','clip-a','ai','{"type":"delete_clip"}',clock_timestamp())$$,'invalid operation revision direction');
+select pg_temp.expect_editorial_rejected($$insert into public.editor_operations
+ (project_id,user_id,candidate_run_id,base_document_id,result_document_id,operation_id,operation_index,operation_type,target_id,actor,operation,client_timestamp) values
+ ('25000000-0000-0000-0000-000000000001','15000000-0000-0000-0000-000000000001','b5000000-0000-0000-0000-000000000001','f6000000-0000-0000-0000-000000000001','f6000000-0000-0000-0000-000000000002','f8000000-0000-0000-0000-000000000003',1,'delete_clip','clip-a','user','{"type":"delete_clip"}',clock_timestamp())$$,'duplicate operation index');
+insert into public.pipeline_jobs
+ (id,project_id,user_id,kind,status,params) values
+ ('f9000000-0000-0000-0000-000000000001','25000000-0000-0000-0000-000000000001','15000000-0000-0000-0000-000000000001','final_render','completed',
+  '{"editor_document_id":"f6000000-0000-0000-0000-000000000002","editor_document_version":2,"timeline_id":"f5000000-0000-0000-0000-000000000002"}');
+insert into public.editor_render_requests
+ (project_id,user_id,editor_document_id,editor_document_version,pipeline_job_id) values
+ ('25000000-0000-0000-0000-000000000001','15000000-0000-0000-0000-000000000001','f6000000-0000-0000-0000-000000000002',2,'f9000000-0000-0000-0000-000000000001');
+select pg_temp.expect_editorial_rejected($$insert into public.editor_render_requests
+ (project_id,user_id,editor_document_id,editor_document_version,pipeline_job_id) values
+ ('25000000-0000-0000-0000-000000000001','15000000-0000-0000-0000-000000000001','f6000000-0000-0000-0000-000000000002',1,'f9000000-0000-0000-0000-000000000001')$$,'render version mismatch');
+select pg_temp.expect_editorial_rejected($$update public.editor_documents set version=9 where id='f6000000-0000-0000-0000-000000000001'$$,'immutable editor document update');
+select pg_temp.expect_editorial_rejected($$delete from public.editor_documents where id='f6000000-0000-0000-0000-000000000001'$$,'immutable editor document delete');
+select pg_temp.expect_editorial_rejected($$update public.editor_operations set actor='ai' where id='f7000000-0000-0000-0000-000000000001'$$,'immutable editor operation update');
+select pg_temp.expect_editorial_rejected($$delete from public.editor_render_requests where pipeline_job_id='f9000000-0000-0000-0000-000000000001'$$,'immutable editor render binding delete');
+
 rollback;

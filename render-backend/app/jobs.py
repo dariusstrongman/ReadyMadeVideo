@@ -393,6 +393,9 @@ def handle_revision(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict
 def handle_final_render(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict:
     import json as _json
 
+    if (job.get("params") or {}).get("editor_document_id"):
+        return handle_product_editor_render(job, project, tmp, ctx)
+
     from .renderer2 import render_timeline
     params = job.get("params") or {}
     tl_id = params.get("timeline_id")
@@ -432,6 +435,134 @@ def handle_final_render(job: dict, project: dict, tmp: str, ctx: JobContext) -> 
                        f"final render {job['id'][:8]} completed")
     return {"output": path, **{k: result[k] for k in
                                ("duration", "width", "height", "size_bytes")}}
+
+
+def handle_product_editor_render(job: dict, project: dict, tmp: str,
+                                 ctx: JobContext) -> dict:
+    """Render the exact saved Product Editor document through M4/M5 contracts."""
+    import json as _json
+
+    from .pipeline.audio_rendering import CompletedAudioMix, render_completed_mix
+    from .pipeline.editorial_intelligence import CompleteCandidateManifest
+    from .pipeline.music_supervisor import MusicPlan
+    from .pipeline.picture_editor import PictureCandidateSummary
+    from .pipeline.visual_finishing import (CaptionPackage, ColorPackage,
+                                             GraphicsPackage,
+                                             render_finishing_preview)
+
+    params = job.get("params") or {}
+    documents = supa.db_select(
+        "editor_documents", f"id=eq.{params['editor_document_id']}&limit=1",
+    )
+    if not documents:
+        raise RuntimeError("saved editor document is missing")
+    row = documents[0]
+    if (row["project_id"] != project["id"] or row["user_id"] != project["user_id"]
+            or row["version"] != params.get("editor_document_version")):
+        raise RuntimeError("editor render version ancestry is inconsistent")
+    document = row["document"]
+    if isinstance(document, str):
+        document = _json.loads(document)
+    if any(item.get("required") and not item.get("rendered")
+           for item in document.get("attribution", [])):
+        raise RuntimeError("required attribution has not been rendered")
+    candidate_rows = supa.db_select(
+        "candidate_runs", f"id=eq.{row['candidate_run_id']}&limit=1",
+    )
+    if not candidate_rows or candidate_rows[0]["project_id"] != project["id"]:
+        raise RuntimeError("editor candidate ancestry is invalid")
+    candidate_row = candidate_rows[0]
+    raw_manifest = candidate_row["manifest"]
+    if isinstance(raw_manifest, str):
+        raw_manifest = _json.loads(raw_manifest)
+    manifest = CompleteCandidateManifest(**raw_manifest)
+
+    picture_items = next(track["items"] for track in document["tracks"]
+                         if track["type"] == "picture")
+    picture_timeline = {
+        "version": 1, "width": document["width"], "height": document["height"],
+        "fps": document["fps"], "duration": document["duration"],
+        "tracks": [{"id": "video-1", "type": "video", "clips": picture_items}],
+    }
+    caption_items = next(track["items"] for track in document["tracks"]
+                         if track["type"] == "captions")
+    graphic_items = [item for item in next(
+        track["items"] for track in document["tracks"] if track["type"] == "graphics"
+    ) if item.get("enabled", True)]
+    caption_payload = manifest.captions.model_dump(mode="json")
+    caption_payload["groups"] = caption_items
+    graphics_payload = manifest.graphics.model_dump(mode="json")
+    graphics_payload["events"] = graphic_items
+    captions = CaptionPackage(**caption_payload)
+    graphics = GraphicsPackage(**graphics_payload)
+    color = ColorPackage(**manifest.color.model_dump(mode="json"))
+
+    completed_rows = supa.db_select(
+        "audio_mix_runs", f"id=eq.{candidate_row['audio_mix_run_id']}&limit=1",
+    )
+    music_rows = supa.db_select(
+        "music_sound_runs", f"id=eq.{candidate_row['music_sound_run_id']}&limit=1",
+    )
+    licensed_rows = supa.db_select(
+        "licensed_music_assets",
+        f"music_sound_run_id=eq.{candidate_row['music_sound_run_id']}"
+        "&order=version.desc&limit=1",
+    )
+    if not completed_rows or not music_rows or not licensed_rows:
+        raise RuntimeError("completed audio ancestry is missing")
+    completed_payload = completed_rows[0]["mix_instructions"]
+    plan_payload = music_rows[0]["music_plan"]
+    if isinstance(completed_payload, str):
+        completed_payload = _json.loads(completed_payload)
+    if isinstance(plan_payload, str):
+        plan_payload = _json.loads(plan_payload)
+    completed = CompletedAudioMix(**completed_payload)
+    plan = MusicPlan(**plan_payload)
+
+    sources, assets = _download_sources(project, tmp, ctx)
+    allowed_assets = {item["id"] for item in assets}
+    if {str(clip["assetId"]) for clip in picture_items} - allowed_assets:
+        raise RuntimeError("editor picture references a foreign source asset")
+    music_path = os.path.join(tmp, "licensed-music" + os.path.splitext(
+        licensed_rows[0]["filename"])[1])
+    supa.storage_download(licensed_rows[0]["storage_bucket"],
+                          licensed_rows[0]["storage_path"], music_path)
+    duration = float(document["duration"])
+    summary = PictureCandidateSummary(
+        candidateId=f"editor-{row['id']}", label="Product Editor",
+        storyVariantId="editor_revision", valid=True, durationSeconds=duration,
+        targetDurationSeconds=max(15, min(60, duration)), coverageRatio=1,
+        editorialScore=1, structuralSignature=">".join(
+            str(clip["id"]) for clip in picture_items),
+        clipCount=len(picture_items), timeline=picture_timeline,
+    )
+    audio_path = os.path.join(tmp, "editor-audio.mp4")
+    gain = float(next(track["items"][0].get("gainDb", -8) for track in document["tracks"]
+                      if track["type"] == "music" and track["items"]))
+    set_project_status(project["id"], "rendering",
+                       f"Product Editor revision {row['version']} render")
+    update_job(job["id"], {"current_stage": "mixing saved editor audio", "progress": 25})
+    render_completed_mix(summary, sources, music_path, plan, completed.targetVsActual,
+                         audio_path, tmp, music_gain_db=gain)
+    ctx.checkpoint("before_editor_finishing")
+    output = os.path.join(tmp, "product-editor-final.mp4")
+    update_job(job["id"], {"current_stage": "rendering captions and graphics", "progress": 70})
+    qc = render_finishing_preview(audio_path, output, graphics, captions, color)
+    ctx.checkpoint("before_editor_upload")
+    path = _upload_export(
+        project, f"renders/{job['id']}-editor-v{row['version']}.mp4", output,
+    )
+    size = os.path.getsize(output)
+    ctx.rec("product_editor_render", bytes_=size,
+            units={"cpu_hours": 0})
+    set_project_status(project["id"], "completed",
+                       f"Product Editor revision {row['version']} export completed")
+    return {"output": path, "editor_document_id": row["id"],
+            "editor_document_version": row["version"],
+            "duration": qc["durationSeconds"], "width": qc["width"],
+            "height": qc["height"], "size_bytes": size,
+            "graphics_events": qc["graphicsEvents"],
+            "caption_groups": qc["captionGroups"], "music_gain_db": gain}
 
 
 HANDLERS = {"analysis": handle_analysis, "autoedit": handle_autoedit,

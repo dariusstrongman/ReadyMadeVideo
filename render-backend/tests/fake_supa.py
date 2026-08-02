@@ -47,7 +47,10 @@ class FakeSupabase:
                             "music_sound_runs", "licensed_music_assets",
                             "audio_mix_runs", "graphics_runs", "caption_runs",
                             "color_runs", "candidate_runs", "critic_runs",
-                            "publishability_reports", "tournament_runs")}
+                            "publishability_reports", "tournament_runs",
+                            "editor_documents", "editor_operations",
+                            "editor_render_requests", "editor_revision_proposals",
+                            "editor_audit_events")}
         self.storage: dict[str, bytes] = {}          # "bucket/path" -> data
         self.fail_tables: set[str] = set()           # simulate write failures
         self.conflict_once_tables: set[str] = set()  # simulate one unique collision
@@ -186,6 +189,24 @@ class FakeSupabase:
                                  and r.get("version") == b.get("version"))]
                 if duplicate:
                     return resp(409, {"message": "duplicate tournament version"})
+            if table == "editor_documents":
+                duplicate = [r for r in self.tables[table]
+                             if r.get("candidate_run_id") == b.get("candidate_run_id")
+                             and r.get("version") == b.get("version")]
+                if duplicate:
+                    return resp(409, {"message": "duplicate editor version"})
+            if table == "editor_operations":
+                duplicate = [r for r in self.tables[table]
+                             if r.get("operation_id") == b.get("operation_id")
+                             or (r.get("result_document_id") == b.get("result_document_id")
+                                 and r.get("operation_index") == b.get("operation_index"))]
+                if duplicate:
+                    return resp(409, {"message": "duplicate editor operation"})
+            if table == "editor_render_requests":
+                duplicate = [r for r in self.tables[table]
+                             if r.get("pipeline_job_id") == b.get("pipeline_job_id")]
+                if duplicate:
+                    return resp(409, {"message": "duplicate editor render request"})
             if table == "user_corrections" and b.get("human_edit_session_id"):
                 duplicate = [r for r in self.tables[table]
                              if r.get("human_edit_session_id") == b["human_edit_session_id"]

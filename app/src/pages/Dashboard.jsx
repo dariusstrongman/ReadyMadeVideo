@@ -3,6 +3,13 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
 
+const STATUS_COPY = {
+  draft: 'Waiting for footage', uploading: 'Footage uploading', ready: 'Ready for analysis',
+  analyzing: 'Analyzing footage', analysis_failed: 'Analysis failed',
+  draft_ready: 'Candidate ready', rendering: 'Rendering export',
+  render_failed: 'Render failed', completed: 'Export ready', complete: 'Export ready',
+}
+
 export default function Dashboard() {
   const session = useAuth()
   const [projects, setProjects] = useState(null)
@@ -64,7 +71,7 @@ export default function Dashboard() {
   return (
     <div className="wrap">
       <h1>Projects</h1>
-      <p className="sub">Create a project, upload footage, define a timeline, render.</p>
+      <p className="sub">Upload footage, review finished candidates, edit, and export.</p>
       {error && <div className="err" role="alert">{error}</div>}
 
       <form className="row" style={{ margin: '20px 0' }} onSubmit={createProject}>
@@ -81,6 +88,7 @@ export default function Dashboard() {
             <div style={{ flex: 1 }}>
               <Link to={`/project/${p.id}`} style={{ fontWeight: 600 }}>{p.name}</Link>
               <div className="small">created {new Date(p.created_at).toLocaleString()}</div>
+              <div className="small">{STATUS_COPY[p.status] || p.status.replaceAll('_', ' ')}</div>
             </div>
             <span className={`badge ${p.status}`}>{p.status}</span>
             <button className="btn btn-danger" onClick={() => deleteProject(p)}>Delete</button>

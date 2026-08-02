@@ -10,7 +10,8 @@ on:
                codex/audiovisual-milestone-4-audio-rendering,
                codex/audiovisual-milestone-5-motion-graphics,
                codex/audiovisual-milestone-6-editorial-intelligence,
-               codex/audio-asset-library-ingestion]
+               codex/audio-asset-library-ingestion,
+               codex/product-editor-phase-1]
 
 jobs:
   frontend:
@@ -24,6 +25,8 @@ jobs:
         run: npm ci
       - name: Production build
         run: npm run build
+      - name: Product Editor frontend tests
+        run: npm test
       - name: Frontend secret guard (no service keys in source or bundle)
         run: node scripts/check-secrets.mjs
       - name: Dependency vulnerability scan (npm audit)
@@ -92,6 +95,8 @@ jobs:
           echo "migration 0012 reapplied cleanly (idempotency check)"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260801_0013_audiovisual_editorial_intelligence.sql
           echo "migration 0013 reapplied cleanly (idempotency check)"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260802_0014_product_editor_phase1.sql
+          echo "migration 0014 reapplied cleanly (idempotency check)"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/human_ceiling_integrity.sql
           echo "human-ceiling PostgreSQL integrity assertions passed"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/picture_editor_integrity.sql
