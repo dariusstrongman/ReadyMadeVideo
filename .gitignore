@@ -52,3 +52,24 @@ render-backend/test-report.xml
 
 # Project One local media + artifacts — NEVER commit footage or analysis
 project-one-local/
+
+# Local licensed-audio library. Keep policy/config samples, never commit media or runtime reports.
+assets/audio/music/**
+!assets/audio/music/*/
+!assets/audio/music/*/.gitkeep
+assets/audio/sfx/**
+!assets/audio/sfx/*/
+!assets/audio/sfx/*/.gitkeep
+assets/audio/manual-import/*
+!assets/audio/manual-import/example.sidecar.json.example
+!assets/audio/manual-import/.gitkeep
+assets/audio/temp/*
+!assets/audio/temp/.gitkeep
+assets/audio/manifests/assets/*.json
+!assets/audio/manifests/assets/.gitkeep
+assets/audio/audio-library.json
+assets/audio/attribution-report.md
+assets/audio/rejected-assets.json
+assets/audio/duplicate-report.json
+assets/audio/ingestion-summary.json
+assets/audio/ingestion-state.json

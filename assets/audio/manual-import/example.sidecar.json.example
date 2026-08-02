@@ -1,0 +1,30 @@
+{
+  "assetType": "sfx",
+  "category": "impacts",
+  "sourceProvider": "manual",
+  "sourceUrl": "https://provider.example/asset/receipt-id",
+  "sourceAssetId": "receipt-or-provider-asset-id",
+  "filename": "operator-provided-file.wav",
+  "localSourcePath": "operator-provided-file.wav",
+  "creatorName": "Creator name",
+  "creatorUrl": "https://provider.example/creator",
+  "licenseName": "Approved commercial license name",
+  "licenseUrl": "https://provider.example/license",
+  "attributionText": null,
+  "declaredCommercialUseAllowed": true,
+  "declaredModificationAllowed": true,
+  "contentType": "audio/wav",
+  "tags": ["impact"],
+  "mood": ["energetic"],
+  "energy": 0.8,
+  "instrumental": true,
+  "vocal": false,
+  "usageConstraints": ["retain purchase receipt with project records"],
+  "providerTerms": {
+    "termsUrl": "https://provider.example/terms",
+    "reviewedAt": "2026-08-02",
+    "ingestionMethodAllowed": true,
+    "commercialApiUseAllowed": true,
+    "approvalReference": "contract-or-legal-review-reference"
+  }
+}
