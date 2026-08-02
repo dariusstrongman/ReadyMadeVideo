@@ -89,6 +89,14 @@ class LicensePolicy:
                 asset, "no_derivatives_license",
                 "The license does not permit required editing and modification",
             )
+        if any(token in name or token in license_url for token in (
+            "by-sa", "/sa/", "sharealike", "share-alike",
+            "copyleft", "gnu general public", "/gpl", "agpl", "lgpl",
+        )):
+            return self._reject(
+                asset, "copyleft_license",
+                "ShareAlike and other copyleft assets are not production eligible",
+            )
         if asset.declaredCommercialUseAllowed is False:
             return self._reject(
                 asset, "commercial_use_denied", "Provider metadata denies commercial use",

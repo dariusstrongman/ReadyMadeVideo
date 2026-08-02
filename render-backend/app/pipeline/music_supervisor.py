@@ -11,6 +11,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from ..audio_library.integration import (
+    AudioLibraryAdapter,
+    default_audio_library_adapter,
+)
 from .creative_director import CreativeTreatment, EnergyPoint
 from .picture_editor import PictureCandidateSummary
 from .schemas import Segment
@@ -154,6 +158,7 @@ class MusicPlan(BaseModel):
     musicalEnding: MusicalEndingPlan
     pictureMusicSync: list[PictureMusicSyncInstruction]
     boundaries: list[str]
+    libraryAssetSelection: dict | None = None
 
     @model_validator(mode="after")
     def plan_stays_inside_milestone_three(self):
@@ -300,6 +305,7 @@ def build_music_plan(
     treatment: CreativeTreatment,
     candidate: PictureCandidateSummary,
     segments: list[Segment],
+    audio_library: AudioLibraryAdapter | None = None,
 ) -> MusicPlan:
     """Build an auditable music/sound plan without mutating picture data."""
     if not candidate.valid:
@@ -370,7 +376,7 @@ def build_music_plan(
     final_downbeat = _nearest_marker(analysis, duration, downbeat=True)
     final_event = events[-1]
     natural_tail = 1.0 if final_event.classification in {"effort", "clean_natural"} else 0.35
-    return MusicPlan(
+    plan = MusicPlan(
         preproductionRunId=preproduction_run_id,
         pictureEditRunId=picture_edit_run_id,
         selectedCandidateId=candidate.candidateId,
@@ -415,3 +421,8 @@ def build_music_plan(
             "no motion graphics, captions, color, critics, or tournament selection",
         ],
     )
+    adapter = audio_library or default_audio_library_adapter()
+    matches = adapter.search_for_music_plan(plan.model_dump(mode="json"))
+    if matches:
+        plan.libraryAssetSelection = matches[0]
+    return plan

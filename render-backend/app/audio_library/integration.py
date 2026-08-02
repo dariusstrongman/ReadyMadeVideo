@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from .models import AssetManifest, SearchQuery
-from .store import ManifestStore
+from .store import AudioLibraryPaths, ManifestStore
 
 
 @dataclass(frozen=True)
@@ -26,7 +28,7 @@ class AudioLibraryAdapter:
         self.store = store
 
     def search(self, query: LibrarySelectionQuery) -> list[AssetManifest]:
-        return self.store.search(SearchQuery(
+        candidates = self.store.search(SearchQuery(
             assetType="music",
             durationMinSeconds=query.duration_seconds,
             moods=list(query.mood),
@@ -35,8 +37,24 @@ class AudioLibraryAdapter:
             bpmMin=query.bpm_min,
             bpmMax=query.bpm_max,
             instrumental=query.instrumental,
-            maxResults=query.max_results,
+            maxResults=100,
         ))
+        target_bpm = None
+        if query.bpm_min is not None and query.bpm_max is not None:
+            target_bpm = (query.bpm_min + query.bpm_max) / 2
+        target_energy = None
+        if query.energy_min is not None and query.energy_max is not None:
+            target_energy = (query.energy_min + query.energy_max) / 2
+        return sorted(
+            candidates,
+            key=lambda item: (
+                abs(item.bpm - target_bpm)
+                if target_bpm is not None and item.bpm is not None else 999,
+                abs(item.energy - target_energy)
+                if target_energy is not None and item.energy is not None else 999,
+                item.assetId,
+            ),
+        )[:query.max_results]
 
     def search_for_music_plan(self, music_plan: dict[str, Any], *, max_results: int = 10) -> list[dict[str, Any]]:
         brief = music_plan.get("trackBrief", {})
@@ -68,12 +86,40 @@ class AudioLibraryAdapter:
                 "normalizedPath": item.normalizedPath,
                 "sourceProvider": item.sourceProvider,
                 "sourceAssetId": item.sourceAssetId,
+                "sourceUrl": item.sourceUrl,
+                "title": item.title,
+                "creatorName": item.creatorName,
+                "creatorUrl": item.creatorUrl,
                 "licenseName": item.licenseName,
                 "licenseUrl": item.licenseUrl,
+                "licenseEligible": True,
+                "validationStatus": item.validationStatus,
+                "attributionRequired": item.attributionRequired,
+                "attributionStatus": (
+                    "requires_attribution" if item.attributionRequired
+                    else "not_required"
+                ),
                 "attributionText": item.attributionText,
+                "attribution": {
+                    "title": item.title,
+                    "creator": item.creatorName,
+                    "creatorUrl": item.creatorUrl,
+                    "sourceUrl": item.sourceUrl,
+                    "license": item.licenseName,
+                    "licenseUrl": item.licenseUrl,
+                    "text": item.attributionText,
+                },
                 "sha256": item.sha256,
                 "pcmFingerprint": item.pcmFingerprint,
                 "ingestionVersion": item.ingestionVersion,
             }
             for item in self.search(query)
         ]
+
+
+def default_audio_library_adapter(root: Path | None = None) -> AudioLibraryAdapter:
+    if root is None:
+        configured = os.getenv("AUDIO_LIBRARY_ROOT")
+        root = (Path(configured) if configured else
+                Path(__file__).resolve().parents[3] / "assets" / "audio")
+    return AudioLibraryAdapter(ManifestStore(AudioLibraryPaths(root.resolve())))

@@ -170,6 +170,75 @@ def test_publishability_and_tournament_compare_every_candidate_and_select_maximu
     assert all(item.decisiveEvidence for item in tournament.pairwiseComparisons)
 
 
+def test_cc_by_without_rendered_attribution_is_blocked_and_cannot_win():
+    manifests, completed, segments, composition = _manifests()
+    cc0 = manifests[0].model_copy(deep=True)
+    cc_by = manifests[0].model_copy(deep=True)
+    cc0.candidateKey = "cc0-eligible"
+    cc_by.candidateKey = "cc-by-blocked"
+    cc0.musicAssetSelection = {
+        "assetId": "music-cc0", "attributionRequired": False,
+        "attributionStatus": "not_required",
+        "attribution": {"title": "CC0 pulse", "license": "CC0 1.0"},
+    }
+    cc_by.musicAssetSelection = {
+        "assetId": "music-cc-by", "attributionRequired": True,
+        "attributionStatus": "requires_attribution",
+        "attribution": {
+            "title": "Credited pulse", "creator": "Creator",
+            "sourceUrl": "https://provider.example/music",
+            "license": "CC BY 4.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+            "text": "Credited pulse by Creator, CC BY 4.0",
+        },
+    }
+    baseline = manifests[0]
+    baseline_report = build_publishability_report(
+        baseline, run_specialized_critics(
+            baseline, segments, composition, completed,
+        ),
+    )
+    cc0_report = build_publishability_report(
+        cc0, run_specialized_critics(cc0, segments, composition, completed),
+    )
+    cc_by_report = build_publishability_report(
+        cc_by, run_specialized_critics(cc_by, segments, composition, completed),
+    )
+    assert cc0_report.attributionCompliancePassed is True
+    assert cc0_report.publishable == baseline_report.publishable
+    assert cc0_report.tournamentEligible is True
+    assert cc_by_report.publishable is False
+    assert cc_by_report.attributionCompliancePassed is False
+    assert cc_by_report.tournamentEligible is False
+    assert "attribution: required_attribution_not_rendered" in cc_by_report.blockingIssues
+    assert cc_by_report.attributionCompliance["status"] == "requires_attribution"
+    tournament = run_tournament([cc_by_report, cc0_report])
+    assert tournament.winnerCandidateKey == cc0.candidateKey
+    assert cc_by.candidateKey in tournament.ineligibleCandidateKeys
+
+
+def test_music_selection_provenance_flows_into_every_complete_candidate():
+    treatment, candidates, completed, segments, composition, plan = _inputs()
+    selection = {
+        "assetId": "music-cc-by", "sourceProvider": "manual",
+        "sourceAssetId": "licensed-1", "attributionRequired": True,
+        "attributionStatus": "requires_attribution",
+        "attribution": {
+            "title": "Credited pulse", "creator": "Creator",
+            "sourceUrl": "https://provider.example/music",
+            "license": "CC BY 4.0",
+            "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+            "text": "Credited pulse by Creator, CC BY 4.0",
+        },
+    }
+    plan.libraryAssetSelection = selection
+    manifests = generate_initial_candidates(
+        candidates, treatment, completed, plan, segments, composition, {},
+    )
+    assert all(item.musicAssetSelection == selection for item in manifests)
+    assert all(item.attributionRendered is False for item in manifests)
+
+
 @pytest.mark.parametrize(
     ("qc_change", "blocking_code"),
     [
