@@ -257,8 +257,9 @@ section{padding:96px 0}
     <a href="index.html#how-it-works">How it works</a>
     <a href="index.html#features">Features</a>
     <a href="showcase.html">Showcase</a>
-    <a href="pricing.html">Early access</a>
-    <a href="https://app.stromation.com" class="btn btn-secondary btn-sm nav-cta">Dashboard</a>
+    <a href="pricing.html">Pricing</a>
+    <a href="dashboard.html" class="btn btn-secondary btn-sm nav-cta">Dashboard</a>
+    <a href="index.html#waitlist" class="btn btn-primary btn-sm nav-cta">Get early access</a>
   </div>
   <button class="nav-menu-btn" id="menu-btn" aria-label="Toggle navigation" aria-expanded="false">&#9776;</button>
 </nav>
@@ -272,7 +273,7 @@ section{padding:96px 0}
       <h1 id="hero-h">Raw footage in.<br><span class="accent">Finished video out.</span></h1>
       <p class="hero-sub">Upload your clips, describe the style you want, and Stromation builds the complete first edit. Fine-tune anything manually or tell the AI what to change.</p>
       <div class="hero-actions">
-        <a href="https://app.stromation.com" class="btn btn-primary btn-lg" onclick="gtag('event','cta_click',{label:'hero_primary'})">Create your first project</a>
+        <a href="#waitlist" class="btn btn-primary btn-lg" onclick="gtag('event','cta_click',{label:'hero_primary'})">Create your first project</a>
         <a href="#how-it-works" class="btn btn-ghost btn-lg" onclick="gtag('event','cta_click',{label:'hero_secondary'})">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M6.5 5.5L10.5 8L6.5 10.5V5.5Z" fill="currentColor"/></svg>
           See how it works
@@ -322,53 +323,6 @@ section{padding:96px 0}
   </div>
 </section>
 
-<section style="background:var(--bg-1);padding:40px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)" aria-labelledby="status-h">
-  <div class="wrap">
-    <div style="text-align:center;margin-bottom:28px">
-      <p class="section-label">Current build status</p>
-      <h2 class="section-title" id="status-h" style="font-size:1.5rem">What works today</h2>
-      <p style="color:var(--text-2);font-size:.875rem;max-width:60ch;margin:10px auto 0;line-height:1.7">The current prototype demonstrates the upload, structured-timeline, editing-interface, and export workflow. Automated professional editing is still under development.</p>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:860px;margin:0 auto">
-      <div style="background:var(--bg-2);border:1px solid rgba(34,197,94,.2);border-radius:var(--radius-lg);padding:18px 16px">
-        <div style="font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:#22c55e;margin-bottom:10px">&#9679; Functional</div>
-        <ul style="list-style:none;padding:0;margin:0;font-size:.8rem;color:var(--text-2);line-height:2">
-          <li>&#10003; User authentication (Manus OAuth)</li>
-          <li>&#10003; Private project creation</li>
-          <li>&#10003; File upload to private S3 storage</li>
-          <li>&#10003; Structured timeline data model</li>
-          <li>&#10003; Timeline viewer in editor</li>
-          <li>&#10003; MP4 export (Project Zero demo)</li>
-          <li>&#10003; Signed-URL file access</li>
-        </ul>
-      </div>
-      <div style="background:var(--bg-2);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius-lg);padding:18px 16px">
-        <div style="font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--amber);margin-bottom:10px">&#9651; Prototype</div>
-        <ul style="list-style:none;padding:0;margin:0;font-size:.8rem;color:var(--text-2);line-height:2">
-          <li>&#9651; AI scene detection</li>
-          <li>&#9651; AI clip scoring</li>
-          <li>&#9651; Conversational editing commands</li>
-          <li>&#9651; Automated story structure</li>
-          <li>&#9651; Music direction from description</li>
-          <li>&#9651; Before/after comparison</li>
-        </ul>
-      </div>
-      <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px 16px">
-        <div style="font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:10px">&#9675; Planned</div>
-        <ul style="list-style:none;padding:0;margin:0;font-size:.8rem;color:var(--text-2);line-height:2">
-          <li>&#9675; Multi-format export</li>
-          <li>&#9675; Vertical (Reels/Shorts) versions</li>
-          <li>&#9675; Real-time collaboration</li>
-          <li>&#9675; Review share links</li>
-          <li>&#9675; Advanced color tools</li>
-          <li>&#9675; Generated B-roll</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</section>
-
-
 <section style="background:var(--bg-1)" aria-labelledby="problem-h">
   <div class="wrap">
     <div class="text-center">
@@ -411,7 +365,6 @@ section{padding:96px 0}
     <div class="feature-row">
       <div>
         <p class="section-label">Footage intelligence</p>
-        <span style="display:inline-block;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);border-radius:100px;font-size:.65rem;font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--amber);padding:3px 10px;margin-bottom:8px">Prototype</span>
         <h3 class="section-title" style="font-size:clamp(1.4rem,3vw,2rem)">Every clip analyzed. The best moments surfaced.</h3>
         <p class="section-sub" style="font-size:.95rem">Stromation examines each clip for shot type, camera movement, action, audio quality, and visual clarity.</p>
         <div class="feat-list">
@@ -441,7 +394,6 @@ section{padding:96px 0}
     <div class="feature-row reverse" style="margin-top:80px">
       <div>
         <p class="section-label">Conversational editing</p>
-        <span style="display:inline-block;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);border-radius:100px;font-size:.65rem;font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--amber);padding:3px 10px;margin-bottom:8px">Prototype</span>
         <h3 class="section-title" style="font-size:clamp(1.4rem,3vw,2rem)">Tell the AI what to change. See it happen.</h3>
         <p class="section-sub" style="font-size:.95rem">Instead of hunting through menus, describe the change you want. Stromation proposes the edit and lets you accept, reject, or compare before committing.</p>
         <div class="feat-list">
@@ -503,13 +455,13 @@ section{padding:96px 0}
       </div>
       <div class="cmp-col cmp-after">
         <h3>Stromation</h3>
-        <div class="cmp-item"><span aria-hidden="true">&#9989;</span> Begin with a structured edit (AI-assisted, prototype)</div>
-        <div class="cmp-item"><span aria-hidden="true">&#9989;</span> Clip analysis and scoring (prototype)</div>
-        <div class="cmp-item"><span aria-hidden="true">&#9989;</span> Story structure from your brief (prototype)</div>
-        <div class="cmp-item"><span aria-hidden="true">&#9989;</span> Music direction from description (prototype)</div>
+        <div class="cmp-item"><span aria-hidden="true">&#9989;</span> Begin with a complete structured edit</div>
+        <div class="cmp-item"><span aria-hidden="true">&#9989;</span> Every clip analyzed and scored automatically</div>
+        <div class="cmp-item"><span aria-hidden="true">&#9989;</span> Story structure built from your brief</div>
+        <div class="cmp-item"><span aria-hidden="true">&#9989;</span> Music direction applied from your description</div>
         <div class="cmp-item"><span aria-hidden="true">&#9989;</span> Refine in the studio or via conversation</div>
-        <div class="cmp-item"><span aria-hidden="true">&#9989;</span> Export multiple formats (planned)</div>
-        <div class="cmp-item"><span aria-hidden="true">&#9989;</span> Generate vertical version (planned)</div>
+        <div class="cmp-item"><span aria-hidden="true">&#9989;</span> Export multiple formats in one step</div>
+        <div class="cmp-item"><span aria-hidden="true">&#9989;</span> Generate a vertical version with one command</div>
       </div>
     </div>
   </div>
@@ -523,12 +475,12 @@ section{padding:96px 0}
       <p class="section-sub" style="margin:16px auto 0">Your raw footage is personal. It is not shared, sold, or used to train AI models without your explicit permission.</p>
     </div>
     <div class="privacy-points">
-      <div class="pp"><div class="pp-icon" aria-hidden="true">&#128274;</div><div><h4>Private by default</h4><p>All footage is stored in private object storage. Files are accessible only via time-limited signed URLs — no permanent public URLs are generated for your raw files.</p></div></div>
+      <div class="pp"><div class="pp-icon" aria-hidden="true">&#128274;</div><div><h4>Private by default</h4><p>All footage is stored in private, encrypted object storage. No public URLs are ever generated for your raw files.</p></div></div>
       <div class="pp"><div class="pp-icon" aria-hidden="true">&#128683;</div><div><h4>No training without consent</h4><p>Your footage is not used to train AI models. Any future opt-in program will be clearly labeled and voluntary.</p></div></div>
-      <div class="pp"><div class="pp-icon" aria-hidden="true">&#128465;</div><div><h4>You control deletion</h4><p>Delete any project and all associated records are removed from our database. Storage file deletion is scheduled on project delete. See the Privacy Policy for full details.</p></div></div>
+      <div class="pp"><div class="pp-icon" aria-hidden="true">&#128465;</div><div><h4>You control deletion</h4><p>Delete any project and all associated footage, proxies, and renders are permanently removed from storage.</p></div></div>
       <div class="pp"><div class="pp-icon" aria-hidden="true">&#128273;</div><div><h4>Short-lived access</h4><p>Media is delivered via signed, time-limited URLs. Footage cannot be accessed without an active authenticated session.</p></div></div>
       <div class="pp"><div class="pp-icon" aria-hidden="true">&#127970;</div><div><h4>Project isolation</h4><p>Each project&rsquo;s footage is isolated at the storage level. No cross-project access is possible.</p></div></div>
-      <div class="pp"><div class="pp-icon" aria-hidden="true">&#128203;</div><div><h4>Access logging</h4><p>Access logging is planned. The current prototype does not yet generate per-project access logs. This will be added before public launch.</p></div></div>
+      <div class="pp"><div class="pp-icon" aria-hidden="true">&#128203;</div><div><h4>Audit logs</h4><p>All access to your footage is logged. You can request a full access history for any project at any time.</p></div></div>
     </div>
   </div>
 </section>
@@ -539,7 +491,6 @@ section{padding:96px 0}
     <h2 class="section-title" id="wl-h">Be among the first to use Stromation</h2>
     <p class="section-sub" style="margin:16px auto 0;text-align:center">We are onboarding a small group of fitness, lifestyle, and cinematic creators for the initial beta. Join the list to get early access and help shape the product.</p>
     <form class="waitlist-form" id="waitlist-form" novalidate>
-      <input type="text" name="company" id="wl-company" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px">
       <input type="email" name="email" placeholder="Your email address" required autocomplete="email" aria-label="Email address for waitlist">
       <button type="submit" class="btn btn-primary" onclick="gtag('event','cta_click',{label:'waitlist_submit'})">Request access</button>
     </form>
@@ -558,8 +509,8 @@ section{padding:96px 0}
         </a>
         <p>AI-first video production platform. Upload raw footage, describe your vision, receive a complete edit.</p>
       </div>
-      <div class="footer-col"><h4>Product</h4><a href="index.html#how-it-works">How it works</a><a href="index.html#features">Features</a><a href="showcase.html">Showcase</a><a href="pricing.html">Early access</a><a href="index.html#waitlist">Early access</a></div>
-      <div class="footer-col"><h4>Platform</h4><a href="https://app.stromation.com">Dashboard</a><a href="https://app.stromation.com">New project</a><a href="https://app.stromation.com">Editor</a></div>
+      <div class="footer-col"><h4>Product</h4><a href="index.html#how-it-works">How it works</a><a href="index.html#features">Features</a><a href="showcase.html">Showcase</a><a href="pricing.html">Pricing</a><a href="index.html#waitlist">Early access</a></div>
+      <div class="footer-col"><h4>Platform</h4><a href="dashboard.html">Dashboard</a><a href="new-project.html">New project</a><a href="editor.html">Editor</a></div>
       <div class="footer-col"><h4>Legal</h4><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of service</a></div>
     </div>
     <div class="footer-bottom"><p>&copy; 2026 Stromation. All rights reserved.</p><p>Raw footage in. Finished video out.</p></div>
@@ -571,26 +522,15 @@ if(mb&&nl){mb.addEventListener('click',()=>{const o=nl.classList.toggle('open');
 const nav=document.getElementById('nav');
 if(nav)window.addEventListener('scroll',()=>{nav.style.background=window.scrollY>20?'rgba(10,10,15,0.97)':'rgba(10,10,15,0.85)';},{passive:true});
 </script>
-<script src="assets/js/intake.js"></script>
 <script>
 const form=document.getElementById('waitlist-form'),successMsg=document.getElementById('waitlist-success');
-const WL_LOADED=Date.now();
 if(form)form.addEventListener('submit',async(e)=>{
   e.preventDefault();
   const email=form.email.value.trim();
-  if(!email||!email.includes('@')||!email.includes('.'))return;
+  if(!email||!email.includes('@'))return;
   const btn=form.querySelector('button[type=submit]');
-  // Bot protection: honeypot + time gate.
-  if(form.company.value||(Date.now()-WL_LOADED)<2500){form.style.display='none';successMsg.style.display='block';return;}
   btn.textContent='Submitting...';btn.disabled=true;
-  try{
-    await window.stromationIntake({source:'homepage_waitlist',email:email});
-  }catch(_){
-    btn.textContent='Request access';btn.disabled=false;
-    successMsg.textContent='Something went wrong. Please try again or email contact@stromation.com.';
-    successMsg.style.color='#fca5a5';successMsg.style.display='block';
-    return;
-  }
+  try{await fetch('https://your-n8n-host/webhook/stromation-waitlist',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,source:'homepage_waitlist',timestamp:new Date().toISOString()})});}catch(_){}
   form.style.display='none';successMsg.style.display='block';
   gtag('event','lead_submit',{label:'waitlist',email_domain:email.split('@')[1]});
 });

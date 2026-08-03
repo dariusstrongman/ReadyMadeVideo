@@ -1,473 +1,417 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../App'
-import { RENDER_API, supabase, uploadWithProgress } from '../lib/supabase'
-import { editorApi } from '../lib/editor'
+import { supabase } from '../lib/supabase'
+import { RENDER_API } from '../lib/config'
 
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024 // 50 MB — current Supabase plan cap
-const ACCEPTED = ['video/mp4', 'video/quicktime']
+const STATUS_LABEL = {
+  draft:           'Waiting for footage',
+  uploading:       'Uploading footage',
+  ready:           'Ready',
+  analyzing:       'Examining your clips',
+  analysis_failed: 'Analysis failed',
+  draft_ready:     'Your edit is ready.',
+  rendering:       'Rendering…',
+  render_failed:   'Export failed',
+  completed:       'Export ready',
+  complete:        'Export ready',
+}
+
+const ANALYSIS_STAGES = {
+  analyzing:  { title: 'Examining your clips',      sub: 'Scoring shot quality, camera movement, and audio clarity.' },
+  selecting:  { title: 'Finding the best moments',  sub: 'Ranking clips by visual quality and story potential.' },
+  structuring:{ title: 'Building the story',        sub: 'Assembling an opening, middle, and close from your footage.' },
+  editing:    { title: 'Creating your first edit',  sub: 'Placing clips on the timeline, syncing music, and setting pacing.' },
+  finishing:  { title: 'Almost done',               sub: 'Adding final touches to your edit.' },
+}
+
+function StepIndicator({ step }) {
+  const steps = [
+    { n: 1, label: 'Upload' },
+    { n: 2, label: 'AI creates edits' },
+    { n: 3, label: 'Review' },
+    { n: 4, label: 'Refine' },
+    { n: 5, label: 'Export' },
+  ]
+  return (
+    <div className="step-indicator">
+      {steps.map((s, i) => (
+        <>
+          <div key={s.n} className={`step-item ${step === s.n ? 'active' : step > s.n ? 'done' : ''}`}>
+            <span className="step-num">{step > s.n ? '✓' : s.n}</span>
+            {s.label}
+          </div>
+          {i < steps.length - 1 && <div key={`sep-${s.n}`} className={`step-sep ${step > s.n ? 'done' : ''}`} />}
+        </>
+      ))}
+    </div>
+  )
+}
+
+function Breadcrumb({ projectName, projectId }) {
+  return (
+    <div className="breadcrumb">
+      <Link to="/">Projects</Link>
+      <span className="bc-sep">/</span>
+      <span className="bc-current">{projectName || '…'}</span>
+    </div>
+  )
+}
 
 export default function Project() {
-  const { id } = useParams()
   const session = useAuth()
-  const [project, setProject] = useState(undefined)
-  const [assets, setAssets] = useState([])
-  const [error, setError] = useState('')
-
-  const load = useCallback(async () => {
-    const { data: p, error: pe } = await supabase.from('projects')
-      .select('*').eq('id', id).maybeSingle()
-    if (pe) { setError(pe.message); return }
-    setProject(p) // null => not found or not yours (RLS)
-    if (!p) return
-    const { data: a } = await supabase.from('media_assets')
-      .select('*').eq('project_id', id).order('created_at')
-    setAssets(a || [])
-  }, [id])
-  useEffect(() => { load() }, [load])
-
-  if (project === undefined) return <div className="wrap"><p className="sub">Loading…</p></div>
-  if (project === null)
-    return (
-      <div className="wrap">
-        <div className="err">Project not found, or you do not have access to it.</div>
-        <Link to="/">← Back to projects</Link>
-      </div>
-    )
-
-  const hasFootage = assets.length > 0
-
-  return (
-    <div className="wrap">
-      <p className="small"><Link to="/">← Projects</Link></p>
-      <div className="row">
-        <h1 style={{ flex: 1 }}>{project.name}</h1>
-        <span className={`badge ${project.status}`}>{project.status}</span>
-      </div>
-      {error && <div className="err" role="alert">{error}</div>}
-      {!hasFootage ? (
-        <div className="grid" style={{ marginTop: 20 }}>
-          <EmptyFootageState />
-          <Uploader projectId={id} session={session} onDone={load} />
-        </div>
-      ) : (
-        <div className="grid" style={{ marginTop: 20 }}>
-          <PipelineStatus project={project} />
-          <CandidateWorkspace projectId={id} session={session} />
-          <AssetList assets={assets} />
-          <Uploader projectId={id} session={session} onDone={load} />
-          <TimelinePanel projectId={id} session={session} assets={assets} />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function EmptyFootageState() {
-  return (
-    <div className="card" style={{ textAlign: 'center', borderStyle: 'dashed' }}>
-      <p className="small mono">NO FOOTAGE YET</p>
-      <h2 style={{ margin: '6px 0 4px' }}>Upload footage to generate your first edit.</h2>
-      <p className="sub">
-        Add a clip below to start the editorial-intelligence pipeline. When it finishes,
-        a finished candidate appears here and the editor unlocks automatically.
-      </p>
-    </div>
-  )
-}
-
-const PIPELINE_STAGE = {
-  uploading: 'Footage uploading',
-  ready: 'Footage uploaded — queued for analysis',
-  analyzing: 'Analyzing footage and generating candidates',
-  analysis_failed: 'Analysis failed',
-  draft_ready: 'Finished candidate ready to edit',
-  rendering: 'Rendering export',
-  render_failed: 'Render failed',
-  completed: 'Export ready', complete: 'Export ready',
-  draft: 'Waiting for footage',
-}
-
-function PipelineStatus({ project }) {
-  return (
-    <div className="card">
-      <div className="row">
-        <div style={{ flex: 1 }}>
-          <p className="small mono">PIPELINE STAGE</p>
-          <h2 style={{ margin: '4px 0 0' }}>
-            {PIPELINE_STAGE[project.status] || project.status.replaceAll('_', ' ')}
-          </h2>
-        </div>
-        <span className={`badge ${project.status}`}>{project.status}</span>
-      </div>
-      {project.status_reason && <p className="small" style={{ marginTop: 8 }}>{project.status_reason}</p>}
-    </div>
-  )
-}
-
-function CandidateWorkspace({ projectId, session }) {
+  const { id: projectId } = useParams()
   const navigate = useNavigate()
-  const [workspace, setWorkspace] = useState(null)
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState('')
-
-  useEffect(() => {
-    editorApi(`/projects/${projectId}/workspace`, session)
-      .then(setWorkspace).catch((e) => setError(e.message))
-  }, [projectId, session])
-
-  async function openCandidate(candidate) {
-    setBusy(candidate.id); setError('')
-    try {
-      const row = await editorApi(`/projects/${projectId}/editor/start`, session, {
-        method: 'POST', body: JSON.stringify({ candidateRunId: candidate.id }),
-      })
-      navigate(`/project/${projectId}/editor/${row.id}`)
-    } catch (e) { setError(e.message) } finally { setBusy('') }
-  }
-
-  return <section className="card candidate-workspace">
-    <div className="row"><div style={{ flex: 1 }}><p className="small mono">PRODUCT EDITOR</p>
-      <h2>Finished candidates</h2>
-      <p className="small">Choose a Milestone 6 result. Its source remains immutable while your edits create a separate revision chain.</p></div>
-      <span className="badge completed">Phase 1</span></div>
-    {error && <div className="err">{error}</div>}
-    {!workspace && !error && <p className="sub">Loading candidates…</p>}
-    {workspace?.candidates.length === 0 && <div className="editor-empty">
-      <p style={{ marginBottom: 12 }}>
-        No finished candidate yet. Your footage is queued for the editorial-intelligence
-        workflow — the editor unlocks automatically once a Milestone 6 candidate is ready.
-      </p>
-      <button className="btn btn-primary" disabled
-        title="A completed Milestone 6 candidate is required before the editor opens.">
-        Open editor
-      </button>
-    </div>}
-    <div className="candidate-grid">
-      {workspace?.candidates.map((candidate) => {
-        const report = candidate.publishability
-        const existing = workspace.editorDocuments.find((doc) => doc.candidate_run_id === candidate.id)
-        return <article key={candidate.id} className="candidate-card">
-          <div className="candidate-card-head"><span>{candidate.candidate_key}</span>
-            <b>{report?.overall_publishability_score ?? '—'}</b></div>
-          <p>{report?.publishable ? 'Publishability gate passed' : 'Review required before publishing'}</p>
-          <div className="row"><span className={`badge ${report?.tournament_eligible ? 'completed' : 'failed'}`}>
-            {report?.tournament_eligible ? 'eligible' : 'blocked'}</span>
-            <span className="small">{candidate.generation_kind}</span></div>
-          <button className="btn btn-primary" disabled={busy === candidate.id}
-            onClick={() => openCandidate(candidate)}>
-            {busy === candidate.id ? 'Opening…' : existing ? `Continue revision ${existing.version}` : 'Open in editor'}
-          </button>
-        </article>
-      })}
-    </div>
-  </section>
-}
-
-/* ---------------- upload ---------------- */
-function Uploader({ projectId, session, onDone }) {
-  const [progress, setProgress] = useState(null)
-  const [error, setError] = useState('')
-  const inputRef = useRef()
-
-  async function handleFile(file) {
-    setError('')
-    if (!file) return
-    if (!ACCEPTED.includes(file.type) && !/\.(mp4|mov)$/i.test(file.name)) {
-      setError('Please choose an MP4 or MOV file.'); return
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setError(`File is ${(file.size / 1048576).toFixed(1)} MB — the current limit is 50 MB per file (storage plan cap).`)
-      return
-    }
-    const assetId = crypto.randomUUID()
-    const uid = session.user.id
-    const safeName = file.name.replace(/[^\w.\-]+/g, '_').slice(-120)
-    const path = `users/${uid}/projects/${projectId}/raw/${assetId}/${safeName}`
-    try {
-      setProgress(0)
-      await uploadWithProgress({
-        bucket: 'raw-footage', path, file,
-        accessToken: session.access_token,
-        onProgress: setProgress,
-      })
-      const duration = await probeDuration(file)
-      const { error: ie } = await supabase.from('media_assets').insert({
-        id: assetId, project_id: projectId, user_id: uid,
-        filename: file.name, storage_path: path,
-        mime_type: file.type || 'video/mp4', size_bytes: file.size,
-        duration_seconds: duration,
-      })
-      if (ie) throw new Error(`upload stored but record failed: ${ie.message}`)
-      await supabase.from('projects').update({ status: 'ready' }).eq('id', projectId)
-      onDone()
-    } catch (err) {
-      setError(err.message || String(err))
-    } finally {
-      setProgress(null)
-      if (inputRef.current) inputRef.current.value = ''
-    }
-  }
-
-  return (
-    <div className="card">
-      <h2>Upload footage</h2>
-      <p className="small">MP4 or MOV, up to 50 MB per file on the current storage plan. Files are stored privately and only visible to you.</p>
-      {error && <div className="err" role="alert">{error}</div>}
-      {progress === null ? (
-        <input ref={inputRef} type="file" accept="video/mp4,video/quicktime,.mp4,.mov"
-          style={{ marginTop: 12 }} aria-label="Choose video file"
-          onChange={(e) => handleFile(e.target.files?.[0])} />
-      ) : (
-        <div style={{ marginTop: 14 }}>
-          <div className="progress"><div style={{ width: `${progress}%` }} /></div>
-          <p className="small" style={{ marginTop: 6 }}>Uploading… {progress}%</p>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function probeDuration(file) {
-  return new Promise((resolve) => {
-    const v = document.createElement('video')
-    v.preload = 'metadata'
-    v.onloadedmetadata = () => { URL.revokeObjectURL(v.src); resolve(v.duration || null) }
-    v.onerror = () => resolve(null)
-    v.src = URL.createObjectURL(file)
-  })
-}
-
-function AssetList({ assets }) {
-  if (!assets.length) return <p className="sub">No footage uploaded yet.</p>
-  return (
-    <div className="card">
-      <h2>Footage</h2>
-      <div className="grid">
-        {assets.map((a) => (
-          <div key={a.id} className="list-item" style={{ background: 'var(--bg-3)' }}>
-            <div style={{ flex: 1 }}>
-              <span style={{ fontWeight: 600 }}>{a.filename}</span>
-              <div className="small mono">
-                {(a.size_bytes / 1048576).toFixed(1)} MB
-                {a.duration_seconds ? ` · ${a.duration_seconds.toFixed(1)}s` : ''}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-/* ---------------- timeline + render ---------------- */
-function TimelinePanel({ projectId, session, assets }) {
-  const asset = assets[0]
-  const maxEnd = asset.duration_seconds ? Math.floor(asset.duration_seconds * 10) / 10 : 30
-  const [title, setTitle] = useState('MY FIRST STROMATION EDIT')
-  const [sourceStart, setSourceStart] = useState(0)
-  const [sourceEnd, setSourceEnd] = useState(Math.min(10, maxEnd))
-  const [savedTimeline, setSavedTimeline] = useState(null)
-  const [notice, setNotice] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  const loadLatest = useCallback(async () => {
-    const { data } = await supabase.from('timelines')
-      .select('*').eq('project_id', projectId)
-      .order('created_at', { ascending: false }).limit(1)
-    const t = data?.[0]
-    if (t) {
-      setSavedTimeline(t)
-      const tl = typeof t.timeline_json === 'string' ? JSON.parse(t.timeline_json) : t.timeline_json
-      const v = tl.tracks?.find((x) => x.type === 'video')?.clips?.[0]
-      const txt = tl.tracks?.find((x) => x.type === 'text')?.clips?.[0]
-      if (v) { setSourceStart(v.sourceStart); setSourceEnd(v.sourceEnd) }
-      if (txt) setTitle(txt.text)
-    }
-  }, [projectId])
-  useEffect(() => { loadLatest() }, [loadLatest])
-
-  function buildTimeline() {
-    const titleDur = title.trim() ? 2 : 0
-    const clipDur = sourceEnd - sourceStart
-    return {
-      version: 1, width: 1920, height: 1080, fps: 30,
-      duration: titleDur + clipDur,
-      tracks: [
-        {
-          id: 'video-1', type: 'video',
-          clips: [{ id: 'clip-1', assetId: asset.id, sourceStart: Number(sourceStart),
-            sourceEnd: Number(sourceEnd), timelineStart: titleDur,
-            timelineEnd: titleDur + clipDur, volume: 1 }],
-        },
-        ...(title.trim() ? [{
-          id: 'text-1', type: 'text',
-          clips: [{ id: 'title-1', text: title.trim(), timelineStart: 0,
-            timelineEnd: titleDur, fontSize: 72, position: 'center' }],
-        }] : []),
-      ],
-    }
-  }
-
-  async function saveTimeline() {
-    setError(''); setNotice(''); setBusy(true)
-    try {
-      const s = Number(sourceStart), e = Number(sourceEnd)
-      if (Number.isNaN(s) || s < 0) throw new Error('Source start must be 0 or greater.')
-      if (Number.isNaN(e) || e <= s) throw new Error('Source end must be greater than source start.')
-      if (asset.duration_seconds && e > asset.duration_seconds + 0.05)
-        throw new Error(`Source end exceeds the footage length (${asset.duration_seconds.toFixed(1)}s).`)
-      const version = (savedTimeline?.version || 0) + 1
-      const { data, error: se } = await supabase.from('timelines').insert({
-        project_id: projectId, user_id: session.user.id,
-        version, timeline_json: buildTimeline(),
-      }).select().single()
-      if (se) throw new Error(se.message)
-      setSavedTimeline(data)
-      setNotice(`Timeline v${version} saved.`)
-    } catch (err) {
-      setError(err.message || String(err))
-    } finally { setBusy(false) }
-  }
-
-  return (
-    <div className="card">
-      <h2>Timeline</h2>
-      <p className="small">
-        v1 renderer: an optional 2-second title card, then your selected footage range,
-        rendered to 1920×1080 H.264/AAC. Complex multi-clip timelines come later.
-      </p>
-      {error && <div className="err" role="alert">{error}</div>}
-      {notice && <div className="ok" role="status">{notice}</div>}
-      <label htmlFor="title">Title card text (blank = no title card)</label>
-      <input id="title" value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} />
-      <div className="row">
-        <div style={{ flex: 1 }}>
-          <label htmlFor="ss">Source start (s)</label>
-          <input id="ss" type="number" min="0" step="0.1" value={sourceStart}
-            onChange={(e) => setSourceStart(e.target.value)} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <label htmlFor="se">Source end (s)</label>
-          <input id="se" type="number" min="0.1" step="0.1" value={sourceEnd}
-            onChange={(e) => setSourceEnd(e.target.value)} />
-        </div>
-      </div>
-      <p className="small" style={{ marginTop: 8 }}>
-        Output duration: {(title.trim() ? 2 : 0) + Math.max(0, Number(sourceEnd) - Number(sourceStart) || 0)}s
-        {savedTimeline && <> · latest saved: v{savedTimeline.version}</>}
-      </p>
-      <div className="row" style={{ marginTop: 14 }}>
-        <button className="btn btn-primary" onClick={saveTimeline} disabled={busy}>Save timeline</button>
-        <button className="btn btn-ghost" onClick={loadLatest} disabled={busy}>Restore last saved</button>
-      </div>
-      {savedTimeline && <RenderPanel projectId={projectId} session={session} timeline={savedTimeline} />}
-    </div>
-  )
-}
-
-function RenderPanel({ projectId, session, timeline }) {
+  const [project, setProject] = useState(null)
+  const [assets, setAssets] = useState([])
+  const [candidates, setCandidates] = useState([])
+  const [candidateIdx, setCandidateIdx] = useState(0)
   const [jobs, setJobs] = useState([])
   const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const pollRef = useRef()
+  const [uploading, setUploading] = useState(false)
+  const [uploadPct, setUploadPct] = useState(0)
+  const [dragOver, setDragOver] = useState(false)
+  const [pendingFiles, setPendingFiles] = useState([])
+  const fileInputRef = useRef(null)
+  const pollRef = useRef(null)
+  const videoRef = useRef(null)
 
-  const loadJobs = useCallback(async () => {
-    const { data } = await supabase.from('render_jobs')
-      .select('*').eq('project_id', projectId)
-      .order('created_at', { ascending: false }).limit(5)
-    setJobs(data || [])
-    return data || []
+  const load = useCallback(async () => {
+    const [{ data: proj }, { data: ast }, { data: cands }, { data: js }] = await Promise.all([
+      supabase.from('projects').select('*').eq('id', projectId).single(),
+      supabase.from('media_assets').select('*').eq('project_id', projectId).order('created_at'),
+      supabase.from('edit_candidates').select('*').eq('project_id', projectId).order('overall_score', { ascending: false }),
+      supabase.from('render_jobs').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
+    ])
+    if (proj) setProject(proj)
+    if (ast) setAssets(ast)
+    if (cands) setCandidates(cands)
+    if (js) setJobs(js)
   }, [projectId])
 
-  useEffect(() => {
-    loadJobs()
-    pollRef.current = setInterval(async () => {
-      const js = await loadJobs()
-      if (!js.some((j) => ['queued', 'processing'].includes(j.status)))
-        clearInterval(pollRef.current)
-    }, 2500)
-    return () => clearInterval(pollRef.current)
-  }, [loadJobs])
+  useEffect(() => { load() }, [load])
 
-  async function startRender(existingJobId = null) {
-    setError(''); setBusy(true)
-    try {
-      let jobId = existingJobId
-      if (!jobId) {
-        const { data, error: je } = await supabase.from('render_jobs').insert({
-          project_id: projectId, timeline_id: timeline.id,
-          user_id: session.user.id, status: 'queued',
-        }).select().single()
-        if (je) throw new Error(je.message)
-        jobId = data.id
-      }
-      const r = await fetch(`${RENDER_API}/render`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ job_id: jobId }),
-      })
-      if (!r.ok) {
-        const detail = await r.json().catch(() => ({}))
-        throw new Error(detail.detail || `render request failed (${r.status})`)
-      }
-      await supabase.from('projects')
-        .update({ status: 'rendering', status_reason: 'user triggered render' })
-        .eq('id', projectId)
-      await loadJobs()
+  // Poll while analyzing
+  useEffect(() => {
+    if (!project) return
+    const active = ['analyzing', 'uploading', 'ready'].includes(project.status)
+    if (active) {
+      pollRef.current = setInterval(load, 3000)
+    } else {
       clearInterval(pollRef.current)
-      pollRef.current = setInterval(async () => {
-        const js = await loadJobs()
-        if (!js.some((j) => ['queued', 'processing'].includes(j.status))) {
-          clearInterval(pollRef.current)
-          // completed ONLY on a successful most-recent render; failure is explicit
-          const latest = js[0]
-          const ok = latest && latest.status === 'completed'
-          await supabase.from('projects').update({
-            status: ok ? 'completed' : 'render_failed',
-            status_reason: ok ? `render job ${latest.id.slice(0, 8)} completed`
-              : `render job ${latest ? latest.id.slice(0, 8) : '?'} ${latest?.status || 'missing'}: ${latest?.error_message || ''}`.slice(0, 300),
-          }).eq('id', projectId)
+    }
+    return () => clearInterval(pollRef.current)
+  }, [project?.status, load])
+
+  // Autoplay candidate video
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.load()
+      videoRef.current.play().catch(() => {})
+    }
+  }, [candidateIdx])
+
+  async function handleFiles(files) {
+    if (!files?.length) return
+    const arr = Array.from(files)
+    // Generate thumbnails for preview
+    const previews = await Promise.all(arr.map(f => new Promise(resolve => {
+      if (!f.type.startsWith('video/')) { resolve({ file: f, thumb: null }); return }
+      const video = document.createElement('video')
+      video.preload = 'metadata'
+      video.src = URL.createObjectURL(f)
+      video.onloadeddata = () => {
+        video.currentTime = 0.5
+        video.onseeked = () => {
+          const canvas = document.createElement('canvas')
+          canvas.width = 96; canvas.height = 54
+          canvas.getContext('2d').drawImage(video, 0, 0, 96, 54)
+          resolve({ file: f, thumb: canvas.toDataURL('image/jpeg', 0.7) })
+          URL.revokeObjectURL(video.src)
         }
-      }, 2500)
-    } catch (err) {
-      setError(err.message || String(err))
-    } finally { setBusy(false) }
+      }
+      video.onerror = () => resolve({ file: f, thumb: null })
+    })))
+    setPendingFiles(previews)
+  }
+
+  async function startUpload() {
+    if (!pendingFiles.length) return
+    setUploading(true); setError(''); setUploadPct(0)
+    const uid = session.user.id
+    const total = pendingFiles.length
+    let done = 0
+    for (const { file } of pendingFiles) {
+      const ext = file.name.split('.').pop()
+      const key = `users/${uid}/projects/${projectId}/raw/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+      const { error: upErr } = await supabase.storage.from('raw-footage').upload(key, file, {
+        cacheControl: '3600', upsert: false,
+        onUploadProgress: ({ loaded, total: t }) => {
+          const fileProgress = loaded / t
+          setUploadPct(Math.round(((done + fileProgress) / total) * 100))
+        },
+      })
+      if (upErr) { setError(upErr.message); setUploading(false); return }
+      await supabase.from('media_assets').insert({
+        project_id: projectId, user_id: uid,
+        storage_path: key, original_filename: file.name,
+        file_size_bytes: file.size, mime_type: file.type,
+      })
+      done++
+      setUploadPct(Math.round((done / total) * 100))
+    }
+    await supabase.from('projects').update({ status: 'ready' }).eq('id', projectId)
+    setPendingFiles([])
+    setUploading(false)
+    await load()
+  }
+
+  if (!project) return <div className="center"><p className="sub">Loading…</p></div>
+
+  const status = project.status
+  const step = status === 'draft' || status === 'uploading' ? 1
+    : ['ready', 'analyzing'].includes(status) ? 2
+    : status === 'draft_ready' ? 3
+    : ['rendering', 'render_failed'].includes(status) ? 4
+    : (status === 'completed' || status === 'complete') ? 5 : 1
+
+  // ── Export success ──────────────────────────────────────────────────
+  if (status === 'completed' || status === 'complete') {
+    const latestJob = jobs.find(j => j.status === 'completed')
+    return (
+      <>
+        <Breadcrumb projectName={project.name} projectId={projectId} />
+        <ExportSuccess project={project} job={latestJob} session={session} />
+      </>
+    )
+  }
+
+  // ── Candidate reveal ────────────────────────────────────────────────
+  if (status === 'draft_ready' && candidates.length > 0) {
+    const c = candidates[candidateIdx]
+    return (
+      <>
+        <Breadcrumb projectName={project.name} projectId={projectId} />
+        <div className="candidate-reveal">
+          <div className="candidate-reveal-header">
+            <h2>Your edit is ready.</h2>
+            {candidates.length > 1 && <span>{candidateIdx + 1} of {candidates.length} edits</span>}
+          </div>
+          <div className="candidate-video-wrap">
+            {c.preview_url
+              ? <video ref={videoRef} src={c.preview_url} autoPlay muted loop playsInline />
+              : <div className="candidate-video-placeholder">Preview not available</div>
+            }
+          </div>
+          <div className="candidate-info">
+            <p className="candidate-title">{c.candidate_key || `Edit ${candidateIdx + 1}`}</p>
+            <p className="candidate-highlights">
+              {c.publishability_label || 'AI-generated edit'}{c.overall_score ? ` · Score: ${Math.round(c.overall_score)}` : ''}
+            </p>
+            <div className="candidate-actions">
+              <button className="btn btn-primary btn-lg"
+                onClick={() => navigate(`/project/${projectId}/editor/${c.id}`)}>
+                Watch this edit
+              </button>
+              <button className="btn btn-ghost"
+                onClick={() => navigate(`/project/${projectId}/editor/${c.id}`)}>
+                Open in editor
+              </button>
+            </div>
+          </div>
+          {candidates.length > 1 && (
+            <div className="candidate-dots">
+              {candidates.map((_, i) => (
+                <button key={i} className={`candidate-dot ${i === candidateIdx ? 'active' : ''}`}
+                  onClick={() => setCandidateIdx(i)} aria-label={`Edit ${i + 1}`} />
+              ))}
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  // ── Processing ──────────────────────────────────────────────────────
+  if (['ready', 'analyzing'].includes(status)) {
+    const stage = ANALYSIS_STAGES[status] || ANALYSIS_STAGES.analyzing
+    return (
+      <>
+        <Breadcrumb projectName={project.name} projectId={projectId} />
+        <StepIndicator step={2} />
+        <div className="wrap" style={{ paddingTop: 48, paddingBottom: 80 }}>
+          <div className="processing-card">
+            <div className="processing-ring" />
+            <h2 className="processing-title">{stage.title}</h2>
+            <p className="processing-sub">{stage.sub}</p>
+            <p className="processing-wait">
+              This usually takes 3–5 minutes.<br />
+              We'll show a notification when your edit is ready.
+            </p>
+          </div>
+          {assets.length > 0 && (
+            <div style={{ marginTop: 32 }}>
+              <span className="section-label">Uploaded footage</span>
+              <div className="clip-peek">
+                {assets.map((a, i) => (
+                  <div key={a.id} className="clip-peek-item" style={{ animationDelay: `${i * 80}ms` }}>
+                    {a.original_filename?.split('.')[0] || 'clip'}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  // ── Upload ──────────────────────────────────────────────────────────
+  const totalSize = pendingFiles.reduce((s, { file }) => s + file.size, 0)
+  const fmtSize = b => b > 1e6 ? `${(b/1e6).toFixed(1)} MB` : `${(b/1e3).toFixed(0)} KB`
+
+  return (
+    <>
+      <Breadcrumb projectName={project.name} projectId={projectId} />
+      <StepIndicator step={step} />
+      <div className="wrap" style={{ paddingTop: 40, paddingBottom: 80 }}>
+        {error && <div className="err" role="alert">{error}</div>}
+
+        {uploading ? (
+          <div className="upload-progress-wrap">
+            <div className="upload-pct">{uploadPct}%</div>
+            <p className="upload-label">Uploading your footage securely…</p>
+            <div className="progress" style={{ maxWidth: 400, margin: '0 auto' }}>
+              <div style={{ width: `${uploadPct}%` }} />
+            </div>
+          </div>
+        ) : pendingFiles.length > 0 ? (
+          <div>
+            <span className="section-label">Ready to upload</span>
+            <div className="file-preview-list">
+              {pendingFiles.map(({ file, thumb }, i) => (
+                <div key={i} className="file-preview-item">
+                  {thumb
+                    ? <img src={thumb} className="file-preview-thumb" alt="" />
+                    : <div className="file-preview-thumb" />
+                  }
+                  <span className="file-preview-name">{file.name}</span>
+                  <span className="file-preview-meta">{fmtSize(file.size)}</span>
+                </div>
+              ))}
+            </div>
+            <p className="upload-total">{pendingFiles.length} file{pendingFiles.length > 1 ? 's' : ''} · {fmtSize(totalSize)}</p>
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button className="btn btn-ghost" onClick={() => setPendingFiles([])}>Clear</button>
+              <button className="btn btn-primary btn-lg" onClick={startUpload}>Start upload</button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className={`drop-zone ${dragOver ? 'drag-over' : ''}`}
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={e => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files) }}
+          >
+            <div className="drop-zone-icon">↑</div>
+            <h2 className="drop-zone-title">Drop your footage here</h2>
+            <p className="drop-zone-sub">MP4 or MOV · up to 50 MB · stored privately under your account</p>
+            <button className="btn btn-ghost" onClick={e => { e.stopPropagation(); fileInputRef.current?.click() }}>
+              Browse files
+            </button>
+            <input ref={fileInputRef} type="file" accept="video/*" multiple style={{ display: 'none' }}
+              onChange={e => handleFiles(e.target.files)} />
+          </div>
+        )}
+
+        {/* Existing assets */}
+        {assets.length > 0 && !uploading && pendingFiles.length === 0 && (
+          <div style={{ marginTop: 32 }}>
+            <span className="section-label">Uploaded footage</span>
+            <div className="grid">
+              {assets.map(a => (
+                <div key={a.id} className="list-item">
+                  <span style={{ flex: 1, fontSize: '0.85rem' }}>{a.original_filename}</span>
+                  <span className="small">{a.file_size_bytes ? fmtSize(a.file_size_bytes) : ''}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Render jobs */}
+        {jobs.length > 0 && (
+          <div style={{ marginTop: 32 }}>
+            <span className="section-label">Render history</span>
+            <div className="grid">
+              {jobs.map(j => <JobRow key={j.id} job={j} session={session} projectId={projectId} onRetry={load} />)}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
+function ExportSuccess({ project, job, session }) {
+  const [signedUrl, setSignedUrl] = useState(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (job?.output_storage_path) {
+      supabase.storage.from('exports').createSignedUrl(job.output_storage_path, 3600)
+        .then(({ data }) => { if (data) setSignedUrl(data.signedUrl) })
+    }
+  }, [job])
+
+  function copyShare() {
+    navigator.clipboard.writeText(`Just finished my first edit with Stromation — raw footage in, finished video out. https://www.stromation.com`)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
-    <div style={{ marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 18 }}>
-      <div className="row">
-        <h2 style={{ margin: 0, flex: 1 }}>Renders</h2>
-        <button className="btn btn-primary" onClick={() => startRender()} disabled={busy}>
-          {busy ? 'Starting…' : `Render timeline v${timeline.version}`}
-        </button>
+    <div className="export-success">
+      <svg className="export-check" viewBox="0 0 52 52" fill="none">
+        <circle cx="26" cy="26" r="25" stroke="currentColor" strokeWidth="2" opacity="0.2" />
+        <path className="export-check-path" d="M14 27l8 8 16-16" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <h1 className="export-title">Your video is ready.</h1>
+      <p className="export-meta">
+        {job ? `${job.output_width || ''}×${job.output_height || ''} · ${job.output_duration_seconds?.toFixed(1) || '?'}s · ${job.output_size_bytes ? ((job.output_size_bytes/1048576).toFixed(2) + ' MB') : ''}` : project.name}
+      </p>
+      <div className="export-actions">
+        {signedUrl
+          ? <a className="btn btn-primary btn-lg" href={signedUrl} download={`stromation-${project.name}.mp4`}>↓ Download MP4</a>
+          : <button className="btn btn-primary btn-lg" disabled>Preparing download…</button>
+        }
+        <Link to="/" className="btn btn-ghost">← Back to projects</Link>
       </div>
-      <p className="small">Rendering runs on the Stromation render service (FFmpeg). Status updates live below.</p>
-      {error && <div className="err" role="alert">{error}</div>}
-      <div className="grid" style={{ marginTop: 12 }}>
-        {jobs.map((j) => <JobRow key={j.id} job={j} onRetry={() => startRender(j.id)} />)}
+      <div className="export-share">
+        <p className="export-share-label">Made with Stromation. Share your edit →</p>
+        <div className="export-share-btns">
+          <button className="btn btn-ghost btn-sm" onClick={copyShare}>
+            {copied ? '✓ Copied!' : 'Copy tweet'}
+          </button>
+        </div>
       </div>
+      <p className="export-feedback">
+        <a href="mailto:hello@stromation.com">Send feedback on this edit</a>
+      </p>
     </div>
   )
 }
 
-function JobRow({ job, onRetry }) {
+function JobRow({ job, session, projectId, onRetry }) {
   const [signedUrl, setSignedUrl] = useState(null)
   const [urlError, setUrlError] = useState('')
-
   async function getUrl() {
     setUrlError('')
-    const { data, error } = await supabase.storage.from('exports')
-      .createSignedUrl(job.output_storage_path, 3600)
+    const { data, error } = await supabase.storage.from('exports').createSignedUrl(job.output_storage_path, 3600)
     if (error) setUrlError(error.message)
     else setSignedUrl(data.signedUrl)
   }
-
   return (
     <div className="list-item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
       <div className="row">
@@ -476,27 +420,20 @@ function JobRow({ job, onRetry }) {
         {['queued', 'processing'].includes(job.status) && (
           <div className="progress" style={{ flex: 1 }}><div style={{ width: `${job.progress}%` }} /></div>
         )}
-        <span className="spacer" style={{ flex: 1 }} />
-        {job.status === 'failed' && <button className="btn btn-ghost" onClick={onRetry}>Retry</button>}
+        <span className="spacer" />
         {job.status === 'completed' && !signedUrl && (
-          <button className="btn btn-primary" onClick={getUrl}>Preview + download</button>
+          <button className="btn btn-primary btn-sm" onClick={getUrl}>Get download link</button>
         )}
       </div>
       {job.status === 'failed' && job.error_message && (
         <p className="small" style={{ color: '#fca5a5', marginTop: 8 }}>{job.error_message}</p>
-      )}
-      {job.status === 'completed' && (
-        <p className="small" style={{ marginTop: 6 }}>
-          {job.output_width}×{job.output_height} · {job.output_duration_seconds?.toFixed(1)}s ·{' '}
-          {(job.output_size_bytes / 1048576).toFixed(2)} MB
-        </p>
       )}
       {urlError && <div className="err">{urlError}</div>}
       {signedUrl && (
         <div style={{ marginTop: 12 }}>
           <video className="preview" src={signedUrl} controls />
           <p style={{ marginTop: 8 }}>
-            <a className="btn btn-primary" href={signedUrl} download={`stromation-${job.id.slice(0, 8)}.mp4`}>
+            <a className="btn btn-primary btn-sm" href={signedUrl} download={`stromation-${job.id.slice(0, 8)}.mp4`}>
               Download MP4
             </a>
             <span className="small" style={{ marginLeft: 10 }}>link valid for 1 hour</span>

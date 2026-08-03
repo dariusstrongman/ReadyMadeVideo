@@ -1,16 +1,252 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Stromation — Opening the app…</title>
-  <meta name="robots" content="noindex">
-  <link rel="canonical" href="https://app.stromation.com/dashboard">
-  <meta http-equiv="refresh" content="0; url=https://app.stromation.com/dashboard">
-  <script>window.location.replace("https://app.stromation.com/dashboard");</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Stromation</title>
+<meta name="description" content="Your video projects.">
+<link rel="canonical" href="https://www.stromation.com/dashboard.html">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<meta name="theme-color" content="#0a0a0f">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://www.stromation.com/dashboard.html">
+<meta property="og:title" content="Dashboard — Stromation">
+<meta property="og:description" content="Your video projects.">
+<meta property="og:image" content="https://www.stromation.com/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-B6Z6XV02RT"></script>
+<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-B6Z6XV02RT');</script>
+<style>
+:root{--bg:#0a0a0f;--bg-1:#111118;--bg-2:#16161f;--bg-3:#1c1c28;--surface:#1e1e2a;--surface-2:#252535;--border:rgba(255,255,255,0.07);--border-2:rgba(255,255,255,0.12);--cyan:#00d4ff;--cyan-dim:rgba(0,212,255,0.1);--cyan-glow:rgba(0,212,255,0.22);--violet:#7c3aed;--violet-dim:rgba(124,58,237,0.13);--text:#f0f0f5;--text-2:#a0a0b8;--text-3:#606078;--text-inv:#0a0a0f;--green:#22c55e;--amber:#f59e0b;--red:#ef4444;--sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;--mono:'JetBrains Mono','SF Mono','Cascadia Code',Menlo,Consolas,monospace;--radius:10px;--radius-lg:16px;--radius-xl:24px}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.65;-webkit-font-smoothing:antialiased}
+img,video,svg{max-width:100%;display:block}
+a{color:var(--cyan);text-decoration:none}
+a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:3px;border-radius:4px}
+button{font-family:var(--sans);cursor:pointer;border:none;background:none}
+.wrap{max-width:1140px;margin:0 auto;padding:0 24px}
+.wrap-sm{max-width:780px;margin:0 auto;padding:0 24px}
+.skip{position:absolute;left:-9999px;top:0;z-index:9999;background:var(--cyan);color:var(--text-inv);padding:10px 18px;font-weight:700;border-radius:0 0 8px 0}
+.skip:focus{left:0}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;height:64px;padding:0 32px;background:rgba(10,10,15,0.85);backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);border-bottom:1px solid var(--border);transition:background .3s}
+.nav-logo{display:flex;align-items:center;gap:10px;text-decoration:none!important}
+.nav-logo-text{font-family:var(--mono);font-weight:700;font-size:.88rem;letter-spacing:.15em;color:var(--text)}
+.nav-links{display:flex;align-items:center;gap:4px;margin-left:auto}
+.nav-links a{color:var(--text-2);font-size:.875rem;font-weight:500;padding:6px 12px;border-radius:8px;transition:color .2s,background .2s}
+.nav-links a:hover{color:var(--text);background:var(--surface);text-decoration:none}
+.nav-cta{margin-left:8px}
+.nav-menu-btn{display:none;background:none;border:1px solid var(--border-2);border-radius:8px;color:var(--text);padding:8px 12px;font-size:1.1rem;margin-left:auto;cursor:pointer}
+@media(max-width:860px){.nav-links{display:none;position:absolute;top:64px;left:0;right:0;background:var(--bg-1);flex-direction:column;align-items:stretch;padding:12px 0;border-bottom:1px solid var(--border)}.nav-links.open{display:flex}.nav-links a{padding:14px 24px;border-radius:0}.nav-cta{margin:8px 24px 4px}.nav-menu-btn{display:block}}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:600;font-size:.9rem;padding:11px 22px;border-radius:var(--radius);transition:all .2s;white-space:nowrap;text-decoration:none!important;border:none;cursor:pointer}
+.btn-primary{background:var(--cyan);color:var(--text-inv)}
+.btn-primary:hover{background:#33dcff;transform:translateY(-1px);box-shadow:0 4px 24px var(--cyan-glow)}
+.btn-secondary{background:var(--surface);color:var(--text);border:1px solid var(--border-2)}
+.btn-secondary:hover{background:var(--surface-2);transform:translateY(-1px)}
+.btn-ghost{background:transparent;color:var(--text-2);border:1px solid var(--border)}
+.btn-ghost:hover{color:var(--text);border-color:var(--border-2);background:var(--surface)}
+.btn-danger{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+.btn-danger:hover{background:rgba(239,68,68,.25)}
+.btn-lg{font-size:1rem;padding:14px 28px;border-radius:var(--radius-lg)}
+.btn-sm{font-size:.8rem;padding:7px 14px;border-radius:8px}
+.btn-icon{width:36px;height:36px;padding:0;border-radius:8px;display:inline-flex;align-items:center;justify-content:center}
+section{padding:96px 0}
+.page-hero{padding:140px 0 80px;background:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(0,212,255,.06),transparent)}
+.section-label{font-family:var(--mono);font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--cyan);font-weight:600;margin-bottom:14px}
+.section-title{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:800;letter-spacing:-.03em;line-height:1.1;color:var(--text)}
+.section-sub{color:var(--text-2);font-size:1.05rem;line-height:1.7;margin-top:16px;max-width:60ch}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px}
+.card:hover{border-color:var(--border-2)}
+.grid{display:grid;gap:20px}
+.grid-2{grid-template-columns:repeat(2,1fr)}
+.grid-3{grid-template-columns:repeat(3,1fr)}
+.grid-4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:900px){.grid-3,.grid-4{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:.75rem;font-weight:600;padding:4px 10px;border-radius:100px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.badge-cyan{background:var(--cyan-dim);color:var(--cyan);border:1px solid rgba(0,212,255,.2)}
+.badge-green{background:rgba(34,197,94,.12);color:var(--green);border:1px solid rgba(34,197,94,.25)}
+.badge-amber{background:rgba(245,158,11,.12);color:var(--amber);border:1px solid rgba(245,158,11,.25)}
+.badge-red{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.25)}
+.badge-violet{background:var(--violet-dim);color:#a78bfa;border:1px solid rgba(124,58,237,.3)}
+.form-group{display:flex;flex-direction:column;gap:6px}
+.form-label{font-size:.85rem;font-weight:600;color:var(--text-2)}
+.form-input,.form-select,.form-textarea{background:var(--bg-2);border:1px solid var(--border-2);border-radius:var(--radius);color:var(--text);font-size:.9rem;padding:10px 14px;transition:border-color .2s,box-shadow .2s;font-family:var(--sans);width:100%}
+.form-input:focus,.form-select:focus,.form-textarea:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 0 3px var(--cyan-dim)}
+.form-input::placeholder,.form-textarea::placeholder{color:var(--text-3)}
+.form-textarea{resize:vertical;min-height:100px}
+.form-select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a0a0b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px}
+.divider{border:none;border-top:1px solid var(--border);margin:0}
+.footer{padding:64px 0 40px;border-top:1px solid var(--border);background:var(--bg)}
+.footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:48px}
+@media(max-width:860px){.footer-grid{grid-template-columns:1fr 1fr;gap:32px}}
+@media(max-width:520px){.footer-grid{grid-template-columns:1fr}}
+.footer-brand p{color:var(--text-3);font-size:.875rem;margin-top:12px;max-width:28ch;line-height:1.6}
+.footer-col h4{font-size:.78rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:16px}
+.footer-col a{display:block;color:var(--text-2);font-size:.875rem;margin-bottom:10px;transition:color .2s}
+.footer-col a:hover{color:var(--text);text-decoration:none}
+.footer-bottom{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.footer-bottom p{color:var(--text-3);font-size:.8rem}
+.text-center{text-align:center}
+.text-cyan{color:var(--cyan)}
+.text-muted{color:var(--text-2)}
+.mt-8{margin-top:8px}.mt-12{margin-top:12px}.mt-16{margin-top:16px}.mt-24{margin-top:24px}.mt-32{margin-top:32px}.mt-48{margin-top:48px}
+.mb-16{margin-bottom:16px}.mb-24{margin-bottom:24px}
+.flex{display:flex}.items-center{align-items:center}.justify-between{justify-content:space-between}.gap-8{gap:8px}.gap-12{gap:12px}.gap-16{gap:16px}.gap-24{gap:24px}
+.w-full{width:100%}
+.hidden{display:none!important}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+.fade-in-up{animation:fadeInUp .6s ease both}
+.delay-1{animation-delay:.1s}.delay-2{animation-delay:.25s}
+</style>
+<style>
+.app-layout{display:grid;grid-template-columns:240px 1fr;min-height:100vh;padding-top:64px}
+@media(max-width:860px){.app-layout{grid-template-columns:1fr}}
+.sidebar{background:var(--bg-1);border-right:1px solid var(--border);padding:24px 16px;position:sticky;top:64px;height:calc(100vh - 64px);overflow-y:auto}
+@media(max-width:860px){.sidebar{display:none}}
+.sidebar-section{margin-bottom:24px}
+.sidebar-label{font-family:var(--mono);font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-3);padding:0 8px;margin-bottom:8px}
+.sidebar-link{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;color:var(--text-2);font-size:.875rem;font-weight:500;transition:all .15s;text-decoration:none!important;cursor:pointer}
+.sidebar-link:hover{background:var(--surface);color:var(--text)}
+.sidebar-link.active{background:var(--cyan-dim);color:var(--cyan);border:1px solid rgba(0,212,255,.15)}
+.sidebar-link svg{width:16px;height:16px;flex-shrink:0}
+.app-main{padding:32px;overflow:hidden}
+@media(max-width:600px){.app-main{padding:20px 16px}}
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:32px;flex-wrap:wrap;gap:16px}
+.page-header h1{font-size:1.5rem;font-weight:800;letter-spacing:-.02em}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:32px}
+@media(max-width:900px){.stats-row{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:500px){.stats-row{grid-template-columns:1fr 1fr}}
+.stat-card{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px}
+.stat-label{font-size:.78rem;color:var(--text-3);font-weight:500;margin-bottom:6px}
+.stat-value{font-size:1.6rem;font-weight:800;color:var(--text);letter-spacing:-.02em}
+.stat-sub{font-size:.75rem;color:var(--text-3);margin-top:4px}
+.projects-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+@media(max-width:1100px){.projects-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.projects-grid{grid-template-columns:1fr}}
+.project-card{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;transition:border-color .2s,transform .2s;cursor:pointer}
+.project-card:hover{border-color:var(--border-2);transform:translateY(-2px)}
+.project-thumb{height:140px;background:linear-gradient(135deg,var(--bg-3),var(--surface));position:relative;display:flex;align-items:center;justify-content:center}
+.project-thumb-icon{font-size:2rem;opacity:.4}
+.project-thumb-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,rgba(10,10,15,.8))}
+.project-body{padding:16px}
+.project-name{font-size:.95rem;font-weight:700;color:var(--text);margin-bottom:8px}
+.project-meta{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.project-date{font-size:.75rem;color:var(--text-3)}
+.new-project-card{background:var(--bg-2);border:2px dashed var(--border-2);border-radius:var(--radius-lg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:220px;cursor:pointer;transition:all .2s;text-decoration:none!important}
+.new-project-card:hover{border-color:var(--cyan);background:var(--cyan-dim)}
+.new-project-card .np-icon{width:48px;height:48px;border-radius:50%;background:var(--surface);border:1px solid var(--border-2);display:flex;align-items:center;justify-content:center;font-size:1.4rem;transition:all .2s}
+.new-project-card:hover .np-icon{background:var(--cyan-dim);border-color:rgba(0,212,255,.3)}
+.new-project-card p{font-size:.875rem;font-weight:600;color:var(--text-2)}
+.new-project-card:hover p{color:var(--cyan)}
+.empty-state{text-align:center;padding:80px 24px;color:var(--text-2)}
+.empty-state h3{font-size:1.2rem;font-weight:700;color:var(--text);margin-bottom:8px}
+.empty-state p{font-size:.9rem;max-width:40ch;margin:0 auto 24px}
+</style>
 </head>
 <body>
-  <p>Stromation has moved. Redirecting to
-    <a href="https://app.stromation.com/dashboard">app.stromation.com/dashboard</a>…</p>
+<a href="#main" class="skip">Skip to content</a>
+<nav class="nav" id="nav">
+  <a href="index.html" class="nav-logo" aria-label="Stromation home">
+    <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" width="28" height="28">
+      <circle cx="30" cy="8" r="5" stroke="#00d4ff" stroke-width="2"/>
+      <circle cx="20" cy="22" r="4" stroke="#00d4ff" stroke-width="2"/>
+      <circle cx="10" cy="34" r="5" stroke="#00d4ff" stroke-width="2"/>
+      <path d="M27 11 C24 14, 22 18, 22 20" stroke="#00d4ff" stroke-width="2" stroke-linecap="round" marker-end="url(#na)"/>
+      <path d="M18 25 C16 28, 13 30, 13 32" stroke="#00d4ff" stroke-width="2" stroke-linecap="round" marker-end="url(#na)"/>
+      <defs><marker id="na" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="3" markerHeight="3" orient="auto"><path d="M1 1L6 4L1 7" stroke="#00d4ff" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+    </svg>
+    <span class="nav-logo-text">STROMATION</span>
+  </a>
+  <div class="nav-links" id="nav-links">
+    <a href="index.html#how-it-works">How it works</a>
+    <a href="index.html#features">Features</a>
+    <a href="showcase.html">Showcase</a>
+    <a href="pricing.html">Pricing</a>
+    <a href="dashboard.html" class="btn btn-secondary btn-sm nav-cta">Dashboard</a>
+    <a href="index.html#waitlist" class="btn btn-primary btn-sm nav-cta">Get early access</a>
+  </div>
+  <button class="nav-menu-btn" id="menu-btn" aria-label="Toggle navigation" aria-expanded="false">&#9776;</button>
+</nav>
+<div class="app-layout">
+  <aside class="sidebar" role="navigation" aria-label="Application navigation">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Workspace</div>
+      <a class="sidebar-link active" href="dashboard.html">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="6" height="6" rx="1.5"/><rect x="9" y="1" width="6" height="6" rx="1.5"/><rect x="1" y="9" width="6" height="6" rx="1.5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></svg>
+        Dashboard
+      </a>
+      <a class="sidebar-link" href="new-project.html">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="7"/><path d="M8 5v6M5 8h6"/></svg>
+        New project
+      </a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Account</div>
+      <a class="sidebar-link" href="#">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.314 2.686-6 6-6s6 2.686 6 6"/></svg>
+        Profile
+      </a>
+      <a class="sidebar-link" href="#">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/></svg>
+        Settings
+      </a>
+    </div>
+  </aside>
+  <main class="app-main" id="main">
+    <div class="page-header">
+      <h1>Projects</h1>
+      <a href="new-project.html" class="btn btn-primary">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 1v12M1 7h12"/></svg>
+        New project
+      </a>
+    </div>
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-label">Total projects</div><div class="stat-value">0</div><div class="stat-sub">Get started below</div></div>
+      <div class="stat-card"><div class="stat-label">In progress</div><div class="stat-value">0</div><div class="stat-sub">&mdash;</div></div>
+      <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-value">0</div><div class="stat-sub">&mdash;</div></div>
+      <div class="stat-card"><div class="stat-label">Exports</div><div class="stat-value">0</div><div class="stat-sub">&mdash;</div></div>
+    </div>
+    <div class="projects-grid" id="projects-grid">
+      <a href="new-project.html" class="new-project-card" aria-label="Create a new project">
+        <div class="np-icon" aria-hidden="true">+</div>
+        <p>Create your first project</p>
+      </a>
+    </div>
+    <div class="empty-state" id="empty-state" style="display:none">
+      <h3>No projects yet</h3>
+      <p>Create your first project to get started with Stromation.</p>
+      <a href="new-project.html" class="btn btn-primary">Create your first project</a>
+    </div>
+  </main>
+</div>
+<footer class="footer" role="contentinfo">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a href="index.html" class="nav-logo" style="display:inline-flex" aria-label="Stromation home">
+          <svg viewBox="0 0 40 40" fill="none" width="22" height="22" aria-hidden="true"><circle cx="30" cy="8" r="5" stroke="#00d4ff" stroke-width="2"/><circle cx="20" cy="22" r="4" stroke="#00d4ff" stroke-width="2"/><circle cx="10" cy="34" r="5" stroke="#00d4ff" stroke-width="2"/><path d="M27 11 C24 14, 22 18, 22 20" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/><path d="M18 25 C16 28, 13 30, 13 32" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/></svg>
+          <span class="nav-logo-text" style="margin-left:8px">STROMATION</span>
+        </a>
+        <p>AI-first video production platform. Upload raw footage, describe your vision, receive a complete edit.</p>
+      </div>
+      <div class="footer-col"><h4>Product</h4><a href="index.html#how-it-works">How it works</a><a href="index.html#features">Features</a><a href="showcase.html">Showcase</a><a href="pricing.html">Pricing</a><a href="index.html#waitlist">Early access</a></div>
+      <div class="footer-col"><h4>Platform</h4><a href="dashboard.html">Dashboard</a><a href="new-project.html">New project</a><a href="editor.html">Editor</a></div>
+      <div class="footer-col"><h4>Legal</h4><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of service</a></div>
+    </div>
+    <div class="footer-bottom"><p>&copy; 2026 Stromation. All rights reserved.</p><p>Raw footage in. Finished video out.</p></div>
+  </div>
+</footer>
+<script>
+const mb=document.getElementById('menu-btn'),nl=document.getElementById('nav-links');
+if(mb&&nl){mb.addEventListener('click',()=>{const o=nl.classList.toggle('open');mb.setAttribute('aria-expanded',o)});nl.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>{nl.classList.remove('open');mb.setAttribute('aria-expanded','false')}));}
+const nav=document.getElementById('nav');
+if(nav)window.addEventListener('scroll',()=>{nav.style.background=window.scrollY>20?'rgba(10,10,15,0.97)':'rgba(10,10,15,0.85)';},{passive:true});
+</script>
 </body>
 </html>

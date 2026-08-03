@@ -103,30 +103,6 @@ section{padding:96px 0}
 @keyframes fadeInUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
 .fade-in-up{animation:fadeInUp .6s ease both}
 .delay-1{animation-delay:.1s}.delay-2{animation-delay:.25s}
-
-.showcase-card.featured{background:var(--bg-2);border:1px solid var(--border-2);border-radius:var(--radius-xl);overflow:hidden;margin-bottom:32px}
-.sc-thumb{position:relative;aspect-ratio:16/9;overflow:hidden;background:var(--bg-3)}
-.sc-thumb img{width:100%;height:100%;object-fit:cover}
-.sc-badge{position:absolute;top:12px;left:12px;font-size:.65rem;font-family:var(--mono);font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:4px 10px;border-radius:100px}
-.sc-badge-live{background:rgba(0,212,255,.15);border:1px solid rgba(0,212,255,.3);color:var(--cyan)}
-.sc-info{padding:24px 28px}
-.sc-title{font-size:1.2rem;font-weight:700;margin-bottom:10px}
-.sc-meta{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
-.sc-tag{font-size:.65rem;font-family:var(--mono);font-weight:700;letter-spacing:.1em;text-transform:uppercase;background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.2);color:var(--cyan);padding:3px 8px;border-radius:100px}
-.sc-dur,.sc-ratio{font-size:.75rem;font-family:var(--mono);color:var(--text-3)}
-.sc-desc{color:var(--text-2);font-size:.875rem;line-height:1.7;margin-bottom:16px}
-.sc-timeline-info{background:var(--bg-3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:20px;display:flex;flex-direction:column;gap:4px}
-.sc-tl-label{font-size:.7rem;font-family:var(--mono);color:var(--text-3);text-transform:uppercase;letter-spacing:.08em}
-.sc-tl-detail{font-size:.8rem;color:var(--text-2)}
-.sc-download{gap:8px;margin-bottom:12px}
-.sc-disclaimer{font-size:.75rem;color:var(--text-3);line-height:1.6}
-.showcase-placeholder-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-@media(max-width:768px){.showcase-placeholder-grid{grid-template-columns:1fr 1fr}}
-@media(max-width:480px){.showcase-placeholder-grid{grid-template-columns:1fr}}
-.sc-placeholder{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-lg);aspect-ratio:16/9;display:flex;align-items:center;justify-content:center}
-.sc-ph-inner{text-align:center;padding:16px}
-.sc-ph-label{font-size:.65rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);display:block;margin-bottom:8px}
-.sc-ph-inner h4{font-size:.85rem;font-weight:600;color:var(--text-2);margin-bottom:6px}
 </style>
 <style>
 .showcase-hero{padding:140px 0 80px;text-align:center;background:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(0,212,255,.06),transparent)}
@@ -165,8 +141,9 @@ section{padding:96px 0}
     <a href="index.html#how-it-works">How it works</a>
     <a href="index.html#features">Features</a>
     <a href="showcase.html">Showcase</a>
-    <a href="pricing.html">Early access</a>
-    <a href="https://app.stromation.com" class="btn btn-secondary btn-sm nav-cta">Dashboard</a>
+    <a href="pricing.html">Pricing</a>
+    <a href="dashboard.html" class="btn btn-secondary btn-sm nav-cta">Dashboard</a>
+    <a href="index.html#waitlist" class="btn btn-primary btn-sm nav-cta">Get early access</a>
   </div>
   <button class="nav-menu-btn" id="menu-btn" aria-label="Toggle navigation" aria-expanded="false">&#9776;</button>
 </nav>
@@ -181,39 +158,9 @@ section{padding:96px 0}
   <section style="padding:0 0 96px">
     <div class="wrap">
       <div class="showcase-grid">
-<div class="showcase-card featured">
-  <div class="sc-thumb">
-    <img src="assets/media/project-zero-thumb.jpg" alt="Project Zero — Morning Workout Edit timeline thumbnail" loading="lazy" width="800" height="450">
-    <div class="sc-badge sc-badge-live">Project Zero</div>
-  </div>
-  <div class="sc-info">
-    <h3 class="sc-title">Project Zero — Morning Workout Edit</h3>
-    <div class="sc-meta">
-      <span class="sc-tag">FITNESS</span>
-      <span class="sc-dur">2:15</span>
-      <span class="sc-ratio">16:9</span>
-    </div>
-    <p class="sc-desc">The first project built with Stromation. Structured manually from workout footage metadata — not by AI. Demonstrates the timeline data model, S3 storage system, and downloadable export. AI editing features are prototypes and were not used to produce this project.</p>
-    <div class="sc-timeline-info">
-      <span class="sc-tl-label">Timeline structure</span>
-      <span class="sc-tl-detail">9 clips &middot; 2:15 total &middot; V1, A1, MUS, TXT tracks</span>
-    </div>
-    <a href="assets/media/project-zero.mp4" download="project-zero-morning-workout.mp4" class="btn btn-primary sc-download">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      Download video (MP4, 188 KB)
-    </a>
-    <p class="sc-disclaimer">This project was assembled manually from structured metadata. It demonstrates the timeline data model and storage system, not AI editing capability.</p>
-  </div>
-</div>
-<p style="color:var(--text-3);font-size:.8rem;margin:32px 0 16px;text-align:center;font-family:var(--mono);letter-spacing:.05em;text-transform:uppercase">More examples — added as early access creators complete their first projects</p>
-<div class="showcase-placeholder-grid">
-  <div class="sc-placeholder"><div class="sc-ph-inner"><span class="sc-ph-label">Example coming soon</span><h4>Trail Run — Morning Light</h4><div class="sc-meta"><span class="sc-tag">FITNESS</span><span class="sc-dur">1:42</span><span class="sc-ratio">16:9</span></div></div></div>
-  <div class="sc-placeholder"><div class="sc-ph-inner"><span class="sc-ph-label">Example coming soon</span><h4>Cinematic Workout Edit</h4><div class="sc-meta"><span class="sc-tag">FITNESS</span><span class="sc-dur">2:15</span><span class="sc-ratio">16:9</span></div></div></div>
-  <div class="sc-placeholder"><div class="sc-ph-inner"><span class="sc-ph-label">Example coming soon</span><h4>Lifestyle Vlog — Week in Review</h4><div class="sc-meta"><span class="sc-tag">LIFESTYLE</span><span class="sc-dur">4:30</span><span class="sc-ratio">16:9</span></div></div></div>
-  <div class="sc-placeholder"><div class="sc-ph-inner"><span class="sc-ph-label">Example coming soon</span><h4>Transformation — 90 Days</h4><div class="sc-meta"><span class="sc-tag">FITNESS</span><span class="sc-dur">3:00</span><span class="sc-ratio">9:16</span></div></div></div>
-  <div class="sc-placeholder"><div class="sc-ph-inner"><span class="sc-ph-label">Example coming soon</span><h4>Race Day — Half Marathon</h4><div class="sc-meta"><span class="sc-tag">RUNNING</span><span class="sc-dur">2:45</span><span class="sc-ratio">16:9</span></div></div></div>
-</div>
-</div>
+        <div class="showcase-card">
+          <div class="showcase-thumb" style="background:linear-gradient(135deg,#0d1a0d,#1a2a1a)">
+            <div class="showcase-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
             <div class="coming-soon-overlay"><span>Example coming soon</span></div>
           </div>
           <div class="showcase-body"><div class="showcase-title">Trail Run — Morning Light</div><div class="showcase-meta"><span class="badge badge-cyan">Fitness</span><span>1:42</span><span>16:9</span></div></div>
@@ -271,8 +218,8 @@ section{padding:96px 0}
         </a>
         <p>AI-first video production platform. Upload raw footage, describe your vision, receive a complete edit.</p>
       </div>
-      <div class="footer-col"><h4>Product</h4><a href="index.html#how-it-works">How it works</a><a href="index.html#features">Features</a><a href="showcase.html">Showcase</a><a href="pricing.html">Early access</a><a href="index.html#waitlist">Early access</a></div>
-      <div class="footer-col"><h4>Platform</h4><a href="https://app.stromation.com">Dashboard</a><a href="https://app.stromation.com">New project</a><a href="https://app.stromation.com">Editor</a></div>
+      <div class="footer-col"><h4>Product</h4><a href="index.html#how-it-works">How it works</a><a href="index.html#features">Features</a><a href="showcase.html">Showcase</a><a href="pricing.html">Pricing</a><a href="index.html#waitlist">Early access</a></div>
+      <div class="footer-col"><h4>Platform</h4><a href="dashboard.html">Dashboard</a><a href="new-project.html">New project</a><a href="editor.html">Editor</a></div>
       <div class="footer-col"><h4>Legal</h4><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of service</a></div>
     </div>
     <div class="footer-bottom"><p>&copy; 2026 Stromation. All rights reserved.</p><p>Raw footage in. Finished video out.</p></div>
