@@ -17,6 +17,46 @@ const STATUS_LABEL = {
   complete:        'Export ready',
 }
 
+// Pipeline stages mapped to real asset_analysis.kind values
+// Stages are shown in order; completed = green check, current = cyan pulse, pending = muted
+const PIPELINE_STAGES = [
+  {
+    id: 'upload',
+    label: 'Footage uploaded',
+    description: 'Your clips are stored securely and ready for processing.',
+    kinds: [],  // not an analysis kind — derived from project.status >= ready
+  },
+  {
+    id: 'probe',
+    label: 'Validating clips',
+    description: 'Checking clip format, duration, resolution, and audio tracks.',
+    kinds: ['probe'],
+  },
+  {
+    id: 'examine',
+    label: 'Examining footage',
+    description: 'Checking clip duration, format, motion, and audio clarity.',
+    kinds: ['proxy', 'mechanical', 'audio'],
+  },
+  {
+    id: 'moments',
+    label: 'Finding strong moments',
+    description: 'Comparing clips and identifying the most useful sections.',
+    kinds: ['scenes', 'semantic', 'motion'],
+  },
+  {
+    id: 'build',
+    label: 'Building the edit',
+    description: 'Arranging selected footage into a structured sequence.',
+    kinds: ['catalog'],
+  },
+  {
+    id: 'preview',
+    label: 'Preparing preview',
+    description: 'Finalising the edit so you can watch it.',
+    kinds: [],  // derived from project.status === draft_ready
+  },
+]
 const ANALYSIS_STAGES = {
   analyzing:  { title: 'Examining your clips',      sub: 'Scoring shot quality, camera movement, and audio clarity.' },
   selecting:  { title: 'Finding the best moments',  sub: 'Ranking clips by visual quality and story potential.' },
@@ -67,6 +107,7 @@ export default function Project() {
   const [candidates, setCandidates] = useState([])
   const [candidateIdx, setCandidateIdx] = useState(0)
   const [jobs, setJobs] = useState([])
+  const [analysis, setAnalysis] = useState([])
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadPct, setUploadPct] = useState(0)
@@ -77,16 +118,18 @@ export default function Project() {
   const videoRef = useRef(null)
 
   const load = useCallback(async () => {
-    const [{ data: proj }, { data: ast }, { data: cands }, { data: js }] = await Promise.all([
+    const [{ data: proj }, { data: ast }, { data: cands }, { data: js }, { data: analysisRows }] = await Promise.all([
       supabase.from('projects').select('*').eq('id', projectId).single(),
       supabase.from('media_assets').select('*').eq('project_id', projectId).order('created_at'),
       supabase.from('edit_candidates').select('*').eq('project_id', projectId).order('overall_score', { ascending: false }),
       supabase.from('render_jobs').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
+      supabase.from('asset_analysis').select('kind,status').eq('project_id', projectId),
     ])
     if (proj) setProject(proj)
     if (ast) setAssets(ast)
     if (cands) setCandidates(cands)
     if (js) setJobs(js)
+    if (analysisRows) setAnalysis(analysisRows)
   }, [projectId])
 
   useEffect(() => { load() }, [load])
@@ -234,34 +277,16 @@ export default function Project() {
 
   // ── Processing ──────────────────────────────────────────────────────
   if (['ready', 'analyzing'].includes(status)) {
-    const stage = ANALYSIS_STAGES[status] || ANALYSIS_STAGES.analyzing
     return (
       <>
         <Breadcrumb projectName={project.name} projectId={projectId} />
         <StepIndicator step={2} />
-        <div className="wrap" style={{ paddingTop: 48, paddingBottom: 80 }}>
-          <div className="processing-card">
-            <div className="processing-ring" />
-            <h2 className="processing-title">{stage.title}</h2>
-            <p className="processing-sub">{stage.sub}</p>
-            <p className="processing-wait">
-              This usually takes 3–5 minutes.<br />
-              We'll show a notification when your edit is ready.
-            </p>
-          </div>
-          {assets.length > 0 && (
-            <div style={{ marginTop: 32 }}>
-              <span className="section-label">Your footage</span>
-              <div className="clip-peek">
-                {assets.map((a, i) => (
-                  <div key={a.id} className="clip-peek-item" style={{ animationDelay: `${i * 80}ms` }}>
-                    {a.original_filename?.split('.')[0] || 'clip'}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <ProcessingWorkspace
+          project={project}
+          assets={assets}
+          analysis={analysis}
+          jobs={jobs}
+        />
       </>
     )
   }
@@ -351,6 +376,157 @@ export default function Project() {
         )}
       </div>
     </>
+  )
+}
+
+
+// ── ProcessingWorkspace ─────────────────────────────────────────────────────
+function ProcessingWorkspace({ project, assets, analysis, jobs }) {
+  const fmtSize = b => !b ? '' : b > 1e6 ? `${(b/1e6).toFixed(1)} MB` : `${(b/1e3).toFixed(0)} KB`
+  const fmtDur  = s => !s ? '' : s >= 60 ? `${Math.floor(s/60)}m ${Math.round(s%60)}s` : `${Math.round(s)}s`
+
+  // Derive stage completion from real asset_analysis rows
+  // A stage is "done" if all its kinds have at least one completed row
+  // A stage is "active" if any of its kinds has a running row
+  function stageState(stage) {
+    if (stage.kinds.length === 0) {
+      // Special: upload stage = always done once we're here
+      if (stage.id === 'upload') return 'done'
+      // preview stage = done only when project.status is draft_ready
+      if (stage.id === 'preview') return project.status === 'draft_ready' ? 'done' : 'pending'
+      return 'pending'
+    }
+    const relevant = analysis.filter(r => stage.kinds.includes(r.kind))
+    const anyRunning = relevant.some(r => r.status === 'running')
+    const allDone = stage.kinds.every(k => relevant.some(r => r.kind === k && r.status === 'completed'))
+    if (allDone) return 'done'
+    if (anyRunning) return 'active'
+    // If some kinds are completed but not all, still active
+    if (relevant.some(r => r.status === 'completed')) return 'active'
+    return 'pending'
+  }
+
+  // Find the current active stage for the description copy
+  const stageStates = PIPELINE_STAGES.map(s => ({ ...s, state: stageState(s) }))
+  const currentStage = stageStates.find(s => s.state === 'active') || stageStates.find(s => s.state === 'pending') || stageStates[stageStates.length - 1]
+
+  // No render job = processing is happening server-side (AI pipeline)
+  // Failed render job = show error state
+  const latestJob = jobs[0]
+  const jobFailed = latestJob?.status === 'failed'
+
+  if (jobFailed) {
+    return (
+      <div className="wrap" style={{ paddingTop: 48, paddingBottom: 80 }}>
+        <div className="proc-error-card">
+          <div className="proc-error-icon">✕</div>
+          <h2 className="proc-error-title">We couldn't start the edit.</h2>
+          <p className="proc-error-sub">
+            Your footage is uploaded safely, but the editing job did not start.
+          </p>
+          {latestJob.error_message && (
+            <p className="proc-error-detail">{latestJob.error_message}</p>
+          )}
+          <div className="proc-error-actions">
+            <Link to="/" className="btn btn-ghost">← Back to Your Studio</Link>
+          </div>
+        </div>
+        {assets.length > 0 && <FootageGrid assets={assets} fmtSize={fmtSize} fmtDur={fmtDur} />}
+      </div>
+    )
+  }
+
+  return (
+    <div className="wrap" style={{ paddingTop: 48, paddingBottom: 80 }}>
+      {/* Main processing card */}
+      <div className="proc-card">
+        {/* Ambient glow */}
+        <div className="proc-glow" aria-hidden="true" />
+
+        {/* Orbital indicator */}
+        <div className="proc-orbit-wrap" aria-hidden="true">
+          <div className="proc-orbit-ring" />
+          <div className="proc-orbit-dot" />
+          <div className="proc-orbit-core" />
+        </div>
+
+        {/* Current activity */}
+        <div className="proc-activity">
+          <span className="proc-activity-label">Creating your edit</span>
+          <h2 className="proc-activity-title">{currentStage.label}</h2>
+          <p className="proc-activity-desc">{currentStage.description}</p>
+        </div>
+
+        {/* Stage pipeline */}
+        <div className="proc-pipeline" role="list" aria-label="Processing stages">
+          {stageStates.map((s, i) => (
+            <div
+              key={s.id}
+              className={`proc-stage proc-stage--${s.state}`}
+              role="listitem"
+              aria-label={`${s.label}: ${s.state}`}
+            >
+              <div className="proc-stage-icon" aria-hidden="true">
+                {s.state === 'done'
+                  ? <svg viewBox="0 0 16 16" fill="none"><path className="proc-check-path" d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  : s.state === 'active'
+                    ? <div className="proc-stage-pulse" />
+                    : <div className="proc-stage-dot" />
+                }
+              </div>
+              {i < stageStates.length - 1 && (
+                <div className={`proc-stage-line ${s.state === 'done' ? 'proc-stage-line--done' : ''}`} aria-hidden="true">
+                  <div className="proc-stage-line-shimmer" />
+                </div>
+              )}
+              <span className="proc-stage-label">{s.label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Honest time copy */}
+        <p className="proc-wait">Most edits take a few minutes.</p>
+        <p className="proc-persist">
+          You can return to{' '}
+          <Link to="/" style={{ color: 'var(--cyan)' }}>Your Studio</Link>
+          {' '}while this page updates.
+        </p>
+      </div>
+
+      {/* Footage grid */}
+      {assets.length > 0 && <FootageGrid assets={assets} fmtSize={fmtSize} fmtDur={fmtDur} />}
+    </div>
+  )
+}
+
+function FootageGrid({ assets, fmtSize, fmtDur }) {
+  return (
+    <div className="proc-footage" style={{ marginTop: 40 }}>
+      <span className="section-label">Your footage</span>
+      <div className="proc-footage-grid">
+        {assets.map((a, i) => (
+          <div
+            key={a.id}
+            className="proc-clip-card"
+            style={{ animationDelay: `${i * 60}ms` }}
+          >
+            <div className="proc-clip-thumb" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="2" width="20" height="20" rx="3"/>
+                <path d="M10 8l6 4-6 4V8z"/>
+              </svg>
+            </div>
+            <div className="proc-clip-info">
+              <span className="proc-clip-name">{a.filename}</span>
+              <span className="proc-clip-meta">
+                {[fmtSize(a.size_bytes), fmtDur(a.duration_seconds)].filter(Boolean).join(' · ')}
+              </span>
+            </div>
+            <div className="proc-clip-badge" aria-label="Upload complete">✓</div>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
