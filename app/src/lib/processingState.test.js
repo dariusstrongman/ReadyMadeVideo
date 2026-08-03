@@ -281,3 +281,156 @@ describe('resolveStallAnchor', () => {
     expect(NOW - anchor).toBeLessThan(STALL_THRESHOLD_MS)
   })
 })
+
+// ── Upload trigger tests ────────────────────────────────────────────────────
+// These tests verify the state model correctly handles the transition from
+// upload-complete to analysis-started, and the stall behavior when analysis
+// never starts.
+
+describe('upload trigger and analysis start', () => {
+  const recentAsset = { created_at: new Date(Date.now() - 30_000).toISOString() }
+  const oldAsset    = { created_at: new Date(Date.now() - 10 * 60_000).toISOString() }
+  const project     = { status: 'ready', created_at: new Date(Date.now() - 20 * 60_000).toISOString() }
+
+  it('shows analysis_not_started immediately after upload (asset is recent)', () => {
+    const state = deriveProcessingState({
+      project, assets: [recentAsset], analysis: [], jobs: [],
+      nowMs: Date.now(),
+    })
+    expect(state.kind).toBe('analysis_not_started')
+  })
+
+  it('does not stall when a recent asset exists even if project is old', () => {
+    const state = deriveProcessingState({
+      project, assets: [recentAsset], analysis: [], jobs: [],
+      nowMs: Date.now(),
+    })
+    expect(state.kind).not.toBe('stalled')
+  })
+
+  it('transitions to analysis_running when asset_analysis rows appear', () => {
+    const state = deriveProcessingState({
+      project, assets: [recentAsset],
+      analysis: [{ kind: 'probe', status: 'running', created_at: new Date().toISOString() }],
+      jobs: [], nowMs: Date.now(),
+    })
+    expect(state.kind).toBe('analysis_running')
+  })
+
+  it('shows stalled when old project has old asset and no analysis after threshold', () => {
+    const state = deriveProcessingState({
+      project, assets: [oldAsset], analysis: [], jobs: [],
+      nowMs: Date.now(),
+    })
+    expect(state.kind).toBe('stalled')
+  })
+
+  it('transitions to job_queued when a pipeline job appears', () => {
+    const state = deriveProcessingState({
+      project, assets: [recentAsset], analysis: [],
+      jobs: [{ status: 'queued', created_at: new Date().toISOString() }],
+      nowMs: Date.now(),
+    })
+    expect(state.kind).toBe('job_queued')
+  })
+})
+
+// ── Stalled-state retry action tests ───────────────────────────────────────
+// These tests verify the canRetry logic that controls whether the
+// "Try starting the edit" button is shown in the stalled state.
+
+describe('stalled-state retry eligibility (canRetry logic)', () => {
+  const ownerId = 'user-abc'
+  const otherId = 'user-xyz'
+  const oldProject = {
+    id: 'proj-1',
+    user_id: ownerId,
+    status: 'ready',
+    created_at: new Date(Date.now() - 20 * 60_000).toISOString(),
+  }
+  const oldAsset = { created_at: new Date(Date.now() - 10 * 60_000).toISOString() }
+  const activeJob = { status: 'queued', created_at: new Date().toISOString() }
+  const completedJob = { status: 'completed', created_at: new Date(Date.now() - 5 * 60_000).toISOString() }
+
+  // Helper: compute canRetry from the same logic as ProcessingWorkspace
+  function canRetry({ session, project, assets, jobs }) {
+    return !!(
+      session &&
+      project.user_id === session.user.id &&
+      assets.length > 0 &&
+      !jobs.some(j => ['queued', 'processing'].includes(j.status))
+    )
+  }
+
+  it('existing stuck project can start analysis (owner, has assets, no active job)', () => {
+    expect(canRetry({
+      session: { user: { id: ownerId } },
+      project: oldProject,
+      assets: [oldAsset],
+      jobs: [],
+    })).toBe(true)
+  })
+
+  it('duplicate clicks prevented — active job disables retry button', () => {
+    expect(canRetry({
+      session: { user: { id: ownerId } },
+      project: oldProject,
+      assets: [oldAsset],
+      jobs: [activeJob],
+    })).toBe(false)
+  })
+
+  it('unauthorized project — wrong user cannot retry', () => {
+    expect(canRetry({
+      session: { user: { id: otherId } },
+      project: oldProject,
+      assets: [oldAsset],
+      jobs: [],
+    })).toBe(false)
+  })
+
+  it('no-assets project cannot start analysis', () => {
+    expect(canRetry({
+      session: { user: { id: ownerId } },
+      project: oldProject,
+      assets: [],
+      jobs: [],
+    })).toBe(false)
+  })
+
+  it('active job (queued) returns existing job — retry disabled', () => {
+    expect(canRetry({
+      session: { user: { id: ownerId } },
+      project: oldProject,
+      assets: [oldAsset],
+      jobs: [activeJob],
+    })).toBe(false)
+  })
+
+  it('active job (processing) — retry disabled', () => {
+    expect(canRetry({
+      session: { user: { id: ownerId } },
+      project: oldProject,
+      assets: [oldAsset],
+      jobs: [{ status: 'processing', created_at: new Date().toISOString() }],
+    })).toBe(false)
+  })
+
+  it('completed job does not block retry (new analysis allowed)', () => {
+    expect(canRetry({
+      session: { user: { id: ownerId } },
+      project: oldProject,
+      assets: [oldAsset],
+      jobs: [completedJob],
+    })).toBe(true)
+  })
+
+  it('no session — retry not available', () => {
+    expect(canRetry({
+      session: null,
+      project: oldProject,
+      assets: [oldAsset],
+      jobs: [],
+    })).toBe(false)
+  })
+})

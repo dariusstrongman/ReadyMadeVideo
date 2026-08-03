@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
@@ -210,6 +210,16 @@ export default function Project() {
       setUploadPct(Math.round((done / total) * 100))
     }
     await supabase.from('projects').update({ status: 'ready' }).eq('id', projectId)
+    // Trigger analysis — idempotent: backend returns existing job if one is already active
+    try {
+      await fetch(`${RENDER_API}/projects/${projectId}/request-analysis`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+    } catch (analyzeErr) {
+      // Non-fatal: the stall-detection UI will surface this after 5 minutes
+      console.warn('[Stromation] Could not trigger analysis:', analyzeErr)
+    }
     setPendingFiles([])
     setUploading(false)
     await load()
@@ -293,6 +303,9 @@ export default function Project() {
           analysis={analysis}
           jobs={jobs}
           networkError={networkError}
+          session={session}
+          onRetry={load}
+          projectId={projectId}
         />
       </>
     )
@@ -442,7 +455,7 @@ export function deriveProcessingState({ project, assets, analysis, jobs, nowMs }
 }
 
 // ── ProcessingWorkspace ─────────────────────────────────────────────────────
-function ProcessingWorkspace({ project, assets, analysis, jobs, networkError }) {
+function ProcessingWorkspace({ project, assets, analysis, jobs, networkError, session, onRetry, projectId }) {
   const fmtSize = b => !b ? '' : b > 1e6 ? `${(b/1e6).toFixed(1)} MB` : `${(b/1e3).toFixed(0)} KB`
   const fmtDur  = s => !s ? '' : s >= 60 ? `${Math.floor(s/60)}m ${Math.round(s%60)}s` : `${Math.round(s)}s`
 
@@ -465,6 +478,38 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError }) 
   }
 
   // ── Stalled / no job created ──
+  const [retrying, setRetrying] = React.useState(false)
+  const [retryError, setRetryError] = React.useState('')
+
+  const canRetry = (
+    session &&
+    project.user_id === session.user.id &&
+    assets.length > 0 &&
+    !jobs.some(j => ['queued', 'processing'].includes(j.status))
+  )
+
+  async function handleRetry() {
+    if (retrying) return
+    setRetrying(true)
+    setRetryError('')
+    try {
+      const r = await fetch(`${RENDER_API}/projects/${projectId}/request-analysis`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}))
+        throw new Error(d.detail || `Request failed (${r.status})`)
+      }
+      // Success — reload state to move into queued/processing UI
+      if (onRetry) await onRetry()
+    } catch (err) {
+      setRetryError(err.message || 'Could not start the edit. Please try again.')
+    } finally {
+      setRetrying(false)
+    }
+  }
+
   if (state.kind === 'stalled') {
     return (
       <div className="wrap" style={{ paddingTop: 48, paddingBottom: 80 }}>
@@ -474,7 +519,22 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError }) 
           <p className="proc-error-sub">
             Your footage is uploaded safely, but the editing job did not start.
           </p>
+          {retryError && (
+            <p className="proc-error-detail" role="alert" aria-live="assertive">
+              {retryError}
+            </p>
+          )}
           <div className="proc-error-actions">
+            {canRetry && (
+              <button
+                className="btn btn-primary"
+                onClick={handleRetry}
+                disabled={retrying}
+                aria-busy={retrying}
+              >
+                {retrying ? 'Starting…' : 'Try starting the edit'}
+              </button>
+            )}
             <Link to="/" className="btn btn-ghost">← Back to Your Studio</Link>
             {assets.length > 0 && (
               <a href="#footage" className="btn btn-ghost">View uploaded footage</a>
