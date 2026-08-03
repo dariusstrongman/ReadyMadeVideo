@@ -125,7 +125,7 @@ export default function Project() {
       supabase.from('media_assets').select('*').eq('project_id', projectId).order('created_at'),
       supabase.from('edit_candidates').select('*').eq('project_id', projectId).order('overall_score', { ascending: false }),
       supabase.from('pipeline_jobs').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
-      supabase.from('asset_analysis').select('kind,status').eq('project_id', projectId),
+      supabase.from('asset_analysis').select('kind,status,asset_id,created_at').eq('project_id', projectId).order('created_at', { ascending: false }),
     ])
     if (proj) setProject(proj)
     if (ast) setAssets(ast)
@@ -489,6 +489,34 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError, se
 
   const state = deriveProcessingState({ project, assets, analysis, jobs })
 
+  // ── Live elapsed timer ──
+  const [elapsed, setElapsed] = React.useState(0)
+  React.useEffect(() => {
+    const job = jobs[0]
+    const anchor = job?.started_at || project?.created_at
+    if (!anchor) return
+    const tick = () => setElapsed(Math.floor((Date.now() - new Date(anchor).getTime()) / 1000))
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [jobs, project?.created_at])
+
+  // ── Helpers ──
+  const fmtElapsed = s => {
+    if (s < 60) return `${s}s`
+    const m = Math.floor(s / 60), sec = s % 60
+    return `${m}m ${sec.toString().padStart(2,'0')}s`
+  }
+  const STAGE_LABELS = {
+    probe: 'Validating clip format', proxy: 'Building proxy video',
+    scenes: 'Detecting scene cuts', mechanical: 'Analyzing camera motion',
+    audio: 'Measuring audio levels', transcript: 'Transcribing speech',
+    semantic: 'AI scene analysis', motion: 'Scoring motion quality',
+    catalog: 'Building segment catalog',
+  }
+  const assetName = id => assets.find(a => a.id === id)?.filename?.replace(/\.[^.]+$/, '') || 'clip'
+  const assetIdx  = id => assets.findIndex(a => a.id === id) + 1
+
   // ── Network error ──
   if (networkError) {
     return (
@@ -631,55 +659,137 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError, se
     : 'Starting up'
 
   return (
-    <div className="wrap" style={{ paddingTop: 48, paddingBottom: 80 }}>
-      <div className="proc-card">
-        <div className="proc-glow" aria-hidden="true" />
-        {/* Premium 3-ring orbital loader */}
-        <div className="proc-orbit-wrap" aria-hidden="true">
-          <div className="proc-orbit-ring proc-orbit-ring-1" />
-          <div className="proc-orbit-ring proc-orbit-ring-2" />
-          <div className="proc-orbit-ring proc-orbit-ring-3" />
-          <div className="proc-orbit-center">
-            <div className="proc-orbit-core" />
+    <div className="proc-live-wrap">
+      {/* ── Header row: title + elapsed timer ── */}
+      <div className="proc-live-header">
+        <div>
+          <div className="proc-live-eyebrow">
+            <span className="proc-live-dot" />
+            {activityLabel}
+          </div>
+          <h2 className="proc-live-title">{currentStage.label}</h2>
+          <p className="proc-live-sub">{currentStage.description}</p>
+        </div>
+        <div className="proc-live-timer" aria-live="polite" aria-label={`Elapsed: ${fmtElapsed(elapsed)}`}>
+          <span className="proc-timer-num">{fmtElapsed(elapsed)}</span>
+          <span className="proc-timer-label">elapsed</span>
+        </div>
+      </div>
+
+      {/* ── Progress bar ── */}
+      {jobs[0]?.progress > 0 && (
+        <div className="proc-progress-track">
+          <div className="proc-progress-fill" style={{ width: `${jobs[0].progress}%` }} />
+          <span className="proc-progress-pct">{jobs[0].progress}%</span>
+        </div>
+      )}
+
+      {/* ── Two-column: stages + live log ── */}
+      <div className="proc-live-body">
+        {/* Left: stage pipeline */}
+        <div className="proc-live-stages">
+          <div className="proc-live-section-label">Pipeline</div>
+          <div className="proc-pipeline" role="list" aria-label="Processing stages">
+            {stageStates.map((s) => (
+              <div key={s.id} className={`proc-stage ${s.state}`} role="listitem">
+                <div className="proc-stage-icon" aria-hidden="true">
+                  {s.state === 'done'
+                    ? <svg viewBox="0 0 16 16" fill="none" width="10" height="10"><path className="proc-stage-check" d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    : <div className="proc-stage-dot" />
+                  }
+                </div>
+                <div className="proc-stage-text">
+                  <span className="proc-stage-name">{s.label}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-        {/* Current stage label */}
-        <div className="proc-activity">
-          <span className="proc-activity-title">{activityLabel}</span>
-          <h2 className="proc-stage-label">{currentStage.label}</h2>
-          <p className="proc-stage-sub">{currentStage.description}</p>
-        </div>
-        {/* Stage pipeline */}
-        <div className="proc-pipeline" role="list" aria-label="Processing stages">
-          {stageStates.map((s, i) => (
-            <div
-              key={s.id}
-              className={`proc-stage ${s.state}`}
-              role="listitem"
-              aria-label={`${s.label}: ${s.state}`}
-            >
-              <div className="proc-stage-icon" aria-hidden="true">
-                {s.state === 'done'
-                  ? <svg viewBox="0 0 16 16" fill="none" width="10" height="10"><path className="proc-stage-check" d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                  : s.state === 'active'
-                    ? <div className="proc-stage-dot" />
-                    : <div className="proc-stage-dot" />
-                }
+
+        {/* Right: live activity log */}
+        <div className="proc-live-log">
+          <div className="proc-live-section-label">
+            Live activity
+            <span className="proc-live-blink" aria-hidden="true" />
+          </div>
+          <div className="proc-log-scroll">
+            {analysis.length === 0 ? (
+              <div className="proc-log-empty">
+                <div className="proc-log-spinner" />
+                Waiting for first stage to start…
               </div>
-              <div className="proc-stage-text">
-                <span className="proc-stage-name">{s.label}</span>
+            ) : (
+              analysis.slice(0, 20).map((row, i) => {
+                const clipNum = assetIdx(row.asset_id)
+                const clipTotal = assets.length
+                const label = STAGE_LABELS[row.kind] || row.kind
+                const isDone = row.status === 'completed'
+                const isFail = row.status === 'failed'
+                return (
+                  <div key={`${row.asset_id}-${row.kind}`} className={`proc-log-item ${isDone ? 'done' : isFail ? 'fail' : 'running'}`}
+                    style={{ animationDelay: `${i * 30}ms` }}>
+                    <span className="proc-log-icon">
+                      {isDone ? '✓' : isFail ? '✕' : '·'}
+                    </span>
+                    <span className="proc-log-text">
+                      {clipTotal > 1 && <span className="proc-log-clip">Clip {clipNum}/{clipTotal} — </span>}
+                      {label}
+                      {isFail && <span className="proc-log-fail"> (skipped)</span>}
+                    </span>
+                    <span className="proc-log-time">
+                      {new Date(row.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                  </div>
+                )
+              })
+            )}
+            {/* Current job stage from pipeline_jobs.current_stage */}
+            {jobs[0]?.current_stage && jobs[0].status === 'processing' && (
+              <div className="proc-log-item running proc-log-current">
+                <span className="proc-log-icon proc-log-pulse">●</span>
+                <span className="proc-log-text">{jobs[0].current_stage}</span>
+                <span className="proc-log-time">now</span>
               </div>
-            </div>
-          ))}
+            )}
+          </div>
         </div>
-        <p className="proc-wait">Most edits take a few minutes.</p>
-        <p className="proc-persist">
-          You can return to{' '}
-          <Link to="/" style={{ color: 'var(--cyan)' }}>Your Studio</Link>
-          {' '}while this page updates.
-        </p>
       </div>
-      {assets.length > 0 && <FootageGrid assets={assets} fmtSize={fmtSize} fmtDur={fmtDur} />}
+
+      {/* ── Per-clip status grid ── */}
+      {assets.length > 0 && (
+        <div className="proc-clip-grid">
+          <div className="proc-live-section-label">Your clips</div>
+          <div className="proc-clip-status-row">
+            {assets.map((a, i) => {
+              const clipAnalysis = analysis.filter(r => r.asset_id === a.id)
+              const doneCount = clipAnalysis.filter(r => r.status === 'completed').length
+              const totalKinds = 9 // probe proxy scenes mechanical audio transcript semantic motion catalog
+              const pct = Math.round((doneCount / totalKinds) * 100)
+              const isActive = clipAnalysis.some(r => r.status === 'running') ||
+                (jobs[0]?.current_stage || '').includes(`${i+1}/`)
+              const isDone = doneCount >= 7 // catalog+semantic may be skipped
+              return (
+                <div key={a.id} className={`proc-clip-status ${isDone ? 'done' : isActive ? 'active' : doneCount > 0 ? 'partial' : 'pending'}`}>
+                  <div className="proc-clip-status-bar">
+                    <div className="proc-clip-status-fill" style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="proc-clip-status-name" title={a.filename}>
+                    {a.filename?.replace(/\.[^.]+$/, '').slice(0, 18) || `Clip ${i+1}`}
+                  </div>
+                  <div className="proc-clip-status-pct">{isDone ? '✓' : pct > 0 ? `${pct}%` : '—'}</div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Footer ── */}
+      <div className="proc-live-footer">
+        <span>Updates every 3 seconds · </span>
+        <Link to="/" style={{ color: 'var(--cyan)' }}>Return to studio</Link>
+        <span> while this runs</span>
+      </div>
     </div>
   )
 }
