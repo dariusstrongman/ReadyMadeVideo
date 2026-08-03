@@ -131,12 +131,24 @@ class CloudStore:
 
 # ---------------- runner ----------------
 def run_pipeline(src: str, store, asset_id: str, stages=None, force=False,
-                 workdir=None, upload_cb=None, context: str = "") -> dict:
+                 workdir=None, upload_cb=None, context: str = "",
+                 stage_cb=None) -> dict:
+    """Run the analysis pipeline.
+    stage_cb(stage_name, status) is called on each stage start/complete so the
+    caller can update pipeline_jobs.current_stage for live UI feedback.
+    status is 'start', 'done', or 'skip'.
+    """
     stages = stages or ALL_STAGES
     workdir = workdir or tempfile.mkdtemp(prefix="stromation-pipeline-")
     state: dict = {}
     def log(m):
         print(f"[pipeline] {m}", flush=True)
+    def stage_update(name, status):
+        if stage_cb:
+            try:
+                stage_cb(name, status)
+            except Exception:
+                pass  # never break the pipeline for a UI update
 
     def cached(kind):
         if force:
@@ -150,10 +162,12 @@ def run_pipeline(src: str, store, asset_id: str, stages=None, force=False,
             state["probe"] = ProbeArtifact(**c["data"])
             log("probe: cached")
         else:
+            stage_update("probe", "start")
             state["probe"] = probe_stage(src)
             store.save("probe", state["probe"].model_dump())
             log(f"probe: {state['probe'].duration:.1f}s "
                 f"{state['probe'].video.width}x{state['probe'].video.height}")
+            stage_update("probe", "done")
     probe = state.get("probe") or ProbeArtifact(**store.load("probe")["data"])
 
     # proxy
@@ -165,6 +179,7 @@ def run_pipeline(src: str, store, asset_id: str, stages=None, force=False,
             proxy_path = c["storage_paths"]["local_proxy"]
             log("proxy: cached")
         else:
+            stage_update("proxy", "start")
             files = proxy_stage(src, workdir, probe)
             proxy_path = files["proxy"]
             paths = {"local_proxy": files["proxy"], "local_wav": files["wav"],
@@ -174,6 +189,7 @@ def run_pipeline(src: str, store, asset_id: str, stages=None, force=False,
             store.save("proxy", {"thumb_count": len(files["thumbs"])}, paths=paths)
             log(f"proxy: built + {len(files['thumbs'])} thumbs")
             state["wav"] = files["wav"]
+            stage_update("proxy", "done")
     proxy_path = proxy_path or src
     wav_path = state.get("wav") or os.path.join(workdir, "audio.wav")
 
@@ -184,9 +200,11 @@ def run_pipeline(src: str, store, asset_id: str, stages=None, force=False,
             state["scenes"] = ScenesArtifact(**c["data"])
             log("scenes: cached")
         else:
+            stage_update("scenes", "start")
             state["scenes"] = scenes_stage(proxy_path, probe.duration)
             store.save("scenes", state["scenes"].model_dump())
             log(f"scenes: {len(state['scenes'].scenes)} detected")
+            stage_update("scenes", "done")
     if "scenes" not in state:
         cached_scenes = store.load("scenes")
         if not cached_scenes:
@@ -201,9 +219,11 @@ def run_pipeline(src: str, store, asset_id: str, stages=None, force=False,
             state["mechanical"] = MechanicalArtifact(**c["data"])
             log("mechanical: cached")
         else:
+            stage_update("mechanical", "start")
             state["mechanical"] = mechanical_stage(proxy_path, scenes)
             store.save("mechanical", state["mechanical"].model_dump())
             log("mechanical: analyzed")
+            stage_update("mechanical", "done")
 
     # audio
     if "audio" in stages:
@@ -212,9 +232,11 @@ def run_pipeline(src: str, store, asset_id: str, stages=None, force=False,
             state["audio"] = AudioArtifact(**c["data"])
             log("audio: cached")
         else:
+            stage_update("audio", "start")
             state["audio"] = audio_stage(src, probe.has_audio)
             store.save("audio", state["audio"].model_dump())
             log(f"audio: lufs={state['audio'].integrated_lufs}")
+            stage_update("audio", "done")
 
     # transcript
     if "transcript" in stages:
@@ -228,14 +250,18 @@ def run_pipeline(src: str, store, asset_id: str, stages=None, force=False,
                 store.save("transcript", None, status="failed",
                            error="no provider configured or no audio stream")
                 log("transcript: skipped (no provider/audio)")
+                stage_update("transcript", "skip")
             else:
                 try:
+                    stage_update("transcript", "start")
                     state["transcript"] = provider.transcribe(wav_path)
                     store.save("transcript", state["transcript"].model_dump())
                     log(f"transcript: {len(state['transcript'].words)} words")
+                    stage_update("transcript", "done")
                 except Exception as e:
                     store.save("transcript", None, status="failed", error=str(e)[:500])
                     log(f"transcript: FAILED {e}")
+                    stage_update("transcript", "skip")
 
     # semantic
     if "semantic" in stages:
@@ -249,15 +275,19 @@ def run_pipeline(src: str, store, asset_id: str, stages=None, force=False,
                 store.save("semantic", None, status="failed",
                            error="no VideoUnderstandingProvider configured")
                 log("semantic: skipped (no provider)")
+                stage_update("semantic", "skip")
             else:
                 try:
+                    stage_update("semantic", "start")
                     state["semantic"] = provider.analyze(proxy_path, scenes, context)
                     store.save("semantic", state["semantic"].model_dump())
                     log(f"semantic: {len(state['semantic'].segments)} scene records "
                         f"({provider.name})")
+                    stage_update("semantic", "done")
                 except Exception as e:
                     store.save("semantic", None, status="failed", error=str(e)[:500])
                     log(f"semantic: FAILED {e}")
+                    stage_update("semantic", "skip")
 
     # motion
     if "motion" in stages:
@@ -266,9 +296,11 @@ def run_pipeline(src: str, store, asset_id: str, stages=None, force=False,
             state["motion"] = MotionArtifact(**c["data"])
             log("motion: cached")
         else:
+            stage_update("motion", "start")
             state["motion"] = motion_stage(proxy_path, scenes)
             store.save("motion", state["motion"].model_dump())
             log("motion: analyzed")
+            stage_update("motion", "done")
 
     # catalog — pull any cached artifacts not computed this run
     if "catalog" in stages:
@@ -279,6 +311,7 @@ def run_pipeline(src: str, store, asset_id: str, stages=None, force=False,
             return model_cls(**c["data"]) if c and c.get("data") else None
 
         sem = _cached_model("semantic", SemanticArtifact)
+        stage_update("catalog", "start")
         segs = build_catalog(asset_id, scenes,
                              _cached_model("mechanical", MechanicalArtifact),
                              audio=_cached_model("audio", AudioArtifact),
@@ -290,6 +323,7 @@ def run_pipeline(src: str, store, asset_id: str, stages=None, force=False,
         state["segments"] = segs
         log(f"catalog: {len(segs)} segments "
             f"({'DEGRADED - no semantic' if sem is None else 'full'})")
+        stage_update("catalog", "done")
 
     return state
 

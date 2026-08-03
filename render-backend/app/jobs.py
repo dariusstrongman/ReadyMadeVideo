@@ -255,9 +255,33 @@ def handle_analysis(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict
                                                      "thumb_0.jpg", "image/jpeg")
             return paths
 
+        clip_num = done + 1
+        clip_total = len(assets)
+        clip_label = f"clip {clip_num}/{clip_total}"
+        _STAGE_HUMAN = {
+            "probe":      "Validating clip format",
+            "proxy":      "Building proxy video",
+            "scenes":     "Detecting scene cuts",
+            "mechanical": "Analyzing camera motion",
+            "audio":      "Measuring audio levels",
+            "transcript": "Transcribing speech",
+            "semantic":   "Running AI scene analysis",
+            "motion":     "Scoring motion quality",
+            "catalog":    "Building segment catalog",
+        }
+        def stage_cb(stage_name, status, _clip=clip_label, _jid=job["id"]):
+            human = _STAGE_HUMAN.get(stage_name, stage_name)
+            if status == "start":
+                msg = f"{_clip} \u2014 {human}..."
+            elif status == "skip":
+                msg = f"{_clip} \u2014 {human} (skipped)"
+            else:
+                msg = f"{_clip} \u2014 {human} \u2713"
+            update_job(_jid, {"current_stage": msg})
         run_pipeline(sources[a["id"]], store, asset_id=a["id"], workdir=wd,
                      upload_cb=upload_cb,
-                     context=(job.get("params") or {}).get("context", ""))
+                     context=(job.get("params") or {}).get("context", ""),
+                     stage_cb=stage_cb)
         dur = a.get("duration_seconds") or 0
         ctx.rec("analysis_asset", round(time.time() - t0, 2),
                 a.get("size_bytes"),
