@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
 import { RENDER_API } from '../lib/config'
-import { applyOperation, reorderArguments, trimArguments, track } from '../lib/editor'
+import { applyLocal, reorderArguments, trimArguments, track, makeOperation } from '../lib/editor'
 import iconUrl from '../assets/icon.svg'
 
 const COLORS = { picture: '#00d4ff', audio: '#22c55e', music: '#7c3aed', captions: '#f59e0b', graphics: '#ec4899' }
@@ -61,7 +61,8 @@ export default function Editor() {
   async function apply(op, itemId, args) {
     if (!document) return
     setSaveStatus('Saving…')
-    const next = applyOperation(document.timeline_json, op, itemId, args)
+    const operation = makeOperation(op, itemId, 0, args)
+    const next = applyLocal(document.timeline_json, operation)
     const { error } = await supabase.from('edit_candidates')
       .update({ timeline_json: next, revision_note: revisionNote || null })
       .eq('id', documentId)
