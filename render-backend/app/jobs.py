@@ -234,6 +234,22 @@ def _upload_export(project: dict, rel: str, local: str) -> str:
     return path
 
 
+# Human-readable labels for the per-clip analysis stage callback. Module-level so
+# the stage_cb closure binds a stable reference (not a loop-local — fixes ruff B023);
+# the mapping is identical every iteration.
+_STAGE_HUMAN = {
+    "probe":      "Validating clip format",
+    "proxy":      "Building proxy video",
+    "scenes":     "Detecting scene cuts",
+    "mechanical": "Analyzing camera motion",
+    "audio":      "Measuring audio levels",
+    "transcript": "Transcribing speech",
+    "semantic":   "Running AI scene analysis",
+    "motion":     "Scoring motion quality",
+    "catalog":    "Building segment catalog",
+}
+
+
 def handle_analysis(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict:
     from .pipeline.runner import CloudStore, run_pipeline
     set_project_status(project["id"], "analyzing", f"analysis job {job['id'][:8]}")
@@ -258,17 +274,6 @@ def handle_analysis(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict
         clip_num = done + 1
         clip_total = len(assets)
         clip_label = f"clip {clip_num}/{clip_total}"
-        _STAGE_HUMAN = {
-            "probe":      "Validating clip format",
-            "proxy":      "Building proxy video",
-            "scenes":     "Detecting scene cuts",
-            "mechanical": "Analyzing camera motion",
-            "audio":      "Measuring audio levels",
-            "transcript": "Transcribing speech",
-            "semantic":   "Running AI scene analysis",
-            "motion":     "Scoring motion quality",
-            "catalog":    "Building segment catalog",
-        }
         def stage_cb(stage_name, status, _clip=clip_label, _jid=job["id"]):
             human = _STAGE_HUMAN.get(stage_name, stage_name)
             if status == "start":
