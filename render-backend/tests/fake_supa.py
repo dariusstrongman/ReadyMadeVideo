@@ -169,6 +169,17 @@ class FakeSupabase:
                                   or r.get("candidate_index") == b.get("candidate_index"))]
                 if duplicate:
                     return resp(409, {"message": "duplicate editorial candidate"})
+                # Mirror migration 0016 candidate_runs_bridged_ancestry_check.
+                lineage = ("music_sound_run_id", "audio_mix_run_id",
+                           "graphics_run_id", "caption_run_id", "color_run_id")
+                kind = b.get("generation_kind")
+                present = [k for k in lineage if b.get(k) is not None]
+                if kind == "bridged" and present:
+                    return resp(400, {"message": "bridged candidate must not carry "
+                                                 "music/audio/graphics/caption/color lineage"})
+                if kind in ("initial", "revised") and len(present) != len(lineage):
+                    return resp(400, {"message": "initial/revised candidate requires "
+                                                 "full music/audio/graphics/caption/color lineage"})
             if table == "critic_runs":
                 duplicate = [r for r in self.tables[table]
                              if r.get("candidate_run_id") == b.get("candidate_run_id")

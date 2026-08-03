@@ -231,8 +231,14 @@ def document_from_candidate(project_id: str, candidate: dict,
     for index, item in enumerate(graphics):
         item.setdefault("id", f"graphic-{index + 1}")
         item.setdefault("enabled", True)
-    music = [{"id": "music-main", "gainDb": -12.0,
-              "source": "completed_audio_mix", "lockedAncestry": True}]
+    # Music track reflects real ancestry: a completed audio mix (M4) yields the
+    # lockable music-main item; a bridged/no-music candidate yields an honest empty
+    # track (no fabricated music). EditorDocument permits an empty music track.
+    if candidate.get("audio_mix_run_id"):
+        music = [{"id": "music-main", "gainDb": -12.0,
+                  "source": "completed_audio_mix", "lockedAncestry": True}]
+    else:
+        music = []
     selection = manifest.get("musicAssetSelection")
     attribution = []
     if isinstance(selection, dict):

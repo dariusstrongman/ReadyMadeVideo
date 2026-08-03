@@ -268,6 +268,30 @@ _STAGE_HUMAN = {
 }
 
 
+def _maybe_enqueue_customer_autoedit(project: dict) -> None:
+    """Idempotent analysis -> autoedit hand-off for the customer journey.
+
+    Skips if a bridged candidate already exists or an autoedit job is already
+    active, so repeated analysis completion never spawns duplicate edits.
+    """
+    existing = supa.db_select(
+        "candidate_runs",
+        f"project_id=eq.{project['id']}&generation_kind=eq.bridged&limit=1")
+    if existing:
+        return
+    active = supa.db_select(
+        "pipeline_jobs",
+        f"project_id=eq.{project['id']}&kind=eq.autoedit"
+        f"&status=in.({','.join(ACTIVE_STATES)})")
+    if active:
+        return
+    try:
+        enqueue_job(project["id"], project["user_id"], "autoedit",
+                    {"source": "customer_journey"})
+    except ConcurrencyLimit:
+        pass  # at the active-job cap; analysis still completed cleanly
+
+
 def handle_analysis(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict:
     from .pipeline.runner import CloudStore, run_pipeline
     set_project_status(project["id"], "analyzing", f"analysis job {job['id'][:8]}")
@@ -315,6 +339,7 @@ def handle_analysis(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict
         update_job(job["id"], {"progress": int(done / len(assets) * 100),
                                "current_stage": f"analyzed {done}/{len(assets)}"})
     set_project_status(project["id"], "ready", "analysis completed")
+    _maybe_enqueue_customer_autoedit(project)
     return {"assets_analyzed": done}
 
 
@@ -371,6 +396,7 @@ def handle_autoedit(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict
                               f"&order=version.desc&limit=1")
     next_ver = (existing[0]["version"] + 1) if existing else 1
     tl_ids = []
+    best_tl_row = None
     timeline_files = sorted(f for f in os.listdir(run_dir)
                             if f.startswith("timeline_v") and f.endswith(".json"))
     for index, fname in enumerate(timeline_files):
@@ -381,17 +407,19 @@ def handle_autoedit(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict
             lineage = "autonomous_revised"
         else:
             lineage = "autonomous_intermediate"
-        r = _insert("timelines", {"project_id": project["id"],
-                                  "user_id": project["user_id"],
-                                  "version": next_ver, "timeline_json": tl,
-                                  "lineage": lineage,
-                                  "edit_run_id": edit_run_id,
-                                  "parent_timeline_id": tl_ids[-1] if tl_ids else None,
-                                  "is_immutable": lineage in
-                                  ("autonomous_initial", "autonomous_revised")})
-        tl_ids.append(r.json()[0]["id"])
+        row = _insert("timelines", {"project_id": project["id"],
+                                    "user_id": project["user_id"],
+                                    "version": next_ver, "timeline_json": tl,
+                                    "lineage": lineage,
+                                    "edit_run_id": edit_run_id,
+                                    "parent_timeline_id": tl_ids[-1] if tl_ids else None,
+                                    "is_immutable": lineage in
+                                    ("autonomous_initial", "autonomous_revised")}).json()[0]
+        tl_ids.append(row["id"])
+        best_tl_row = row   # last inserted = autonomous_revised (best draft)
         next_ver += 1
-    for fname in sorted(f for f in os.listdir(run_dir) if f.endswith(".mp4")):
+    preview_files = sorted(f for f in os.listdir(run_dir) if f.endswith(".mp4"))
+    for fname in preview_files:
         artifacts["previews"].append(_upload_export(
             project, f"drafts/{job['id']}/{fname}", os.path.join(run_dir, fname)))
     _patch("edit_runs", f"id=eq.{edit_run_id}", {
@@ -423,6 +451,17 @@ def handle_autoedit(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict
                                       if s.get("step") == "critic_pass1"), 0),
         "revision_passes": report.get("revisionPasses", 0)},
         prefer="return=minimal")
+
+    # Strategy-B bridge: expose this basic autoedit as an editable Product Editor
+    # candidate (idempotent — at most one bridged candidate per project).
+    if best_tl_row and preview_files:
+        from . import autoedit_bridge
+        bridged = autoedit_bridge.bridge_from_autoedit(
+            project, best_tl_row, os.path.join(run_dir, preview_files[-1]),
+            insert=_insert, db_select=supa.db_select,
+            upload_export=_upload_export, now=_now)
+        if bridged:
+            artifacts["bridgedCandidateRunId"] = bridged["id"]
 
     dur = time.time() - t0
     ctx.rec("autoedit", round(dur, 2),
@@ -484,6 +523,45 @@ def handle_final_render(job: dict, project: dict, tmp: str, ctx: JobContext) -> 
                                ("duration", "width", "height", "size_bytes")}}
 
 
+def _render_bridged_editor(job: dict, project: dict, tmp: str, ctx: JobContext,
+                           doc_row: dict, document: dict) -> dict:
+    """Export a bridged (music-less) editor document: render the exact saved picture
+    timeline with the clips' ORIGINAL audio. No licensed-music mixing, no fabricated
+    audio records. Exact-version binding was already checked by the caller."""
+    from .product_editor import renderer_timeline
+    from .renderer2 import render_timeline
+
+    picture_items = next(track["items"] for track in document["tracks"]
+                         if track["type"] == "picture")
+    sources, assets = _download_sources(project, tmp, ctx)
+    allowed = {item["id"] for item in assets}
+    if {str(clip["assetId"]) for clip in picture_items} - allowed:
+        raise RuntimeError("editor picture references a foreign source asset")
+    set_project_status(project["id"], "rendering",
+                       f"Product Editor revision {doc_row['version']} render (bridged)")
+    update_job(job["id"], {"current_stage": "rendering picture + original audio",
+                           "progress": 40})
+    ctx.checkpoint("before_editor_render")
+    out = os.path.join(tmp, "product-editor-bridged.mp4")
+    result = render_timeline(renderer_timeline(document), sources, out,
+                             profile="final", cancel_check=lambda: ctx.cancelled())
+    ctx.checkpoint("before_editor_upload")
+    path = _upload_export(
+        project, f"renders/{job['id']}-editor-v{doc_row['version']}.mp4", out)
+    size = os.path.getsize(out)
+    ctx.rec("product_editor_render", bytes_=size, units={"cpu_hours": 0})
+    caption_items = next(track["items"] for track in document["tracks"]
+                         if track["type"] == "captions")
+    set_project_status(project["id"], "completed",
+                       f"Product Editor revision {doc_row['version']} export completed")
+    return {"output": path, "editor_document_id": doc_row["id"],
+            "editor_document_version": doc_row["version"],
+            "duration": result["duration"], "width": result["width"],
+            "height": result["height"], "size_bytes": size,
+            "graphics_events": 0, "caption_groups": len(caption_items),
+            "music_gain_db": None}
+
+
 def handle_product_editor_render(job: dict, project: dict, tmp: str,
                                  ctx: JobContext) -> dict:
     """Render the exact saved Product Editor document through M4/M5 contracts."""
@@ -519,6 +597,10 @@ def handle_product_editor_render(job: dict, project: dict, tmp: str,
     if not candidate_rows or candidate_rows[0]["project_id"] != project["id"]:
         raise RuntimeError("editor candidate ancestry is invalid")
     candidate_row = candidate_rows[0]
+    # Bridged candidates have no music/audio ancestry — render picture + original
+    # audio instead of the M4/M5 licensed-music mix.
+    if candidate_row.get("audio_mix_run_id") is None:
+        return _render_bridged_editor(job, project, tmp, ctx, row, document)
     raw_manifest = candidate_row["manifest"]
     if isinstance(raw_manifest, str):
         raw_manifest = _json.loads(raw_manifest)
