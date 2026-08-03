@@ -48,7 +48,7 @@ export default function Login() {
           <span className="login-brand-tagline">Raw footage in. Finished video out.</span>
         </div>
         <p className="login-heading">{headings[mode]}</p>
-        {error && <div className="err" role="alert">{error}</div>}
+        {error && <div className="err" role="alert" aria-live="assertive">{error}</div>}
         {ok    && <div className="ok"  role="status">{ok}</div>}
         <form onSubmit={submit}>
           <label>Email

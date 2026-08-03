@@ -21,7 +21,11 @@ export default function App() {
     return () => sub.subscription.unsubscribe()
   }, [])
   if (session === undefined)
-    return <div className="center"><p className="sub">Restoring session…</p></div>
+    return (
+      <div className="center" role="status" aria-live="polite">
+        <p className="sub">Restoring session…</p>
+      </div>
+    )
   return (
     <AuthCtx.Provider value={session}>
       <Routes>
@@ -55,6 +59,8 @@ function TopNav() {
   const nav = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
+  const triggerRef = useRef(null)
+  const itemRefs = useRef([])
   const initial = session?.user?.email?.[0]?.toUpperCase() || '?'
 
   useEffect(() => {
@@ -65,8 +71,52 @@ function TopNav() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
+  // Focus first item when menu opens
+  useEffect(() => {
+    if (menuOpen) {
+      // Wait one frame for DOM to render
+      requestAnimationFrame(() => {
+        itemRefs.current[0]?.focus()
+      })
+    }
+  }, [menuOpen])
+
+  function handleTriggerKeyDown(e) {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      setMenuOpen(true)
+    }
+    if (e.key === 'Escape') {
+      setMenuOpen(false)
+    }
+  }
+
+  function handleMenuKeyDown(e) {
+    const items = itemRefs.current.filter(Boolean)
+    const idx = items.indexOf(document.activeElement)
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      items[(idx + 1) % items.length]?.focus()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      items[(idx - 1 + items.length) % items.length]?.focus()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setMenuOpen(false)
+      triggerRef.current?.focus()
+    } else if (e.key === 'Tab') {
+      // Close on Tab — user is leaving the menu
+      setMenuOpen(false)
+    }
+  }
+
+  function closeMenu() {
+    setMenuOpen(false)
+    triggerRef.current?.focus()
+  }
+
   return (
-    <nav className="nav">
+    <nav className="nav" role="navigation" aria-label="Main navigation">
       <a href="https://www.stromation.com" className="nav-logo">
         <img src={iconUrl} alt="" aria-hidden="true" />
         STROMATION
@@ -74,17 +124,38 @@ function TopNav() {
       <span className="spacer" />
       <Link to="/project/new" className="btn btn-primary btn-sm">+ New video</Link>
       <div className="avatar-wrap" ref={menuRef}>
-        <button className="avatar-btn" onClick={() => setMenuOpen(v => !v)} aria-label="Account menu">
+        <button
+          ref={triggerRef}
+          className="avatar-btn"
+          onClick={() => setMenuOpen(v => !v)}
+          onKeyDown={handleTriggerKeyDown}
+          aria-label="Account menu"
+          aria-expanded={menuOpen}
+          aria-haspopup="menu"
+        >
           {initial}
         </button>
         {menuOpen && (
-          <div className="avatar-menu">
+          <div className="avatar-menu" role="menu" aria-label="Account options" onKeyDown={handleMenuKeyDown}>
             <div className="avatar-email">{session?.user?.email}</div>
             <div className="avatar-menu-sep" />
-            <a href="https://www.stromation.com" className="avatar-menu-item" onClick={() => setMenuOpen(false)}>
+            <a
+              href="https://www.stromation.com"
+              className="avatar-menu-item"
+              role="menuitem"
+              tabIndex={0}
+              ref={el => { itemRefs.current[0] = el }}
+              onClick={closeMenu}
+            >
               ← Back to stromation.com
             </a>
-            <button className="avatar-menu-item" onClick={async () => { setMenuOpen(false); await supabase.auth.signOut(); nav('/login') }}>
+            <button
+              className="avatar-menu-item"
+              role="menuitem"
+              tabIndex={0}
+              ref={el => { itemRefs.current[1] = el }}
+              onClick={async () => { setMenuOpen(false); await supabase.auth.signOut(); nav('/login') }}
+            >
               Sign out
             </button>
           </div>

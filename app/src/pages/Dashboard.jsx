@@ -324,7 +324,7 @@ function ProjectCard({ project: p, onDelete }) {
           onClick={() => navigate(`/project/${p.id}`)}>
           {action.label}
         </button>
-        <button className="btn btn-sm btn-danger" onClick={del}>✕</button>
+        <button className="btn btn-sm btn-danger" onClick={del} aria-label={`Delete ${p.name}`}>✕</button>
       </div>
     </div>
   )
