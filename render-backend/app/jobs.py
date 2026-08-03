@@ -271,8 +271,12 @@ def handle_analysis(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict
         }
         def stage_cb(stage_name, status, _clip=clip_label, _jid=job["id"]):
             human = _STAGE_HUMAN.get(stage_name, stage_name)
-            msg = f"{_clip} \u2014 {human}..." if status == "start" \
-                  else f"{_clip} \u2014 {human} done"
+            if status == "start":
+                msg = f"{_clip} \u2014 {human}..."
+            elif status == "skip":
+                msg = f"{_clip} \u2014 {human} (skipped)"
+            else:
+                msg = f"{_clip} \u2014 {human} \u2713"
             update_job(_jid, {"current_stage": msg})
         run_pipeline(sources[a["id"]], store, asset_id=a["id"], workdir=wd,
                      upload_cb=upload_cb,

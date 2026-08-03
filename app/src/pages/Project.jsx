@@ -499,7 +499,7 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError, se
     tick()
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [jobs, project?.created_at])
+  }, [jobs[0]?.started_at, project?.created_at])
 
   // ── Helpers ──
   const fmtElapsed = s => {
@@ -515,7 +515,7 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError, se
     catalog: 'Building segment catalog',
   }
   const assetName = id => assets.find(a => a.id === id)?.filename?.replace(/\.[^.]+$/, '') || 'clip'
-  const assetIdx  = id => assets.findIndex(a => a.id === id) + 1
+  const assetIdx  = id => { const i = assets.findIndex(a => a.id === id); return i >= 0 ? i + 1 : 0 }
 
   // ── Network error ──
   if (networkError) {
@@ -670,7 +670,7 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError, se
           <h2 className="proc-live-title">{currentStage.label}</h2>
           <p className="proc-live-sub">{currentStage.description}</p>
         </div>
-        <div className="proc-live-timer" aria-live="polite" aria-label={`Elapsed: ${fmtElapsed(elapsed)}`}>
+        <div className="proc-live-timer" aria-label={`Elapsed: ${fmtElapsed(elapsed)}`}>
           <span className="proc-timer-num">{fmtElapsed(elapsed)}</span>
           <span className="proc-timer-label">elapsed</span>
         </div>
@@ -766,7 +766,7 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError, se
               const totalKinds = 9 // probe proxy scenes mechanical audio transcript semantic motion catalog
               const pct = Math.round((doneCount / totalKinds) * 100)
               const isActive = clipAnalysis.some(r => r.status === 'running') ||
-                (jobs[0]?.current_stage || '').includes(`${i+1}/`)
+                (jobs[0]?.current_stage || '').includes(`clip ${i+1}/`)
               const isDone = doneCount >= 7 // catalog+semantic may be skipped
               return (
                 <div key={a.id} className={`proc-clip-status ${isDone ? 'done' : isActive ? 'active' : doneCount > 0 ? 'partial' : 'pending'}`}>
