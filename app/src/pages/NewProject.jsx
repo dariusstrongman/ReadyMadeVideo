@@ -1,3 +1,4 @@
+import iconUrl from '../assets/icon.svg'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
@@ -43,7 +44,10 @@ export default function NewProject() {
   return (
     <div className="new-project-page">
       <div className="new-project-card">
-        <Link to="/" className="np-back">← Back to projects</Link>
+        <Link to="/" className="nav-logo" style={{ marginBottom: 24, justifyContent: 'center' }}>
+          <img src={iconUrl} alt="" aria-hidden="true" />
+          STROMATION
+        </Link>
 
         {step === 1 && (
           <>

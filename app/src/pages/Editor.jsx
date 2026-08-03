@@ -128,8 +128,9 @@ export default function Editor() {
     <div className="editor-page">
       {/* Top bar */}
       <div className="editor-topbar">
-        <Link to={`/project/${projectId}`} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-3)', fontSize: '0.78rem', textDecoration: 'none' }}>
-          <img src={iconUrl} alt="" style={{ width: 16, height: 16, opacity: 0.6 }} />
+        <Link to="/" className="nav-logo" style={{ flexShrink: 0 }}>
+          <img src={iconUrl} alt="" aria-hidden="true" />
+          STROMATION
         </Link>
         <span style={{ color: 'var(--border-2)' }}>/</span>
         <Link to={`/project/${projectId}`} style={{ color: 'var(--text-3)', fontSize: '0.78rem' }}>{project.name}</Link>
