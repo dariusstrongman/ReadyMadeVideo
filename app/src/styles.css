@@ -20,8 +20,12 @@ button { font-family: var(--sans); cursor: pointer; }
 .nav { display: flex; align-items: center; gap: 12px; height: 60px; padding: 0 24px;
   border-bottom: 1px solid var(--border); background: var(--bg-1); }
 .nav .logo { font-family: var(--mono); font-weight: 700; letter-spacing: 0.15em; color: var(--text); }
+.nav .logo:hover { text-decoration: none; color: var(--cyan); }
+.nav .nav-link { color: var(--text-2); font-size: 0.85rem; }
+.nav .nav-link:hover { color: var(--text); text-decoration: none; }
 .nav .spacer { margin-left: auto; }
 .nav .who { color: var(--text-3); font-size: 0.8rem; }
+a.btn:hover { text-decoration: none; }
 
 .wrap { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
 .card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px; padding: 24px; }

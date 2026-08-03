@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
 import Login from './pages/Login'
 import ResetPassword from './pages/ResetPassword'
@@ -54,9 +54,11 @@ function TopNav() {
   const nav = useNavigate()
   return (
     <nav className="nav">
-      <a href="/" className="logo">STROMATION<span style={{ color: 'var(--cyan)' }}>.</span></a>
+      <a href="https://www.stromation.com" className="logo">STROMATION<span style={{ color: 'var(--cyan)' }}>.</span></a>
       <span className="small mono">app</span>
+      <Link to="/" className="nav-link">Projects</Link>
       <span className="spacer" />
+      <a href="https://www.stromation.com" className="btn btn-ghost">← Back to website</a>
       <span className="who">{session?.user?.email}</span>
       <button className="btn btn-ghost" onClick={async () => { await supabase.auth.signOut(); nav('/login') }}>
         Sign out

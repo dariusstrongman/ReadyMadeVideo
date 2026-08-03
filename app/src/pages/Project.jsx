@@ -35,6 +35,8 @@ export default function Project() {
       </div>
     )
 
+  const hasFootage = assets.length > 0
+
   return (
     <div className="wrap">
       <p className="small"><Link to="/">← Projects</Link></p>
@@ -43,12 +45,62 @@ export default function Project() {
         <span className={`badge ${project.status}`}>{project.status}</span>
       </div>
       {error && <div className="err" role="alert">{error}</div>}
-      <div className="grid" style={{ marginTop: 20 }}>
-        <Uploader projectId={id} session={session} onDone={load} />
-        <AssetList assets={assets} />
-        <CandidateWorkspace projectId={id} session={session} />
-        {assets.length > 0 && <TimelinePanel projectId={id} session={session} assets={assets} />}
+      {!hasFootage ? (
+        <div className="grid" style={{ marginTop: 20 }}>
+          <EmptyFootageState />
+          <Uploader projectId={id} session={session} onDone={load} />
+        </div>
+      ) : (
+        <div className="grid" style={{ marginTop: 20 }}>
+          <PipelineStatus project={project} />
+          <CandidateWorkspace projectId={id} session={session} />
+          <AssetList assets={assets} />
+          <Uploader projectId={id} session={session} onDone={load} />
+          <TimelinePanel projectId={id} session={session} assets={assets} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function EmptyFootageState() {
+  return (
+    <div className="card" style={{ textAlign: 'center', borderStyle: 'dashed' }}>
+      <p className="small mono">NO FOOTAGE YET</p>
+      <h2 style={{ margin: '6px 0 4px' }}>Upload footage to generate your first edit.</h2>
+      <p className="sub">
+        Add a clip below to start the editorial-intelligence pipeline. When it finishes,
+        a finished candidate appears here and the editor unlocks automatically.
+      </p>
+    </div>
+  )
+}
+
+const PIPELINE_STAGE = {
+  uploading: 'Footage uploading',
+  ready: 'Footage uploaded — queued for analysis',
+  analyzing: 'Analyzing footage and generating candidates',
+  analysis_failed: 'Analysis failed',
+  draft_ready: 'Finished candidate ready to edit',
+  rendering: 'Rendering export',
+  render_failed: 'Render failed',
+  completed: 'Export ready', complete: 'Export ready',
+  draft: 'Waiting for footage',
+}
+
+function PipelineStatus({ project }) {
+  return (
+    <div className="card">
+      <div className="row">
+        <div style={{ flex: 1 }}>
+          <p className="small mono">PIPELINE STAGE</p>
+          <h2 style={{ margin: '4px 0 0' }}>
+            {PIPELINE_STAGE[project.status] || project.status.replaceAll('_', ' ')}
+          </h2>
+        </div>
+        <span className={`badge ${project.status}`}>{project.status}</span>
       </div>
+      {project.status_reason && <p className="small" style={{ marginTop: 8 }}>{project.status_reason}</p>}
     </div>
   )
 }
@@ -82,7 +134,14 @@ function CandidateWorkspace({ projectId, session }) {
     {error && <div className="err">{error}</div>}
     {!workspace && !error && <p className="sub">Loading candidates…</p>}
     {workspace?.candidates.length === 0 && <div className="editor-empty">
-      No complete candidates yet. Run the editorial-intelligence workflow before opening the customer editor.
+      <p style={{ marginBottom: 12 }}>
+        No finished candidate yet. Your footage is queued for the editorial-intelligence
+        workflow — the editor unlocks automatically once a Milestone 6 candidate is ready.
+      </p>
+      <button className="btn btn-primary" disabled
+        title="A completed Milestone 6 candidate is required before the editor opens.">
+        Open editor
+      </button>
     </div>}
     <div className="candidate-grid">
       {workspace?.candidates.map((candidate) => {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
 
@@ -12,14 +12,18 @@ const STATUS_COPY = {
 
 export default function Dashboard() {
   const session = useAuth()
+  const navigate = useNavigate()
   const [projects, setProjects] = useState(null)
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   async function load() {
+    // Embed the footage count so "no footage" is decided by real assets, not
+    // status alone (a draft project can already have footage uploaded).
     const { data, error } = await supabase.from('projects')
-      .select('id,name,status,created_at').order('created_at', { ascending: false })
+      .select('id,name,status,created_at,media_assets(count)')
+      .order('created_at', { ascending: false })
     if (error) setError(error.message)
     else setProjects(data)
   }
@@ -83,17 +87,26 @@ export default function Dashboard() {
       <div className="grid">
         {projects === null && <p className="sub">Loading…</p>}
         {projects?.length === 0 && <p className="sub">No projects yet.</p>}
-        {projects?.map((p) => (
+        {projects?.map((p) => {
+          const footage = p.media_assets?.[0]?.count ?? 0
+          const noFootage = footage === 0
+          return (
           <div key={p.id} className="list-item">
             <div style={{ flex: 1 }}>
               <Link to={`/project/${p.id}`} style={{ fontWeight: 600 }}>{p.name}</Link>
               <div className="small">created {new Date(p.created_at).toLocaleString()}</div>
-              <div className="small">{STATUS_COPY[p.status] || p.status.replaceAll('_', ' ')}</div>
+              <div className="small">
+                {noFootage ? 'Waiting for footage' : (STATUS_COPY[p.status] || p.status.replaceAll('_', ' '))}
+              </div>
             </div>
             <span className={`badge ${p.status}`}>{p.status}</span>
+            {noFootage
+              ? <button className="btn btn-primary" onClick={() => navigate(`/project/${p.id}`)}>Upload footage</button>
+              : <Link className="btn btn-ghost" to={`/project/${p.id}`}>Open project</Link>}
             <button className="btn btn-danger" onClick={() => deleteProject(p)}>Delete</button>
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
