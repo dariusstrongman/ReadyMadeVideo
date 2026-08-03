@@ -32,9 +32,9 @@ export default function NewProject() {
   async function create() {
     if (!name.trim()) return
     setBusy(true); setError('')
-    const meta = { platform: platform || 'other', vibe: vibe || 'other' }
+    // platform and vibe are collected for future use but not yet persisted
     const { data, error } = await supabase.from('projects')
-      .insert({ name: name.trim(), user_id: session.user.id, metadata: meta })
+      .insert({ name: name.trim(), user_id: session.user.id })
       .select().single()
     if (error) { setError(error.message); setBusy(false); return }
     navigate(`/project/${data.id}`)
