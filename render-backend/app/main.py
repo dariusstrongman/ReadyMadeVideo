@@ -402,6 +402,39 @@ def op_analyze(project_id: str, body: JobParams = JobParams(),
     return _enqueue("analysis", project_id, body, authorization)
 
 
+
+@app.post("/projects/{project_id}/request-analysis")
+def op_request_analysis(project_id: str,
+                        authorization: str = Header(default="")):
+    """User-accessible endpoint to trigger analysis after footage upload.
+
+    Unlike /analyze (operator-only), this endpoint:
+    - Accepts any authenticated user
+    - Verifies the user owns the project
+    - Is idempotent: returns the existing active job if one already exists
+    - Prevents duplicate active analysis jobs for the same project
+
+    Called by the frontend immediately after upload completes.
+    """
+    from . import jobs
+    user = _auth_user(authorization)
+    project = _get_project(project_id)
+    if project["user_id"] != user["id"]:
+        raise HTTPException(403, "you do not own this project")
+    # Idempotency: return existing active analysis job if present
+    active = supa.db_select(
+        "pipeline_jobs",
+        f"project_id=eq.{project_id}&kind=eq.analysis"
+        f"&status=in.(queued,processing)&order=created_at.desc&limit=1")
+    if active:
+        return active[0]
+    # Enqueue — enqueue_job handles global per-user concurrency cap
+    try:
+        job = jobs.enqueue_job(project_id, user["id"], "analysis", {})
+    except jobs.ConcurrencyLimit as e:
+        raise HTTPException(429, str(e))
+    return job
+
 @app.post("/projects/{project_id}/generate-draft")
 def op_generate_draft(project_id: str, body: JobParams = JobParams(),
                       authorization: str = Header(default="")):

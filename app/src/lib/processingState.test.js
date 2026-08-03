@@ -281,3 +281,56 @@ describe('resolveStallAnchor', () => {
     expect(NOW - anchor).toBeLessThan(STALL_THRESHOLD_MS)
   })
 })
+
+// ── Upload trigger tests ────────────────────────────────────────────────────
+// These tests verify the state model correctly handles the transition from
+// upload-complete to analysis-started, and the stall behavior when analysis
+// never starts.
+
+describe('upload trigger and analysis start', () => {
+  const recentAsset = { created_at: new Date(Date.now() - 30_000).toISOString() }
+  const oldAsset    = { created_at: new Date(Date.now() - 10 * 60_000).toISOString() }
+  const project     = { status: 'ready', created_at: new Date(Date.now() - 20 * 60_000).toISOString() }
+
+  it('shows analysis_not_started immediately after upload (asset is recent)', () => {
+    const state = deriveProcessingState({
+      project, assets: [recentAsset], analysis: [], jobs: [],
+      nowMs: Date.now(),
+    })
+    expect(state.kind).toBe('analysis_not_started')
+  })
+
+  it('does not stall when a recent asset exists even if project is old', () => {
+    const state = deriveProcessingState({
+      project, assets: [recentAsset], analysis: [], jobs: [],
+      nowMs: Date.now(),
+    })
+    expect(state.kind).not.toBe('stalled')
+  })
+
+  it('transitions to analysis_running when asset_analysis rows appear', () => {
+    const state = deriveProcessingState({
+      project, assets: [recentAsset],
+      analysis: [{ kind: 'probe', status: 'running', created_at: new Date().toISOString() }],
+      jobs: [], nowMs: Date.now(),
+    })
+    expect(state.kind).toBe('analysis_running')
+  })
+
+  it('shows stalled when old project has old asset and no analysis after threshold', () => {
+    const state = deriveProcessingState({
+      project, assets: [oldAsset], analysis: [], jobs: [],
+      nowMs: Date.now(),
+    })
+    expect(state.kind).toBe('stalled')
+  })
+
+  it('transitions to job_queued when a pipeline job appears', () => {
+    const state = deriveProcessingState({
+      project, assets: [recentAsset], analysis: [],
+      jobs: [{ status: 'queued', created_at: new Date().toISOString() }],
+      nowMs: Date.now(),
+    })
+    expect(state.kind).toBe('job_queued')
+  })
+})

@@ -210,6 +210,16 @@ export default function Project() {
       setUploadPct(Math.round((done / total) * 100))
     }
     await supabase.from('projects').update({ status: 'ready' }).eq('id', projectId)
+    // Trigger analysis — idempotent: backend returns existing job if one is already active
+    try {
+      await fetch(`${RENDER_API}/projects/${projectId}/request-analysis`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+    } catch (analyzeErr) {
+      // Non-fatal: the stall-detection UI will surface this after 5 minutes
+      console.warn('[Stromation] Could not trigger analysis:', analyzeErr)
+    }
     setPendingFiles([])
     setUploading(false)
     await load()
