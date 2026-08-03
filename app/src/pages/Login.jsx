@@ -41,7 +41,6 @@ export default function Login() {
 
   return (
     <div className="login-page">
-      <a href="https://www.stromation.com" className="login-back">← stromation.com</a>
       <div className="login-card">
         <div className="login-brand">
           <img src={iconUrl} alt="Stromation" className="login-brand-icon" />
