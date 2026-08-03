@@ -134,7 +134,7 @@ export default function Editor() {
         <span style={{ color: 'var(--border-2)' }}>/</span>
         <Link to={`/project/${projectId}`} style={{ color: 'var(--text-3)', fontSize: '0.78rem' }}>{project.name}</Link>
         <span style={{ color: 'var(--border-2)' }}>/</span>
-        <span className="project-name">Editor</span>
+        <span className="project-name">Studio</span>
         <span className="spacer" />
         <span className="save-status">{saveStatus}</span>
         <button className="btn btn-primary btn-sm" onClick={startRender} disabled={busy}>
@@ -162,7 +162,7 @@ export default function Editor() {
         <div className="edit-stage">
           {/* Clip bin */}
           <aside className="edit-bin">
-            <span className="edit-eyebrow">Clip library</span>
+            <span className="edit-eyebrow">Footage</span>
             {doc.tracks?.find(t => t.type === 'picture')?.items?.map((item, i) => {
               const dur = ((item.timelineEnd ?? item.endSeconds ?? 0) - (item.timelineStart ?? item.startSeconds ?? 0)).toFixed(1)
               const score = item.qualityScore || item.score || null
@@ -188,10 +188,10 @@ export default function Editor() {
               )
             })}
             {doc.tracks?.find(t => t.type === 'picture')?.items?.length === 0 && (
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>No clips in timeline.</p>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>No clips yet.</p>
             )}
             <hr />
-            <span className="edit-eyebrow">Candidate</span>
+            <span className="edit-eyebrow">AI Edit</span>
             {document && (
               <div className="candidate-mini">
                 <b>{document.candidate_key}</b>
@@ -206,7 +206,7 @@ export default function Editor() {
             <div className="monitor-frame">
               {document.preview_url
                 ? <video ref={videoRef} src={document.preview_url} />
-                : <div className="monitor-empty">No preview available</div>
+                : <div className="monitor-empty">No preview yet</div>
               }
             </div>
             <div className="monitor-controls">
@@ -223,7 +223,7 @@ export default function Editor() {
               <label style={{ margin: 0, fontSize: '0.7rem' }}>
                 Revision note
                 <input value={revisionNote} onChange={e => setRevisionNote(e.target.value)}
-                  placeholder="Add a note about this revision…" style={{ marginTop: 4, fontSize: '0.78rem', padding: '6px 10px' }} />
+                  placeholder="Add a note about this version…" style={{ marginTop: 4, fontSize: '0.78rem', padding: '6px 10px' }} />
               </label>
             </div>
           </div>
@@ -355,14 +355,14 @@ function Inspector({ document, selected, apply }) {
   if (!selected) return (
     <aside className="edit-inspector">
       <span className="edit-eyebrow">Inspector</span>
-      <p>Select a timeline item to inspect.</p>
+      <p>Select a clip to inspect.</p>
     </aside>
   )
   const current = track(document, selected.lane)?.items?.find(i => i.id === selected.id)
   if (!current) return (
     <aside className="edit-inspector">
       <span className="edit-eyebrow">Inspector</span>
-      <p>Item no longer exists.</p>
+      <p>Clip no longer exists.</p>
     </aside>
   )
   return (

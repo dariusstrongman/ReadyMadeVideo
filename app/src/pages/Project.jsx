@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import { RENDER_API } from '../lib/config'
 
 const STATUS_LABEL = {
-  draft:           'Waiting for footage',
+  draft:           'Ready for footage',
   uploading:       'Uploading footage',
   ready:           'Ready',
   analyzing:       'Examining your clips',
@@ -21,15 +21,15 @@ const ANALYSIS_STAGES = {
   analyzing:  { title: 'Examining your clips',      sub: 'Scoring shot quality, camera movement, and audio clarity.' },
   selecting:  { title: 'Finding the best moments',  sub: 'Ranking clips by visual quality and story potential.' },
   structuring:{ title: 'Building the story',        sub: 'Assembling an opening, middle, and close from your footage.' },
-  editing:    { title: 'Creating your first edit',  sub: 'Placing clips on the timeline, syncing music, and setting pacing.' },
+  editing:    { title: 'Building your edit',  sub: 'Placing clips on the timeline, syncing music, and setting pacing.' },
   finishing:  { title: 'Almost done',               sub: 'Adding final touches to your edit.' },
 }
 
 function StepIndicator({ step }) {
   const steps = [
-    { n: 1, label: 'Upload' },
-    { n: 2, label: 'AI creates edits' },
-    { n: 3, label: 'Review' },
+    { n: 1, label: 'Add footage' },
+    { n: 2, label: 'AI builds your edit' },
+    { n: 3, label: 'Watch your edit' },
     { n: 4, label: 'Refine' },
     { n: 5, label: 'Export' },
   ]
@@ -51,7 +51,7 @@ function StepIndicator({ step }) {
 function Breadcrumb({ projectName, projectId }) {
   return (
     <div className="breadcrumb">
-      <Link to="/">Projects</Link>
+      <Link to="/">Your studio</Link>
       <span className="bc-sep">/</span>
       <span className="bc-current">{projectName || '…'}</span>
     </div>
@@ -206,7 +206,7 @@ export default function Project() {
           <div className="candidate-info">
             <p className="candidate-title">{c.candidate_key || `Edit ${candidateIdx + 1}`}</p>
             <p className="candidate-highlights">
-              {c.publishability_label || 'AI-generated edit'}{c.overall_score ? ` · Score: ${Math.round(c.overall_score)}` : ''}
+              {c.publishability_label || 'AI-assembled edit'}{c.overall_score ? ` · Score: ${Math.round(c.overall_score)}` : ''}
             </p>
             <div className="candidate-actions">
               <button className="btn btn-primary btn-lg"
@@ -251,7 +251,7 @@ export default function Project() {
           </div>
           {assets.length > 0 && (
             <div style={{ marginTop: 32 }}>
-              <span className="section-label">Uploaded footage</span>
+              <span className="section-label">Your footage</span>
               <div className="clip-peek">
                 {assets.map((a, i) => (
                   <div key={a.id} className="clip-peek-item" style={{ animationDelay: `${i * 80}ms` }}>
@@ -316,7 +316,7 @@ export default function Project() {
           >
             <div className="drop-zone-icon">↑</div>
             <h2 className="drop-zone-title">Drop your footage here</h2>
-            <p className="drop-zone-sub">MP4 or MOV · up to 50 MB · stored privately under your account</p>
+            <p className="drop-zone-sub">MP4 or MOV · up to 50 MB per clip · stored privately under your account</p>
             <button className="btn btn-ghost" onClick={e => { e.stopPropagation(); fileInputRef.current?.click() }}>
               Browse files
             </button>
@@ -328,7 +328,7 @@ export default function Project() {
         {/* Existing assets */}
         {assets.length > 0 && !uploading && pendingFiles.length === 0 && (
           <div style={{ marginTop: 32 }}>
-            <span className="section-label">Uploaded footage</span>
+            <span className="section-label">Your footage</span>
             <div className="grid">
               {assets.map(a => (
                 <div key={a.id} className="list-item">
@@ -343,7 +343,7 @@ export default function Project() {
         {/* Render jobs */}
         {jobs.length > 0 && (
           <div style={{ marginTop: 32 }}>
-            <span className="section-label">Render history</span>
+            <span className="section-label">Export history</span>
             <div className="grid">
               {jobs.map(j => <JobRow key={j.id} job={j} session={session} projectId={projectId} onRetry={load} />)}
             </div>
@@ -386,10 +386,10 @@ function ExportSuccess({ project, job, session }) {
           ? <a className="btn btn-primary btn-lg" href={signedUrl} download={`stromation-${project.name}.mp4`}>↓ Download MP4</a>
           : <button className="btn btn-primary btn-lg" disabled>Preparing download…</button>
         }
-        <Link to="/" className="btn btn-ghost">← Back to projects</Link>
+        <Link to="/" className="btn btn-ghost">← Back to studio</Link>
       </div>
       <div className="export-share">
-        <p className="export-share-label">Made with Stromation. Share your edit →</p>
+        <p className="export-share-label">Made with Stromation. Share it →</p>
         <div className="export-share-btns">
           <button className="btn btn-ghost btn-sm" onClick={copyShare}>
             {copied ? '✓ Copied!' : 'Copy tweet'}
@@ -422,7 +422,7 @@ function JobRow({ job, session, projectId, onRetry }) {
         )}
         <span className="spacer" />
         {job.status === 'completed' && !signedUrl && (
-          <button className="btn btn-primary btn-sm" onClick={getUrl}>Get download link</button>
+          <button className="btn btn-primary btn-sm" onClick={getUrl}>Download video</button>
         )}
       </div>
       {job.status === 'failed' && job.error_message && (

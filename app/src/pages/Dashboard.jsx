@@ -4,10 +4,10 @@ import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
 
 const STATUS_LABEL = {
-  draft:           'Waiting for footage',
+  draft:           'Ready for footage',
   uploading:       'Uploading footage',
-  ready:           'Ready to analyze',
-  analyzing:       'AI is working…',
+  ready:           'Footage uploaded',
+  analyzing:       'Creating your edit…',
   analysis_failed: 'Analysis failed',
   draft_ready:     'Your edit is ready',
   rendering:       'Rendering…',
@@ -30,16 +30,16 @@ const STATUS_DOT = {
 }
 
 const STATUS_ACTION = {
-  draft:           { label: 'Upload footage',   primary: true },
-  uploading:       { label: 'View progress',    primary: false },
-  ready:           { label: 'View project',     primary: false },
-  analyzing:       { label: 'View progress',    primary: false },
-  analysis_failed: { label: 'View details',     primary: false },
-  draft_ready:     { label: 'Review your edit', primary: true },
-  rendering:       { label: 'View progress',    primary: false },
-  render_failed:   { label: 'View details',     primary: false },
-  completed:       { label: 'Download export',  primary: true },
-  complete:        { label: 'Download export',  primary: true },
+  draft:           { label: 'Add footage',         primary: true },
+  uploading:       { label: 'View upload',      primary: false },
+  ready:           { label: 'Open video',          primary: false },
+  analyzing:       { label: 'Watch progress',   primary: false },
+  analysis_failed: { label: 'See what happened',primary: false },
+  draft_ready:     { label: 'Watch your edit',     primary: true },
+  rendering:       { label: 'Watch progress',   primary: false },
+  render_failed:   { label: 'See what happened',primary: false },
+  completed:       { label: 'Download video',   primary: true },
+  complete:        { label: 'Download video',   primary: true },
 }
 
 function timeAgo(ts) {
@@ -145,10 +145,10 @@ export default function Dashboard() {
         </div>
         <div className="empty-steps">
           {[
-            { n: '01', title: 'Create a project', desc: 'Name it and pick a platform.' },
-            { n: '02', title: 'Upload footage',    desc: 'Drop in your raw clips — up to 50 MB each.' },
-            { n: '03', title: 'AI builds your edit', desc: 'Stromation analyzes and assembles a first cut.' },
-            { n: '04', title: 'Review and export', desc: 'Watch the edit, refine it, download the MP4.' },
+            { n: '01', title: 'Name your video', desc: 'Tell Stromation what you\'re making.' },
+            { n: '02', title: 'Drop in your footage', desc: 'Raw clips from your phone, camera, or drone.' },
+            { n: '03', title: 'Stromation builds the edit', desc: 'AI assembles a complete first cut from your clips.' },
+            { n: '04', title: 'Watch, refine, download', desc: 'Approve the edit or tweak it — then export your MP4.' },
           ].map(s => (
             <div key={s.n} className="empty-step">
               <span className="empty-step-n">{s.n}</span>
@@ -184,9 +184,9 @@ export default function Dashboard() {
 
       {/* Stats row */}
       <div className="stats-row">
-        <StatCard label="Total projects" value={total} />
-        <StatCard label="In progress" value={active} accent="var(--cyan)" sub={active > 0 ? 'processing now' : null} />
-        <StatCard label="Ready to review" value={readyToReview} accent="#a78bfa" sub={readyToReview > 0 ? 'awaiting your review' : null} />
+        <StatCard label="Total videos" value={total} />
+        <StatCard label="Being edited" value={active} accent="var(--cyan)" sub={active > 0 ? 'AI is working' : null} />
+        <StatCard label="Ready to watch" value={readyToReview} accent="#a78bfa" sub={readyToReview > 0 ? 'your edit is waiting' : null} />
         <StatCard label="Exported" value={exported} accent="#4ade80" />
       </div>
 
@@ -195,15 +195,15 @@ export default function Dashboard() {
         <div className="review-callout">
           <span className="review-callout-dot" />
           <div>
-            <strong>{readyToReview} edit{readyToReview > 1 ? 's' : ''} ready for your review</strong>
-            <p>Stromation has finished building {readyToReview > 1 ? 'these edits' : 'this edit'}. Watch and approve before exporting.</p>
+            <strong>{readyToReview} {readyToReview > 1 ? 'edits' : 'edit'} ready to watch</strong>
+            <p>Stromation finished {readyToReview > 1 ? 'these edits' : 'your edit'}. Watch it and download when you're happy.</p>
           </div>
           <button className="btn btn-primary btn-sm"
             onClick={() => {
               const p = projects.find(p => p.status === 'draft_ready')
               if (p) navigate(`/project/${p.id}`)
             }}>
-            Review now →
+            Watch it now →
           </button>
         </div>
       )}
@@ -211,7 +211,7 @@ export default function Dashboard() {
       {/* In-progress projects */}
       {inProgress.length > 0 && (
         <section className="dash-section">
-          <span className="section-label">In progress</span>
+          <span className="section-label">Being edited</span>
           <div className="project-grid">
             {inProgress.map(p => <ProjectCard key={p.id} project={p} onDelete={load} />)}
             <Link to="/project/new" className="project-card-new">
@@ -225,7 +225,7 @@ export default function Dashboard() {
       {/* Completed exports */}
       {done.length > 0 && (
         <section className="dash-section">
-          <span className="section-label">Completed exports</span>
+          <span className="section-label">Finished videos</span>
           <div className="project-grid">
             {done.map(p => <ProjectCard key={p.id} project={p} onDelete={load} />)}
           </div>
@@ -235,7 +235,7 @@ export default function Dashboard() {
       {/* Recent export jobs */}
       {jobs.length > 0 && (
         <section className="dash-section">
-          <span className="section-label">Recent exports</span>
+          <span className="section-label">Recent downloads</span>
           <div className="export-list">
             {jobs.slice(0, 5).map(j => {
               const proj = projects.find(p => p.id === j.project_id)
@@ -248,7 +248,7 @@ export default function Dashboard() {
                     </svg>
                   </div>
                   <div className="export-row-info">
-                    <p className="export-row-name">{proj?.name || 'Deleted project'}</p>
+                    <p className="export-row-name">{proj?.name || 'Deleted video'}</p>
                     <p className="export-row-meta">
                       {j.output_size_bytes ? `${(j.output_size_bytes / 1048576).toFixed(1)} MB · ` : ''}
                       {timeAgo(j.created_at)}
