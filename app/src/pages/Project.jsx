@@ -634,38 +634,41 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError, se
     <div className="wrap" style={{ paddingTop: 48, paddingBottom: 80 }}>
       <div className="proc-card">
         <div className="proc-glow" aria-hidden="true" />
+        {/* Premium 3-ring orbital loader */}
         <div className="proc-orbit-wrap" aria-hidden="true">
-          <div className="proc-orbit-ring" />
-          <div className="proc-orbit-dot" />
-          <div className="proc-orbit-core" />
+          <div className="proc-orbit-ring proc-orbit-ring-1" />
+          <div className="proc-orbit-ring proc-orbit-ring-2" />
+          <div className="proc-orbit-ring proc-orbit-ring-3" />
+          <div className="proc-orbit-center">
+            <div className="proc-orbit-core" />
+          </div>
         </div>
+        {/* Current stage label */}
         <div className="proc-activity">
-          <span className="proc-activity-label">{activityLabel}</span>
-          <h2 className="proc-activity-title">{currentStage.label}</h2>
-          <p className="proc-activity-desc">{currentStage.description}</p>
+          <span className="proc-activity-title">{activityLabel}</span>
+          <h2 className="proc-stage-label">{currentStage.label}</h2>
+          <p className="proc-stage-sub">{currentStage.description}</p>
         </div>
+        {/* Stage pipeline */}
         <div className="proc-pipeline" role="list" aria-label="Processing stages">
           {stageStates.map((s, i) => (
             <div
               key={s.id}
-              className={`proc-stage proc-stage--${s.state}`}
+              className={`proc-stage ${s.state}`}
               role="listitem"
               aria-label={`${s.label}: ${s.state}`}
             >
               <div className="proc-stage-icon" aria-hidden="true">
                 {s.state === 'done'
-                  ? <svg viewBox="0 0 16 16" fill="none"><path className="proc-check-path" d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  ? <svg viewBox="0 0 16 16" fill="none" width="10" height="10"><path className="proc-stage-check" d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   : s.state === 'active'
-                    ? <div className="proc-stage-pulse" />
+                    ? <div className="proc-stage-dot" />
                     : <div className="proc-stage-dot" />
                 }
               </div>
-              {i < stageStates.length - 1 && (
-                <div className={`proc-stage-line ${s.state === 'done' ? 'proc-stage-line--done' : ''}`} aria-hidden="true">
-                  <div className="proc-stage-line-shimmer" />
-                </div>
-              )}
-              <span className="proc-stage-label">{s.label}</span>
+              <div className="proc-stage-text">
+                <span className="proc-stage-name">{s.label}</span>
+              </div>
             </div>
           ))}
         </div>
@@ -683,16 +686,16 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError, se
 
 function FootageGrid({ assets, fmtSize, fmtDur }) {
   return (
-    <div className="proc-footage" style={{ marginTop: 40 }}>
+    <div className="proc-footage" style={{ marginTop: 48 }}>
       <span className="section-label">Your footage</span>
-      <div className="proc-footage-grid">
+      <div className="proc-clip-list" style={{ marginTop: 12 }}>
         {assets.map((a, i) => (
           <div
             key={a.id}
             className="proc-clip-card"
             style={{ animationDelay: `${i * 60}ms` }}
           >
-            <div className="proc-clip-thumb" aria-hidden="true">
+            <div className="proc-clip-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="2" y="2" width="20" height="20" rx="3"/>
                 <path d="M10 8l6 4-6 4V8z"/>
@@ -704,7 +707,10 @@ function FootageGrid({ assets, fmtSize, fmtDur }) {
                 {[fmtSize(a.size_bytes), fmtDur(a.duration_seconds)].filter(Boolean).join(' · ')}
               </span>
             </div>
-            <div className="proc-clip-badge" aria-label="Upload complete">✓</div>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-label="Upload complete" style={{ color: 'var(--green)', flexShrink: 0 }}>
+              <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" fill="rgba(34,197,94,0.08)"/>
+              <path d="M5 8l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </div>
         ))}
       </div>

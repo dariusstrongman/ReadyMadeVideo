@@ -771,10 +771,11 @@ textarea { resize: vertical; min-height: 80px; }
 /* ── Processing workspace ── */
 .proc-card {
   background: var(--bg-2); border: 1px solid var(--border);
-  border-radius: var(--radius-xl); padding: var(--sp-10) var(--sp-8);
-  text-align: center; max-width: 640px; margin: 0 auto;
+  border-radius: var(--radius-xl); padding: var(--sp-12) var(--sp-10);
+  text-align: center; max-width: 560px; margin: 0 auto;
   animation: fade-in-scale var(--dur-reveal) var(--ease-out) both;
   position: relative; overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.02);
 }
 .proc-card::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
@@ -782,7 +783,7 @@ textarea { resize: vertical; min-height: 80px; }
 }
 /* Premium orbital loader */
 .proc-orbit-wrap {
-  position: relative; width: 120px; height: 120px;
+  position: relative; width: 96px; height: 96px;
   margin: 0 auto var(--sp-8);
 }
 .proc-orbit-ring {
@@ -790,28 +791,32 @@ textarea { resize: vertical; min-height: 80px; }
   border: 1.5px solid transparent;
 }
 .proc-orbit-ring-1 {
-  border-color: rgba(0,212,255,0.15);
+  border-color: rgba(0,212,255,0.12);
   border-top-color: var(--cyan);
   animation: orbit-spin 2.4s linear infinite;
 }
 .proc-orbit-ring-2 {
-  inset: 12px;
-  border-color: rgba(124,58,237,0.12);
+  inset: 10px;
+  border-color: rgba(124,58,237,0.1);
   border-bottom-color: #a78bfa;
   animation: orbit-spin 3.6s linear infinite reverse;
 }
 .proc-orbit-ring-3 {
-  inset: 24px;
-  border-color: rgba(0,212,255,0.08);
-  border-right-color: rgba(0,212,255,0.4);
+  inset: 20px;
+  border-color: rgba(0,212,255,0.07);
+  border-right-color: rgba(0,212,255,0.35);
   animation: orbit-spin 5s linear infinite;
 }
 .proc-orbit-center {
-  position: absolute; inset: 36px;
+  position: absolute; inset: 30px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(0,212,255,0.12) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(0,212,255,0.1) 0%, transparent 70%);
   display: flex; align-items: center; justify-content: center;
   animation: breathe 2.4s ease-in-out infinite;
+}
+.proc-orbit-core {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--cyan); box-shadow: 0 0 8px var(--cyan);
 }
 .proc-stage-label {
   font-size: var(--text-base); font-weight: 600; color: var(--text);
@@ -824,9 +829,10 @@ textarea { resize: vertical; min-height: 80px; }
 .proc-pipeline {
   display: flex; flex-direction: column; gap: 0;
   text-align: left; margin-bottom: var(--sp-8);
+  max-width: 320px; margin-left: auto; margin-right: auto;
 }
 .proc-stage {
-  display: flex; align-items: flex-start; gap: var(--sp-4);
+  display: flex; align-items: center; gap: var(--sp-3);
   padding: var(--sp-3) 0; position: relative;
 }
 .proc-stage:not(:last-child)::after {
@@ -869,12 +875,12 @@ textarea { resize: vertical; min-height: 80px; }
 .proc-stage.active .proc-stage-name { color: var(--text); }
 .proc-stage.done .proc-stage-name { color: var(--green); }
 .proc-stage-desc { font-size: var(--text-xs); color: var(--text-3); margin-top: 2px; }
-/* Activity feed */
-.proc-activity { text-align: left; }
+/* Activity header */
+.proc-activity { text-align: center; margin-bottom: var(--sp-6); }
 .proc-activity-title {
   font-family: var(--mono); font-size: var(--text-2xs); font-weight: 700;
-  letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-3);
-  margin-bottom: var(--sp-3);
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--cyan);
+  margin-bottom: var(--sp-2);
 }
 .proc-activity-list { display: flex; flex-direction: column; gap: var(--sp-2); }
 .proc-activity-item {
@@ -1418,7 +1424,8 @@ textarea { resize: vertical; min-height: 80px; }
   display: flex; align-items: center; gap: var(--sp-2); justify-content: center;
 }
 .proc-wait {
-  font-size: var(--text-sm); color: var(--text-2); margin-top: var(--sp-3);
+  font-size: var(--text-sm); color: var(--text-2); margin-top: var(--sp-4);
+  margin-bottom: var(--sp-2);
 }
 
 /* ── Candidate reveal — missing classes ── */
