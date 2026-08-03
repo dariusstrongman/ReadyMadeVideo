@@ -90,8 +90,9 @@ export default function Dashboard() {
       supabase.from('projects')
         .select('id, name, status, created_at, updated_at')
         .order('updated_at', { ascending: false }),
-      supabase.from('render_jobs')
-        .select('id, project_id, status, created_at, output_size_bytes')
+      supabase.from('pipeline_jobs')
+        .select('id, project_id, status, kind, created_at, artifacts')
+        .in('kind', ['analysis', 'autoedit', 'final_render'])
         .eq('status', 'completed')
         .order('created_at', { ascending: false })
         .limit(10),
@@ -250,7 +251,7 @@ export default function Dashboard() {
                   <div className="export-row-info">
                     <p className="export-row-name">{proj?.name || 'Deleted video'}</p>
                     <p className="export-row-meta">
-                      {j.output_size_bytes ? `${(j.output_size_bytes / 1048576).toFixed(1)} MB · ` : ''}
+                      {j.kind ? `${j.kind.replace('_', ' ')} · ` : ''}
                       {timeAgo(j.created_at)}
                     </p>
                   </div>
