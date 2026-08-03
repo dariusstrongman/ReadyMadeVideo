@@ -43,11 +43,13 @@ export default function Login() {
     <div className="login-page">
       <div className="login-card">
         <div className="login-brand">
-          <img src={iconUrl} alt="Stromation" className="login-brand-icon" />
+          <div className="login-brand-icon">
+            <img src={iconUrl} alt="" aria-hidden="true" style={{ width: 26, height: 26 }} />
+          </div>
           <span className="login-brand-name">STROMATION</span>
-          <span className="login-brand-tagline">Raw footage in. Finished video out.</span>
+          <span className="login-tagline">Raw footage in. Finished video out.</span>
         </div>
-        <p className="login-heading">{headings[mode]}</p>
+        <p className="login-title">{headings[mode]}</p>
         {error && <div className="err" role="alert" aria-live="assertive">{error}</div>}
         {ok    && <div className="ok"  role="status">{ok}</div>}
         <form onSubmit={submit}>
@@ -63,10 +65,13 @@ export default function Login() {
           )}
           <button className="btn btn-primary btn-lg" style={{ width: '100%', marginTop: 20 }}
             type="submit" disabled={busy}>
-            {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Send reset link'}
+            {busy
+              ? <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ animation: 'spin 0.8s linear infinite', flexShrink: 0 }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>{mode === 'signin' ? ' Signing in…' : mode === 'signup' ? ' Creating account…' : ' Sending…'}</>
+              : mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Send reset link'
+            }
           </button>
         </form>
-        <div className="login-links">
+        <div className="login-footer">
           {mode === 'signin' && <>
             <a href="#" onClick={e => { e.preventDefault(); setMode('signup'); setError(''); setOk('') }}>Create an account</a>
             {' · '}
