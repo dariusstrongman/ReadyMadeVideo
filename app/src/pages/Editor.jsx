@@ -1,235 +1,227 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../App'
-import { supabase } from '../lib/supabase'
-import { RENDER_API } from '../lib/config'
-import { applyLocal, reorderArguments, trimArguments, track, makeOperation } from '../lib/editor'
+import {
+  createEditorState, editorApi, editorReducer, makeOperation,
+  reorderArguments, track, trimArguments,
+} from '../lib/editor'
 import iconUrl from '../assets/icon.svg'
 
-const COLORS = { picture: '#00d4ff', audio: '#22c55e', music: '#7c3aed', captions: '#f59e0b', graphics: '#ec4899' }
+const COLORS = { picture: '#00d4ff', captions: '#f59e0b', music: '#7c3aed',
+  sfx: '#22c55e', graphics: '#ec4899' }
+const AUTOSAVE_MS = 800
 
+// The visible customer editor speaks ONLY the immutable Product Editor API:
+//   GET  /editor/{doc}                 -> load/rehydrate a versioned document
+//   POST /editor/{doc}/operations      -> OperationBatch, returns next version
+//   POST /candidates/{id}/preview-url  -> short-lived signed preview
+//   POST /editor/render                -> enqueue export (Slice 4 owns download)
+// No legacy candidate/render tables, no client-side timeline writes, no direct render.
 export default function Editor() {
   const session = useAuth()
   const { id: projectId, documentId } = useParams()
   const navigate = useNavigate()
-  const [project, setProject] = useState(null)
-  const [document, setDocument] = useState(null)
-  const [revisionNote, setRevisionNote] = useState('')
+
+  const [state, dispatch] = useReducer(editorReducer, createEditorState())
+  const [projectName, setProjectName] = useState('')
+  const [previewUrl, setPreviewUrl] = useState(undefined)  // undefined=loading, null=none
   const [selected, setSelected] = useState(null)
   const [zoom, setZoom] = useState(80)
   const [snap, setSnap] = useState(true)
   const [playhead, setPlayhead] = useState(0)
   const [playing, setPlaying] = useState(false)
+  const [saveStatus, setSaveStatus] = useState('Loading…')
+  const [error, setError] = useState('')
+  const [exporting, setExporting] = useState(false)
   const [aiInput, setAiInput] = useState('')
   const [aiHistory, setAiHistory] = useState([])
-  const [aiLoading, setAiLoading] = useState(false)
-  const [renderJob, setRenderJob] = useState(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [saveStatus, setSaveStatus] = useState('Saved')
   const videoRef = useRef(null)
-  const pollRef = useRef(null)
+  const savingRef = useRef(false)
+  const stateRef = useRef(state)
+  stateRef.current = state
+
+  const doc = state.document
 
   const load = useCallback(async () => {
-    const [{ data: proj }, { data: doc }] = await Promise.all([
-      supabase.from('projects').select('id,name,status').eq('id', projectId).single(),
-      supabase.from('edit_candidates').select('*').eq('id', documentId).single(),
-    ])
-    if (proj) setProject(proj)
-    if (doc) setDocument(doc)
-  }, [projectId, documentId])
+    setError('')
+    try {
+      const row = await editorApi(`/projects/${projectId}/editor/${documentId}`, session)
+      dispatch({ type: 'load', document: row.document, version: row.version })
+      setSaveStatus('Saved')
+      setProjectName(row.document?.projectName || 'Studio')
+      // Signed preview via the authorized backend endpoint (candidate ancestry).
+      if (row.candidate_run_id) {
+        editorApi(`/projects/${projectId}/candidates/${row.candidate_run_id}/preview-url`,
+          session, { method: 'POST', body: JSON.stringify({}) })
+          .then(({ url }) => setPreviewUrl(url))
+          .catch(() => setPreviewUrl(null))
+      } else {
+        setPreviewUrl(null)
+      }
+    } catch (e) {
+      setError(e.message || 'Could not load this edit.')
+      setSaveStatus('Error')
+    }
+  }, [projectId, documentId, session])
 
   useEffect(() => { load() }, [load])
 
-  // Sync playhead to video currentTime
+  // Autosave: flush pending operations as one OperationBatch, debounced.
+  const save = useCallback(async () => {
+    const current = stateRef.current
+    if (savingRef.current || !current.document || !current.pending.length) return
+    savingRef.current = true
+    const batch = current.pending
+    const operationIds = batch.map((op) => op.operationId)
+    setSaveStatus('Saving…')
+    try {
+      const saved = await editorApi(
+        `/projects/${projectId}/editor/${documentId}/operations`, session,
+        { method: 'POST',
+          body: JSON.stringify({ expectedVersion: current.version, operations: batch }) })
+      dispatch({ type: 'save_succeeded', document: saved.document,
+        version: saved.version, operationIds })
+      setSaveStatus('Saved')
+    } catch (e) {
+      if (e.status === 409) {
+        // Version conflict — rehydrate to the authoritative latest version.
+        setError('This edit changed elsewhere — reloaded the latest version.')
+        await load()
+      } else {
+        // Keep pending; the next change (or retry) re-attempts. Nothing is lost.
+        setSaveStatus('Save failed — will retry')
+      }
+    } finally {
+      savingRef.current = false
+    }
+  }, [projectId, documentId, session, load])
+
+  useEffect(() => {
+    if (!state.pending.length) return undefined
+    const t = setTimeout(save, AUTOSAVE_MS)
+    return () => clearTimeout(t)
+  }, [state.pending, save])
+
+  // Sync playhead <-> preview video.
   useEffect(() => {
     const vid = videoRef.current
-    if (!vid) return
-    function onTimeUpdate() { setPlayhead(vid.currentTime) }
-    function onPlay() { setPlaying(true) }
-    function onPause() { setPlaying(false) }
-    vid.addEventListener('timeupdate', onTimeUpdate)
+    if (!vid) return undefined
+    const onTime = () => setPlayhead(vid.currentTime)
+    const onPlay = () => setPlaying(true)
+    const onPause = () => setPlaying(false)
+    vid.addEventListener('timeupdate', onTime)
     vid.addEventListener('play', onPlay)
     vid.addEventListener('pause', onPause)
     return () => {
-      vid.removeEventListener('timeupdate', onTimeUpdate)
+      vid.removeEventListener('timeupdate', onTime)
       vid.removeEventListener('play', onPlay)
       vid.removeEventListener('pause', onPause)
     }
-  }, [document])
+  }, [previewUrl])
 
-  async function apply(op, itemId, args) {
-    if (!document) return
-    setSaveStatus('Saving…')
-    const operation = makeOperation(op, itemId, 0, args)
-    const next = applyLocal(document.timeline_json, operation)
-    const { error } = await supabase.from('edit_candidates')
-      .update({ timeline_json: next, revision_note: revisionNote || null })
-      .eq('id', documentId)
-    if (error) { setError(error.message); setSaveStatus('Error'); return }
-    setDocument(d => ({ ...d, timeline_json: next }))
-    setSaveStatus('Saved')
+  function apply(type, targetId, args) {
+    if (!state.document) return
+    const op = makeOperation(type, targetId, state.version, args)
+    dispatch({ type: 'apply', operation: op })   // optimistic; reconciled on save
   }
 
-  async function sendAiMessage() {
-    if (!aiInput.trim() || aiLoading) return
+  async function startExport() {
+    if (!state.document || state.pending.length) {
+      if (state.pending.length) { setError('Saving your changes first…'); await save() }
+    }
+    setExporting(true); setError('')
+    try {
+      await editorApi(`/projects/${projectId}/editor/render`, session,
+        { method: 'POST', body: JSON.stringify({ documentId }) })
+      navigate(`/project/${projectId}`)   // export progress + download live on the project (Slice 4)
+    } catch (e) {
+      setError(e.message || 'Could not start the export.')
+    } finally { setExporting(false) }
+  }
+
+  function sendAiMessage() {
+    if (!aiInput.trim()) return
     const msg = aiInput.trim()
     setAiInput('')
-    setAiHistory(h => [...h, { role: 'user', text: msg }])
-    setAiLoading(true)
-    // Prototype: AI responses are simulated
-    await new Promise(r => setTimeout(r, 1200))
-    setAiHistory(h => [...h, {
-      role: 'ai',
-      text: `[PROTOTYPE] I've noted your request: "${msg}". AI-driven edits are not yet implemented. Use the timeline controls to make manual changes.`
-    }])
-    setAiLoading(false)
+    setAiHistory((h) => [...h, { role: 'user', text: msg },
+      { role: 'ai', text: `[PROTOTYPE] Noted: "${msg}". Conversational edits arrive later — use the timeline controls for now.` }])
   }
 
-  async function startRender() {
-    setBusy(true); setError('')
-    try {
-      const { data: job, error: je } = await supabase.from('render_jobs').insert({
-        project_id: projectId, timeline_id: documentId,
-        user_id: session.user.id, status: 'queued',
-      }).select().single()
-      if (je) throw new Error(je.message)
-      const r = await fetch(`${RENDER_API}/render`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ job_id: job.id }),
-      })
-      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || `render failed (${r.status})`) }
-      setRenderJob(job)
-      await supabase.from('projects').update({ status: 'rendering' }).eq('id', projectId)
-      pollRef.current = setInterval(async () => {
-        const { data: j } = await supabase.from('render_jobs').select('*').eq('id', job.id).single()
-        if (j) setRenderJob(j)
-        if (!['queued', 'processing'].includes(j?.status)) {
-          clearInterval(pollRef.current)
-          if (j?.status === 'completed') {
-            await supabase.from('projects').update({ status: 'completed' }).eq('id', projectId)
-            navigate(`/project/${projectId}`)
-          }
-        }
-      }, 2500)
-    } catch (err) {
-      setError(err.message || String(err))
-    } finally { setBusy(false) }
+  if (!doc) {
+    return <div className="center"><p className="sub">{error || 'Loading editor…'}</p></div>
   }
 
-  useEffect(() => () => clearInterval(pollRef.current), [])
-
-  if (!document || !project) return <div className="center"><p className="sub">Loading editor…</p></div>
-
-  const doc = document.timeline_json || { duration: 0, tracks: [] }
+  const canUndo = state.past.length > 0
+  const canRedo = state.future.length > 0
 
   return (
     <div className="editor-page">
-      {/* Top bar */}
       <div className="editor-topbar">
         <a href="https://www.stromation.com" className="nav-logo" style={{ flexShrink: 0 }}>
           <img src={iconUrl} alt="" aria-hidden="true" />
           STROMATION
         </a>
         <span style={{ color: 'var(--border-2)' }}>/</span>
-        <Link to={`/project/${projectId}`} style={{ color: 'var(--text-3)', fontSize: '0.78rem' }}>{project.name}</Link>
+        <Link to={`/project/${projectId}`} style={{ color: 'var(--text-3)', fontSize: '0.78rem' }}>Project</Link>
         <span style={{ color: 'var(--border-2)' }}>/</span>
         <span className="project-name">Studio</span>
         <span className="spacer" />
-        <span className="save-status">{saveStatus}</span>
-        <button className="btn btn-primary btn-sm" onClick={startRender} disabled={busy}>
-          {busy ? 'Starting…' : 'Export video'}
+        <span className="save-status">{saveStatus} · v{state.version}</span>
+        <button className="btn btn-primary btn-sm" onClick={startExport} disabled={exporting}>
+          {exporting ? 'Starting…' : 'Export video'}
         </button>
       </div>
 
-      {/* Main editor shell */}
       <div className="edit-shell">
-        {/* Command bar */}
         <div className="edit-commandbar">
           <div>
-            <strong>{document.candidate_key || 'Edit'}</strong>
+            <strong>Edit</strong>
             <span className="edit-history">
-              <button onClick={() => {}} disabled title="Undo">↩</button>
-              <button onClick={() => {}} disabled title="Redo">↪</button>
+              <button onClick={() => dispatch({ type: 'undo' })} disabled={!canUndo} title="Undo">↩</button>
+              <button onClick={() => dispatch({ type: 'redo' })} disabled={!canRedo} title="Redo">↪</button>
             </span>
           </div>
-          <div>
-            {error && <span className="edit-alert">{error}</span>}
-          </div>
+          <div>{error && <span className="edit-alert">{error}</span>}</div>
         </div>
 
-        {/* Three-panel stage */}
         <div className="edit-stage">
-          {/* Clip bin */}
           <aside className="edit-bin">
             <span className="edit-eyebrow">Footage</span>
-            {doc.tracks?.find(t => t.type === 'picture')?.items?.map((item, i) => {
-              const dur = ((item.timelineEnd ?? item.endSeconds ?? 0) - (item.timelineStart ?? item.startSeconds ?? 0)).toFixed(1)
-              const score = item.qualityScore || item.score || null
-              const qualityClass = score >= 80 ? 'good' : score >= 50 ? 'ok' : score ? 'poor' : ''
-              return (
-                <div key={item.id} className={`clip-bin-item ${selected?.id === item.id ? 'active' : ''}`}
-                  onClick={() => setSelected({ id: item.id, lane: 'picture' })}>
-                  <div className="clip-bin-thumb" style={{ background: `linear-gradient(135deg, #1c1c28 0%, #252535 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.5rem', color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>
-                    {i + 1}
-                  </div>
-                  <div className="clip-bin-info">
-                    <p className="clip-bin-name">{item.text || item.displayText || item.kind || item.id}</p>
-                    <p className="clip-bin-meta">{dur}s</p>
-                  </div>
-                  {score && (
-                    <div className="clip-quality">
-                      <div className={`clip-quality-dot ${qualityClass}`} />
-                      <div className={`clip-quality-dot ${score >= 70 ? qualityClass : ''}`} />
-                      <div className={`clip-quality-dot ${score >= 85 ? qualityClass : ''}`} />
-                    </div>
-                  )}
+            {track(doc, 'picture').items.map((item, i) => (
+              <div key={item.id} className={`clip-bin-item ${selected?.id === item.id ? 'active' : ''}`}
+                onClick={() => setSelected({ id: item.id, lane: 'picture' })}>
+                <div className="clip-bin-thumb" style={{ display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', fontSize: '0.5rem', color: 'var(--text-3)',
+                  fontFamily: 'var(--mono)' }}>{i + 1}</div>
+                <div className="clip-bin-info">
+                  <p className="clip-bin-name">{item.id}</p>
+                  <p className="clip-bin-meta">{((item.sourceEnd - item.sourceStart) || 0).toFixed(1)}s</p>
                 </div>
-              )
-            })}
-            {doc.tracks?.find(t => t.type === 'picture')?.items?.length === 0 && (
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>No clips yet.</p>
-            )}
-            <hr />
-            <span className="edit-eyebrow">AI Edit</span>
-            {document && (
-              <div className="candidate-mini">
-                <b>{document.candidate_key}</b>
-                <br />{document.publishability_label || ''}
-                {document.overall_score ? ` · ${Math.round(document.overall_score)}` : ''}
               </div>
+            ))}
+            {track(doc, 'picture').items.length === 0 && (
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>No clips.</p>
             )}
           </aside>
 
-          {/* Monitor */}
           <div className="edit-monitor">
             <div className="monitor-frame">
-              {document.preview_url
-                ? <video ref={videoRef} src={document.preview_url} />
-                : <div className="monitor-empty">No preview yet</div>
-              }
+              {previewUrl
+                ? <video ref={videoRef} src={previewUrl} />
+                : <div className="monitor-empty">
+                    {previewUrl === undefined ? 'Loading preview…' : 'Preview not available'}
+                  </div>}
             </div>
             <div className="monitor-controls">
-              <button className="monitor-btn" onClick={() => { if (videoRef.current) { videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 5) } }}>◀◀</button>
-              <button className="monitor-btn" onClick={() => { const v = videoRef.current; if (v) playing ? v.pause() : v.play() }}>
-                {playing ? '⏸' : '▶'}
-              </button>
-              <button className="monitor-btn" onClick={() => { if (videoRef.current) { videoRef.current.currentTime = Math.min(doc.duration, videoRef.current.currentTime + 5) } }}>▶▶</button>
+              <button className="monitor-btn" onClick={() => { const v = videoRef.current; if (v) v.currentTime = Math.max(0, v.currentTime - 5) }}>◀◀</button>
+              <button className="monitor-btn" onClick={() => { const v = videoRef.current; if (v) (playing ? v.pause() : v.play()) }}>{playing ? '⏸' : '▶'}</button>
+              <button className="monitor-btn" onClick={() => { const v = videoRef.current; if (v) v.currentTime = Math.min(doc.duration, v.currentTime + 5) }}>▶▶</button>
             </div>
             <div className="time-readout">
               <code>{formatTime(playhead)}</code>/ {formatTime(doc.duration)}
             </div>
-            <div style={{ width: '100%', maxWidth: 280 }}>
-              <label style={{ margin: 0, fontSize: '0.7rem' }}>
-                Revision note
-                <input value={revisionNote} onChange={e => setRevisionNote(e.target.value)}
-                  placeholder="Add a note about this version…" style={{ marginTop: 4, fontSize: '0.78rem', padding: '6px 10px' }} />
-              </label>
-            </div>
           </div>
 
-          {/* AI Studio panel */}
           <div className="ai-studio-panel">
             <div className="ai-studio-header">
               <span className="ai-studio-label">AI Studio</span>
@@ -238,62 +230,42 @@ export default function Editor() {
             <div className="ai-history">
               {aiHistory.length === 0 && (
                 <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', padding: '8px 0' }}>
-                  Describe a change and the AI will suggest edits.<br />
-                  <span style={{ color: 'var(--violet)', opacity: 0.7 }}>AI responses are simulated in this prototype.</span>
+                  Describe a change. <span style={{ color: 'var(--violet)', opacity: 0.7 }}>Simulated in this prototype.</span>
                 </p>
               )}
               {aiHistory.map((m, i) => (
-                <div key={i} className={`ai-msg ${m.role === 'user' ? 'ai-msg-user' : 'ai-msg-ai'}`}>
-                  {m.text}
-                </div>
+                <div key={i} className={`ai-msg ${m.role === 'user' ? 'ai-msg-user' : 'ai-msg-ai'}`}>{m.text}</div>
               ))}
-              {aiLoading && <div className="ai-msg ai-msg-ai" style={{ opacity: 0.6 }}>Thinking…</div>}
             </div>
             <div className="ai-input-row">
-              <textarea
-                className="ai-input"
-                rows={2}
-                value={aiInput}
-                onChange={e => setAiInput(e.target.value)}
-                placeholder="Describe a change — e.g. 'Make the opening faster'"
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAiMessage() } }}
-              />
-              <button className="ai-send-btn" onClick={sendAiMessage} disabled={aiLoading || !aiInput.trim()}>
-                →
-              </button>
+              <textarea className="ai-input" rows={2} value={aiInput}
+                onChange={(e) => setAiInput(e.target.value)}
+                placeholder="Describe a change…"
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAiMessage() } }} />
+              <button className="ai-send-btn" onClick={sendAiMessage} disabled={!aiInput.trim()}>→</button>
             </div>
           </div>
         </div>
 
-        {/* Timeline */}
         <div className="edit-timeline-section">
           <div className="timeline-tools">
             <label>Zoom
-              <input type="range" min="20" max="200" value={zoom} onChange={e => setZoom(Number(e.target.value))} />
+              <input type="range" min="20" max="200" value={zoom} onChange={(e) => setZoom(Number(e.target.value))} />
             </label>
             <label>
-              <input type="checkbox" checked={snap} onChange={e => setSnap(e.target.checked)} />
+              <input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} />
               Snap to 0.5s
             </label>
             <span style={{ flex: 1 }} />
             <span>{formatTime(playhead)} / {formatTime(doc.duration)}</span>
           </div>
-          <Timeline document={doc} zoom={zoom} playhead={playhead} setPlayhead={p => {
-            setPlayhead(p)
-            if (videoRef.current) videoRef.current.currentTime = p
-          }} snap={snap} selected={selected} setSelected={setSelected} apply={apply} />
+          <Timeline document={doc} zoom={zoom} playhead={playhead} snap={snap}
+            selected={selected} setSelected={setSelected} apply={apply}
+            setPlayhead={(p) => { setPlayhead(p); if (videoRef.current) videoRef.current.currentTime = p }} />
         </div>
 
-        {/* Inspector */}
         <Inspector document={doc} selected={selected} apply={apply} />
       </div>
-
-      {/* Render toast */}
-      {renderJob && <RenderStatus job={renderJob} retry={startRender}
-        download={async () => {
-          const { data } = await supabase.storage.from('exports').createSignedUrl(renderJob.output_storage_path, 3600)
-          if (data) window.open(data.signedUrl)
-        }} />}
     </div>
   )
 }
@@ -305,21 +277,21 @@ function Timeline({ document, zoom, playhead, setPlayhead, snap, selected, setSe
   return (
     <div className="timeline-scroll">
       <div className="timeline-canvas" style={{ width }}
-        onClick={e => {
+        onClick={(e) => {
           const box = e.currentTarget.getBoundingClientRect()
           let v = (e.clientX - box.left) / zoom
           if (snap) v = Math.round(v * 2) / 2
           setPlayhead(Math.max(0, Math.min(duration, v)))
         }}>
         <div className="time-ruler">
-          {ruler.map(tick => <span key={tick} style={{ left: tick * zoom }}>{tick}s</span>)}
+          {ruler.map((tick) => <span key={tick} style={{ left: tick * zoom }}>{tick}s</span>)}
         </div>
         <div className="playhead" style={{ left: playhead * zoom }} />
-        {document.tracks?.map(lane => (
+        {document.tracks?.map((lane) => (
           <div className="timeline-lane" key={lane.type}>
             <b>{lane.type}</b>
             <div className="lane-items">
-              {lane.items?.map(item => {
+              {lane.items?.map((item) => {
                 const start = item.timelineStart ?? item.startSeconds ?? 0
                 const end = item.timelineEnd ?? item.endSeconds ?? duration
                 const itemWidth = Math.max(28, (end - start) * zoom)
@@ -327,8 +299,8 @@ function Timeline({ document, zoom, playhead, setPlayhead, snap, selected, setSe
                   <button key={item.id}
                     className={selected?.id === item.id ? 'clip selected' : 'clip'}
                     style={{ left: start * zoom, width: itemWidth, '--clip-color': COLORS[lane.type] || '#888' }}
-                    onClick={e => { e.stopPropagation(); setSelected({ id: item.id, lane: lane.type }) }}>
-                    <span>{item.text || item.displayText || item.kind || item.id}</span>
+                    onClick={(e) => { e.stopPropagation(); setSelected({ id: item.id, lane: lane.type }) }}>
+                    <span>{item.text || item.displayText || item.id}</span>
                     {lane.type === 'picture' && <i>{(end - start).toFixed(1)}s</i>}
                   </button>
                 )
@@ -341,7 +313,7 @@ function Timeline({ document, zoom, playhead, setPlayhead, snap, selected, setSe
             <button onClick={() => apply('reorder_clip', selected.id, reorderArguments(document, selected.id, -1))}>← Move</button>
             <button onClick={() => apply('reorder_clip', selected.id, reorderArguments(document, selected.id, 1))}>Move →</button>
             <button onClick={() => {
-              const clip = track(document, 'picture')?.items?.find(i => i.id === selected.id)
+              const clip = track(document, 'picture').items.find((i) => i.id === selected.id)
               if (clip) apply('split_clip', selected.id, { sourceTime: clip.sourceStart + (clip.sourceEnd - clip.sourceStart) / 2 })
             }}>Split</button>
             <button onClick={() => apply('delete_clip', selected.id)}>Delete</button>
@@ -353,19 +325,23 @@ function Timeline({ document, zoom, playhead, setPlayhead, snap, selected, setSe
 }
 
 function Inspector({ document, selected, apply }) {
-  if (!selected) return (
-    <aside className="edit-inspector">
-      <span className="edit-eyebrow">Inspector</span>
-      <p>Select a clip to inspect.</p>
-    </aside>
-  )
-  const current = track(document, selected.lane)?.items?.find(i => i.id === selected.id)
-  if (!current) return (
-    <aside className="edit-inspector">
-      <span className="edit-eyebrow">Inspector</span>
-      <p>Clip no longer exists.</p>
-    </aside>
-  )
+  if (!selected) {
+    return (
+      <aside className="edit-inspector">
+        <span className="edit-eyebrow">Inspector</span>
+        <p>Select a clip to inspect.</p>
+      </aside>
+    )
+  }
+  const current = track(document, selected.lane)?.items?.find((i) => i.id === selected.id)
+  if (!current) {
+    return (
+      <aside className="edit-inspector">
+        <span className="edit-eyebrow">Inspector</span>
+        <p>Clip no longer exists.</p>
+      </aside>
+    )
+  }
   return (
     <aside className="edit-inspector">
       <span className="edit-eyebrow">Inspector · {selected.lane}</span>
@@ -374,24 +350,24 @@ function Inspector({ document, selected, apply }) {
         <>
           <label>In point
             <input key={`in-${current.sourceStart}`} type="number" step=".1" defaultValue={current.sourceStart}
-              onBlur={e => apply('trim_clip', selected.id, trimArguments(document, selected.id, 'start', Number(e.target.value)))} />
+              onBlur={(e) => apply('trim_clip', selected.id, trimArguments(document, selected.id, 'start', Number(e.target.value)))} />
           </label>
           <label>Out point
             <input key={`out-${current.sourceEnd}`} type="number" step=".1" defaultValue={current.sourceEnd}
-              onBlur={e => apply('trim_clip', selected.id, trimArguments(document, selected.id, 'end', Number(e.target.value)))} />
+              onBlur={(e) => apply('trim_clip', selected.id, trimArguments(document, selected.id, 'end', Number(e.target.value)))} />
           </label>
         </>
       )}
       {selected.lane === 'captions' && (
         <label>Caption
           <textarea defaultValue={current.text || current.displayText}
-            onBlur={e => apply('update_caption', selected.id, { text: e.target.value })} />
+            onBlur={(e) => apply('update_caption', selected.id, { text: e.target.value })} />
         </label>
       )}
       {selected.lane === 'music' && (
         <label>Music gain (dB)
           <input type="range" min="-60" max="6" defaultValue={current.gainDb}
-            onChange={e => apply('set_music_gain', selected.id, { gainDb: Number(e.target.value) })} />
+            onChange={(e) => apply('set_music_gain', selected.id, { gainDb: Number(e.target.value) })} />
         </label>
       )}
       {selected.lane === 'graphics' && (
@@ -400,19 +376,6 @@ function Inspector({ document, selected, apply }) {
         </button>
       )}
     </aside>
-  )
-}
-
-function RenderStatus({ job, retry, download }) {
-  return (
-    <div className="render-toast">
-      <span className={`badge ${job.status}`}>{job.status}</span>
-      <b>Export {job.id?.slice(0, 8)}</b>
-      <span>{job.current_stage || `${job.progress || 0}%`}</span>
-      {job.status === 'failed' && <button className="btn btn-ghost btn-sm" onClick={retry}>Retry</button>}
-      {job.status === 'completed' && <button className="btn btn-primary btn-sm" onClick={download}>Download MP4</button>}
-      {job.error_message && <span style={{ color: '#fca5a5', fontSize: '0.75rem' }}>{job.error_message}</span>}
-    </div>
   )
 }
 

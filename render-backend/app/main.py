@@ -2146,6 +2146,41 @@ def customer_workspace(project_id: str, authorization: str = Header(default=""))
     }
 
 
+@app.post("/projects/{project_id}/candidates/{candidate_id}/preview-url")
+def customer_candidate_preview_url(project_id: str, candidate_id: UUID,
+                                   authorization: str = Header(default="")):
+    """Short-lived signed URL for a candidate's preview, minted server-side.
+
+    Verifies JWT + project ownership + candidate/project/owner ancestry, and that the
+    preview lives in the owner's exports prefix. The browser never sees the storage
+    path or the service-role key."""
+    import httpx as _hx
+    user, _ = _owned_project(project_id, authorization)
+    rows = supa.db_select("candidate_runs", f"id=eq.{candidate_id}&limit=1")
+    if (not rows or rows[0]["project_id"] != project_id
+            or rows[0]["user_id"] != user["id"]):
+        raise HTTPException(404, "candidate not found")
+    candidate = rows[0]
+    bucket = candidate.get("preview_storage_bucket") or "exports"
+    path = candidate.get("preview_storage_path")
+    expected = f"users/{user['id']}/projects/{project_id}/"
+    if bucket != "exports" or not path or not path.startswith(expected):
+        raise HTTPException(409, "candidate preview is not available")
+    _editor_audit(user["id"], project_id, "sign_candidate_preview",
+                  {"candidate": str(candidate_id)})
+    response = _hx.post(
+        f"{supa.SUPABASE_URL}/storage/v1/object/sign/{bucket}/{path}",
+        headers={"apikey": supa.SERVICE_KEY,
+                 "Authorization": f"Bearer {supa.SERVICE_KEY}",
+                 "Content-Type": "application/json"},
+        json={"expiresIn": 3600}, timeout=30,
+    )
+    if response.status_code != 200:
+        raise HTTPException(404, "candidate preview could not be signed")
+    return {"url": f"{supa.SUPABASE_URL}/storage/v1{response.json()['signedURL']}",
+            "expiresIn": 3600}
+
+
 @app.post("/projects/{project_id}/editor/start")
 def customer_editor_start(project_id: str, body: EditorStartBody,
                           authorization: str = Header(default="")):

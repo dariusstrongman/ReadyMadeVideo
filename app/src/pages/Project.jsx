@@ -4,6 +4,7 @@ import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
 import { RENDER_API } from '../lib/config'
 import { probeDuration } from '../lib/media'
+import { editorApi } from '../lib/editor'
 
 const STATUS_LABEL = {
   draft:           'Ready for footage',
@@ -107,6 +108,8 @@ export default function Project() {
   const [assets, setAssets] = useState([])
   const [candidates, setCandidates] = useState([])
   const [candidateIdx, setCandidateIdx] = useState(0)
+  const [previewUrls, setPreviewUrls] = useState({})   // candidateId -> signed URL
+  const [opening, setOpening] = useState(false)
   const [jobs, setJobs] = useState([])
   const [analysis, setAnalysis] = useState([])
   const [networkError, setNetworkError] = useState(null)
@@ -121,23 +124,30 @@ export default function Project() {
 
   const load = useCallback(async () => {
     try {
-    const [{ data: proj }, { data: ast }, { data: cands }, { data: js }, { data: analysisRows }] = await Promise.all([
+    const [{ data: proj }, { data: ast }, { data: js }, { data: analysisRows }] = await Promise.all([
       supabase.from('projects').select('*').eq('id', projectId).single(),
       supabase.from('media_assets').select('*').eq('project_id', projectId).order('created_at'),
-      supabase.from('edit_candidates').select('*').eq('project_id', projectId).order('overall_score', { ascending: false }),
       supabase.from('pipeline_jobs').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
       supabase.from('asset_analysis').select('kind,status,asset_id,created_at').eq('project_id', projectId).order('created_at', { ascending: false }),
     ])
     if (proj) setProject(proj)
     if (ast) setAssets(ast)
-    if (cands) setCandidates(cands)
     if (js) setJobs(js)
     if (analysisRows) setAnalysis(analysisRows)
+    // Candidates come from the immutable Product Editor workspace API (candidate_runs).
+    // One contract for bridged / initial / revised candidates.
+    try {
+      const ws = await editorApi(`/projects/${projectId}/workspace`, session)
+      setCandidates(ws.candidates || [])
+    } catch {
+      // Candidate query failed — leave candidates empty; the project view stays on
+      // its processing/empty state and the poller retries. Never crashes the page.
+    }
       setNetworkError(null)
     } catch (err) {
       setNetworkError(err?.message || 'Network error — check your connection.')
     }
-  }, [projectId])
+  }, [projectId, session])
 
   useEffect(() => { load() }, [load])
 
@@ -160,6 +170,32 @@ export default function Project() {
       videoRef.current.play().catch(() => {})
     }
   }, [candidateIdx])
+
+  // Fetch a short-lived signed preview URL for the visible candidate through the
+  // authorized backend endpoint. Never uses the raw storage path as a URL.
+  useEffect(() => {
+    const c = candidates[candidateIdx]
+    if (!c || previewUrls[c.id] !== undefined) return
+    let cancelled = false
+    editorApi(`/projects/${projectId}/candidates/${c.id}/preview-url`, session,
+      { method: 'POST', body: JSON.stringify({}) })
+      .then(({ url }) => { if (!cancelled) setPreviewUrls(p => ({ ...p, [c.id]: url })) })
+      .catch(() => { if (!cancelled) setPreviewUrls(p => ({ ...p, [c.id]: null })) })
+    return () => { cancelled = true }
+  }, [candidateIdx, candidates, projectId, session, previewUrls])
+
+  // Open a candidate through the Product Editor start endpoint, then navigate to
+  // the returned editor_document route. Same path for bridged / initial / revised.
+  async function openCandidate(c) {
+    setOpening(true); setError('')
+    try {
+      const doc = await editorApi(`/projects/${projectId}/editor/start`, session,
+        { method: 'POST', body: JSON.stringify({ candidateRunId: c.id }) })
+      navigate(`/project/${projectId}/editor/${doc.id}`)
+    } catch (e) {
+      setError(e.message || 'Could not open the editor.')
+    } finally { setOpening(false) }
+  }
 
   async function handleFiles(files) {
     if (!files?.length) return
@@ -274,6 +310,10 @@ export default function Project() {
   // ── Candidate reveal ────────────────────────────────────────────────
   if (status === 'draft_ready' && candidates.length > 0) {
     const c = candidates[candidateIdx]
+    const preview = previewUrls[c.id]            // undefined = loading, null = unavailable
+    const report = c.publishability
+    const label = report?.publishable ? 'Publish-ready edit' : 'AI-assembled edit'
+    const score = report?.overall_publishability_score
     return (
       <>
         <Breadcrumb projectName={project.name} projectId={projectId} />
@@ -283,24 +323,23 @@ export default function Project() {
             {candidates.length > 1 && <span>{candidateIdx + 1} of {candidates.length} edits</span>}
           </div>
           <div className="candidate-video-wrap">
-            {c.preview_url
-              ? <video ref={videoRef} src={c.preview_url} autoPlay muted loop playsInline />
-              : <div className="candidate-video-placeholder">Preview not available</div>
+            {preview
+              ? <video ref={videoRef} src={preview} autoPlay muted loop playsInline />
+              : <div className="candidate-video-placeholder">
+                  {preview === undefined ? 'Loading preview…' : 'Preview not available'}
+                </div>
             }
           </div>
           <div className="candidate-info">
             <p className="candidate-title">{c.candidate_key || `Edit ${candidateIdx + 1}`}</p>
             <p className="candidate-highlights">
-              {c.publishability_label || 'AI-assembled edit'}{c.overall_score ? ` · Score: ${Math.round(c.overall_score)}` : ''}
+              {label}{Number.isFinite(score) ? ` · Score: ${Math.round(score)}` : ''}
             </p>
+            {error && <div className="err" role="alert">{error}</div>}
             <div className="candidate-actions">
-              <button className="btn btn-primary btn-lg"
-                onClick={() => navigate(`/project/${projectId}/editor/${c.id}`)}>
-                Watch this edit
-              </button>
-              <button className="btn btn-ghost"
-                onClick={() => navigate(`/project/${projectId}/editor/${c.id}`)}>
-                Open in editor
+              <button className="btn btn-primary btn-lg" disabled={opening}
+                onClick={() => openCandidate(c)}>
+                {opening ? 'Opening…' : 'Open in editor'}
               </button>
             </div>
           </div>
