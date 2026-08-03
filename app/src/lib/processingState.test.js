@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deriveProcessingState, STALL_THRESHOLD_MS } from '../pages/Project.jsx'
+import { deriveProcessingState, resolveStallAnchor, STALL_THRESHOLD_MS } from '../pages/Project.jsx'
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 const NOW = 1_000_000_000_000  // fixed "now" for deterministic tests
@@ -182,10 +182,102 @@ describe('deriveProcessingState', () => {
     const result = deriveProcessingState({
       project: project({ created_at: STALE }),
       analysis: [],
+      assets: [],
       jobs: [{ status: 'queued', error_message: null }],
       nowMs: NOW,
     })
     expect(result.kind).toBe('job_queued')
     expect(result.kind).not.toBe('stalled')
+  })
+
+  // ── Stall does NOT fire if analysis has started ───────────────────────────────
+  // (already tested above, but ensure assets param is passed)
+  it('does NOT return stalled when analysis rows exist even if past threshold (with assets param)', () => {
+    const result = deriveProcessingState({
+      project: project({ created_at: STALE }),
+      assets: [],
+      analysis: [{ kind: 'probe', status: 'running', created_at: STALE }],
+      jobs: [],
+      nowMs: NOW,
+    })
+    expect(result.kind).toBe('analysis_running')
+  })
+})
+
+// ── resolveStallAnchor tests ─────────────────────────────────────────────────
+describe('resolveStallAnchor', () => {
+  const OLD_PROJECT_TS = NOW - STALL_THRESHOLD_MS - 60_000  // well past threshold
+  const NEW_ASSET_TS   = NOW - 30_000                        // 30 sec ago (fresh)
+
+  function oldProject() {
+    return { created_at: new Date(OLD_PROJECT_TS).toISOString() }
+  }
+
+  // ── 1. Old project with a newly uploaded asset does not stall immediately ────
+  it('returns new asset timestamp when asset is newer than project', () => {
+    const anchor = resolveStallAnchor({
+      assets:   [{ created_at: new Date(NEW_ASSET_TS).toISOString() }],
+      analysis: [],
+      jobs:     [],
+      project:  oldProject(),
+    })
+    expect(anchor).toBe(NEW_ASSET_TS)
+    // Confirm: elapsed from anchor is only 30s, well under threshold
+    expect(NOW - anchor).toBeLessThan(STALL_THRESHOLD_MS)
+  })
+
+  // ── 2. Old project with no new activity can stall ─────────────────────────────
+  it('falls back to project.created_at when no assets/analysis/jobs exist', () => {
+    const anchor = resolveStallAnchor({
+      assets:   [],
+      analysis: [],
+      jobs:     [],
+      project:  oldProject(),
+    })
+    expect(anchor).toBe(OLD_PROJECT_TS)
+    // Confirm: elapsed from anchor exceeds threshold
+    expect(NOW - anchor).toBeGreaterThan(STALL_THRESHOLD_MS)
+  })
+
+  // ── 3. Latest media asset timestamp overrides project.created_at ──────────────
+  it('picks the latest asset timestamp over project.created_at', () => {
+    const olderAsset = NOW - 4 * 60 * 1000   // 4 min ago
+    const newerAsset = NOW - 2 * 60 * 1000   // 2 min ago
+    const anchor = resolveStallAnchor({
+      assets: [
+        { created_at: new Date(olderAsset).toISOString() },
+        { created_at: new Date(newerAsset).toISOString() },
+      ],
+      analysis: [],
+      jobs:     [],
+      project:  oldProject(),
+    })
+    expect(anchor).toBe(newerAsset)
+  })
+
+  // ── 4. Render job timestamp suppresses stall ──────────────────────────────────
+  it('uses render job created_at when it is the most recent signal', () => {
+    const jobTs = NOW - 60_000  // 1 min ago
+    const anchor = resolveStallAnchor({
+      assets:   [],
+      analysis: [],
+      jobs:     [{ created_at: new Date(jobTs).toISOString() }],
+      project:  oldProject(),
+    })
+    expect(anchor).toBe(jobTs)
+    expect(NOW - anchor).toBeLessThan(STALL_THRESHOLD_MS)
+  })
+
+  // ── 5. Analysis timestamp suppresses stall ────────────────────────────────────
+  it('uses analysis created_at when it is the most recent signal', () => {
+    const analysisTs = NOW - 90_000  // 1.5 min ago
+    const anchor = resolveStallAnchor({
+      assets:   [],
+      analysis: [{ created_at: new Date(analysisTs).toISOString() }],
+      jobs:     [],
+      project:  oldProject(),
+    })
+    expect(anchor).toBe(analysisTs)
+    expect(NOW - anchor).toBeLessThan(STALL_THRESHOLD_MS)
   })
 })

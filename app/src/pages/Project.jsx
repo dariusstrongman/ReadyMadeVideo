@@ -388,11 +388,25 @@ export default function Project() {
 
 
 // ── Processing state derivation (pure function, testable) ──────────────────
-// STALL_THRESHOLD_MS: if the project has been in ready/analyzing for longer
-// than this with no asset_analysis rows and no render job, show the stall state.
+// STALL_THRESHOLD_MS: 5 minutes of silence after the most recent relevant
+// activity signal before we show the stall error state.
 export const STALL_THRESHOLD_MS = 5 * 60 * 1000  // 5 minutes
 
-export function deriveProcessingState({ project, analysis, jobs, nowMs }) {
+// Resolve the most recent timestamp that signals real processing activity.
+// Priority: assets.created_at > analysis.created_at > jobs.created_at >
+//           project.created_at as final fallback.
+export function resolveStallAnchor({ assets, analysis, jobs, project }) {
+  const ts = (iso) => (iso ? new Date(iso).getTime() : 0)
+  const candidates = [
+    ...( assets   ?? []).map(a => ts(a.created_at)),
+    ...( analysis ?? []).map(r => ts(r.created_at)),
+    ...( jobs     ?? []).map(j => ts(j.created_at)),
+    ts(project.created_at),
+  ].filter(t => t > 0)
+  return candidates.length > 0 ? Math.max(...candidates) : 0
+}
+
+export function deriveProcessingState({ project, assets, analysis, jobs, nowMs }) {
   const now = nowMs ?? Date.now()
   const latestJob = jobs[0] ?? null
 
@@ -416,9 +430,9 @@ export function deriveProcessingState({ project, analysis, jobs, nowMs }) {
     return { kind: 'analysis_running', analysis }
   }
 
-  // Stall detection: no job, no analysis rows, project created long ago
-  const createdAt = project.created_at ? new Date(project.created_at).getTime() : 0
-  const elapsed   = now - createdAt
+  // Stall detection: no job, no analysis rows, and no recent activity
+  const anchor  = resolveStallAnchor({ assets: assets ?? [], analysis, jobs, project })
+  const elapsed = now - anchor
   if (!hasAnalysis && !latestJob && elapsed > STALL_THRESHOLD_MS) {
     return { kind: 'stalled' }
   }
@@ -432,7 +446,7 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError }) 
   const fmtSize = b => !b ? '' : b > 1e6 ? `${(b/1e6).toFixed(1)} MB` : `${(b/1e3).toFixed(0)} KB`
   const fmtDur  = s => !s ? '' : s >= 60 ? `${Math.floor(s/60)}m ${Math.round(s%60)}s` : `${Math.round(s)}s`
 
-  const state = deriveProcessingState({ project, analysis, jobs })
+  const state = deriveProcessingState({ project, assets, analysis, jobs })
 
   // ── Network error ──
   if (networkError) {
