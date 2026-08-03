@@ -124,7 +124,7 @@ export default function Project() {
       supabase.from('projects').select('*').eq('id', projectId).single(),
       supabase.from('media_assets').select('*').eq('project_id', projectId).order('created_at'),
       supabase.from('edit_candidates').select('*').eq('project_id', projectId).order('overall_score', { ascending: false }),
-      supabase.from('render_jobs').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
+      supabase.from('pipeline_jobs').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
       supabase.from('asset_analysis').select('kind,status').eq('project_id', projectId),
     ])
     if (proj) setProject(proj)
@@ -143,7 +143,7 @@ export default function Project() {
   // Poll while analyzing
   useEffect(() => {
     if (!project) return
-    const active = ['analyzing', 'uploading', 'ready'].includes(project.status)
+    const active = ['analyzing', 'uploading', 'ready', 'analysis_failed'].includes(project.status)
     if (active) {
       pollRef.current = setInterval(load, 3000)
     } else {
@@ -250,7 +250,7 @@ export default function Project() {
 
   const status = project.status
   const step = status === 'draft' || status === 'uploading' ? 1
-    : ['ready', 'analyzing'].includes(status) ? 2
+    : ['ready', 'analyzing', 'analysis_failed'].includes(status) ? 2
     : status === 'draft_ready' ? 3
     : ['rendering', 'render_failed'].includes(status) ? 4
     : (status === 'completed' || status === 'complete') ? 5 : 1
@@ -313,7 +313,7 @@ export default function Project() {
   }
 
   // ── Processing ──────────────────────────────────────────────────────
-  if (['ready', 'analyzing'].includes(status)) {
+  if (['ready', 'analyzing', 'analysis_failed'].includes(status)) {
     return (
       <>
         <Breadcrumb projectName={project.name} projectId={projectId} />
@@ -447,12 +447,19 @@ export function deriveProcessingState({ project, assets, analysis, jobs, nowMs }
   // Candidate ready — project transitioned out of processing
   if (project.status === 'draft_ready') return { kind: 'candidate_ready' }
 
-  // Render job states
+  // Project-level failure — backend set analysis_failed on the project
+  if (project.status === 'analysis_failed') {
+    // Surface the most recent failed pipeline job for its error_message
+    const failedJob = jobs.find(j => j.status === 'failed') ?? latestJob
+    return { kind: 'job_failed', job: failedJob }
+  }
+  // Pipeline job states (pipeline_jobs table — kinds: analysis, autoedit, revision, final_render)
   if (latestJob) {
     if (latestJob.status === 'failed')     return { kind: 'job_failed',     job: latestJob }
     if (latestJob.status === 'processing') return { kind: 'job_processing', job: latestJob }
     if (latestJob.status === 'queued')     return { kind: 'job_queued',     job: latestJob }
-    if (latestJob.status === 'completed')  return { kind: 'candidate_ready' }
+    if (latestJob.status === 'completed' && project.status === 'draft_ready') return { kind: 'candidate_ready' }
+    if (latestJob.status === 'cancelled')  return { kind: 'stalled' }
   }
 
   // No render job yet — check analysis

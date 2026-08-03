@@ -132,7 +132,7 @@ describe('deriveProcessingState', () => {
   // ── 9b. Candidate-ready via completed render job ──────────────────────────────
   it('returns candidate_ready when latest render job is completed', () => {
     const result = deriveProcessingState({
-      project: project(),
+      project: project({ status: 'draft_ready' }),
       analysis: [],
       jobs: [{ status: 'completed', error_message: null }],
       nowMs: NOW,
