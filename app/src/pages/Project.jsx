@@ -108,6 +108,7 @@ export default function Project() {
   const [candidateIdx, setCandidateIdx] = useState(0)
   const [jobs, setJobs] = useState([])
   const [analysis, setAnalysis] = useState([])
+  const [networkError, setNetworkError] = useState(null)
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadPct, setUploadPct] = useState(0)
@@ -118,6 +119,7 @@ export default function Project() {
   const videoRef = useRef(null)
 
   const load = useCallback(async () => {
+    try {
     const [{ data: proj }, { data: ast }, { data: cands }, { data: js }, { data: analysisRows }] = await Promise.all([
       supabase.from('projects').select('*').eq('id', projectId).single(),
       supabase.from('media_assets').select('*').eq('project_id', projectId).order('created_at'),
@@ -130,6 +132,10 @@ export default function Project() {
     if (cands) setCandidates(cands)
     if (js) setJobs(js)
     if (analysisRows) setAnalysis(analysisRows)
+      setNetworkError(null)
+    } catch (err) {
+      setNetworkError(err?.message || 'Network error — check your connection.')
+    }
   }, [projectId])
 
   useEffect(() => { load() }, [load])
@@ -286,6 +292,7 @@ export default function Project() {
           assets={assets}
           analysis={analysis}
           jobs={jobs}
+          networkError={networkError}
         />
       </>
     )
@@ -380,42 +387,71 @@ export default function Project() {
 }
 
 
+// ── Processing state derivation (pure function, testable) ──────────────────
+// STALL_THRESHOLD_MS: if the project has been in ready/analyzing for longer
+// than this with no asset_analysis rows and no render job, show the stall state.
+export const STALL_THRESHOLD_MS = 5 * 60 * 1000  // 5 minutes
+
+export function deriveProcessingState({ project, analysis, jobs, nowMs }) {
+  const now = nowMs ?? Date.now()
+  const latestJob = jobs[0] ?? null
+
+  // Candidate ready — project transitioned out of processing
+  if (project.status === 'draft_ready') return { kind: 'candidate_ready' }
+
+  // Render job states
+  if (latestJob) {
+    if (latestJob.status === 'failed')     return { kind: 'job_failed',     job: latestJob }
+    if (latestJob.status === 'processing') return { kind: 'job_processing', job: latestJob }
+    if (latestJob.status === 'queued')     return { kind: 'job_queued',     job: latestJob }
+    if (latestJob.status === 'completed')  return { kind: 'candidate_ready' }
+  }
+
+  // No render job yet — check analysis
+  const hasAnalysis = analysis.length > 0
+  const anyRunning  = analysis.some(r => r.status === 'running')
+  const anyDone     = analysis.some(r => r.status === 'completed')
+
+  if (hasAnalysis && (anyRunning || anyDone)) {
+    return { kind: 'analysis_running', analysis }
+  }
+
+  // Stall detection: no job, no analysis rows, project created long ago
+  const createdAt = project.created_at ? new Date(project.created_at).getTime() : 0
+  const elapsed   = now - createdAt
+  if (!hasAnalysis && !latestJob && elapsed > STALL_THRESHOLD_MS) {
+    return { kind: 'stalled' }
+  }
+
+  // Default: analysis not yet started (waiting for first pipeline row)
+  return { kind: 'analysis_not_started' }
+}
+
 // ── ProcessingWorkspace ─────────────────────────────────────────────────────
-function ProcessingWorkspace({ project, assets, analysis, jobs }) {
+function ProcessingWorkspace({ project, assets, analysis, jobs, networkError }) {
   const fmtSize = b => !b ? '' : b > 1e6 ? `${(b/1e6).toFixed(1)} MB` : `${(b/1e3).toFixed(0)} KB`
   const fmtDur  = s => !s ? '' : s >= 60 ? `${Math.floor(s/60)}m ${Math.round(s%60)}s` : `${Math.round(s)}s`
 
-  // Derive stage completion from real asset_analysis rows
-  // A stage is "done" if all its kinds have at least one completed row
-  // A stage is "active" if any of its kinds has a running row
-  function stageState(stage) {
-    if (stage.kinds.length === 0) {
-      // Special: upload stage = always done once we're here
-      if (stage.id === 'upload') return 'done'
-      // preview stage = done only when project.status is draft_ready
-      if (stage.id === 'preview') return project.status === 'draft_ready' ? 'done' : 'pending'
-      return 'pending'
-    }
-    const relevant = analysis.filter(r => stage.kinds.includes(r.kind))
-    const anyRunning = relevant.some(r => r.status === 'running')
-    const allDone = stage.kinds.every(k => relevant.some(r => r.kind === k && r.status === 'completed'))
-    if (allDone) return 'done'
-    if (anyRunning) return 'active'
-    // If some kinds are completed but not all, still active
-    if (relevant.some(r => r.status === 'completed')) return 'active'
-    return 'pending'
+  const state = deriveProcessingState({ project, analysis, jobs })
+
+  // ── Network error ──
+  if (networkError) {
+    return (
+      <div className="wrap" style={{ paddingTop: 48, paddingBottom: 80 }}>
+        <div className="proc-error-card">
+          <div className="proc-error-icon">✕</div>
+          <h2 className="proc-error-title">Connection problem.</h2>
+          <p className="proc-error-sub">{networkError}</p>
+          <div className="proc-error-actions">
+            <Link to="/" className="btn btn-ghost">← Back to Your Studio</Link>
+          </div>
+        </div>
+      </div>
+    )
   }
 
-  // Find the current active stage for the description copy
-  const stageStates = PIPELINE_STAGES.map(s => ({ ...s, state: stageState(s) }))
-  const currentStage = stageStates.find(s => s.state === 'active') || stageStates.find(s => s.state === 'pending') || stageStates[stageStates.length - 1]
-
-  // No render job = processing is happening server-side (AI pipeline)
-  // Failed render job = show error state
-  const latestJob = jobs[0]
-  const jobFailed = latestJob?.status === 'failed'
-
-  if (jobFailed) {
+  // ── Stalled / no job created ──
+  if (state.kind === 'stalled') {
     return (
       <div className="wrap" style={{ paddingTop: 48, paddingBottom: 80 }}>
         <div className="proc-error-card">
@@ -424,40 +460,88 @@ function ProcessingWorkspace({ project, assets, analysis, jobs }) {
           <p className="proc-error-sub">
             Your footage is uploaded safely, but the editing job did not start.
           </p>
-          {latestJob.error_message && (
-            <p className="proc-error-detail">{latestJob.error_message}</p>
-          )}
           <div className="proc-error-actions">
             <Link to="/" className="btn btn-ghost">← Back to Your Studio</Link>
+            {assets.length > 0 && (
+              <a href="#footage" className="btn btn-ghost">View uploaded footage</a>
+            )}
           </div>
         </div>
-        {assets.length > 0 && <FootageGrid assets={assets} fmtSize={fmtSize} fmtDur={fmtDur} />}
+        {assets.length > 0 && (
+          <div id="footage">
+            <FootageGrid assets={assets} fmtSize={fmtSize} fmtDur={fmtDur} />
+          </div>
+        )}
       </div>
     )
   }
 
+  // ── Render job failed ──
+  if (state.kind === 'job_failed') {
+    return (
+      <div className="wrap" style={{ paddingTop: 48, paddingBottom: 80 }}>
+        <div className="proc-error-card">
+          <div className="proc-error-icon">✕</div>
+          <h2 className="proc-error-title">We couldn't start the edit.</h2>
+          <p className="proc-error-sub">
+            Your footage is uploaded safely, but the editing job did not start.
+          </p>
+          {state.job.error_message && (
+            <p className="proc-error-detail">{state.job.error_message}</p>
+          )}
+          <div className="proc-error-actions">
+            <Link to="/" className="btn btn-ghost">← Back to Your Studio</Link>
+            {assets.length > 0 && (
+              <a href="#footage" className="btn btn-ghost">View uploaded footage</a>
+            )}
+          </div>
+        </div>
+        {assets.length > 0 && (
+          <div id="footage">
+            <FootageGrid assets={assets} fmtSize={fmtSize} fmtDur={fmtDur} />
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── Derive stage states for active/not-started/queued/processing ──
+  function stageState(stage) {
+    if (stage.kinds.length === 0) {
+      if (stage.id === 'upload') return 'done'
+      if (stage.id === 'preview') return project.status === 'draft_ready' ? 'done' : 'pending'
+      return 'pending'
+    }
+    const relevant = analysis.filter(r => stage.kinds.includes(r.kind))
+    const anyRunning = relevant.some(r => r.status === 'running')
+    const allDone = stage.kinds.every(k => relevant.some(r => r.kind === k && r.status === 'completed'))
+    if (allDone) return 'done'
+    if (anyRunning || relevant.some(r => r.status === 'completed')) return 'active'
+    return 'pending'
+  }
+  const stageStates = PIPELINE_STAGES.map(s => ({ ...s, state: stageState(s) }))
+  const currentStage = stageStates.find(s => s.state === 'active') || stageStates.find(s => s.state === 'pending') || stageStates[stageStates.length - 1]
+
+  // Activity label varies by state
+  const activityLabel = state.kind === 'job_queued'      ? 'Edit queued'
+    : state.kind === 'job_processing'                    ? 'Building your edit'
+    : state.kind === 'analysis_running'                  ? 'Creating your edit'
+    : 'Starting up'
+
   return (
     <div className="wrap" style={{ paddingTop: 48, paddingBottom: 80 }}>
-      {/* Main processing card */}
       <div className="proc-card">
-        {/* Ambient glow */}
         <div className="proc-glow" aria-hidden="true" />
-
-        {/* Orbital indicator */}
         <div className="proc-orbit-wrap" aria-hidden="true">
           <div className="proc-orbit-ring" />
           <div className="proc-orbit-dot" />
           <div className="proc-orbit-core" />
         </div>
-
-        {/* Current activity */}
         <div className="proc-activity">
-          <span className="proc-activity-label">Creating your edit</span>
+          <span className="proc-activity-label">{activityLabel}</span>
           <h2 className="proc-activity-title">{currentStage.label}</h2>
           <p className="proc-activity-desc">{currentStage.description}</p>
         </div>
-
-        {/* Stage pipeline */}
         <div className="proc-pipeline" role="list" aria-label="Processing stages">
           {stageStates.map((s, i) => (
             <div
@@ -483,8 +567,6 @@ function ProcessingWorkspace({ project, assets, analysis, jobs }) {
             </div>
           ))}
         </div>
-
-        {/* Honest time copy */}
         <p className="proc-wait">Most edits take a few minutes.</p>
         <p className="proc-persist">
           You can return to{' '}
@@ -492,8 +574,6 @@ function ProcessingWorkspace({ project, assets, analysis, jobs }) {
           {' '}while this page updates.
         </p>
       </div>
-
-      {/* Footage grid */}
       {assets.length > 0 && <FootageGrid assets={assets} fmtSize={fmtSize} fmtDur={fmtDur} />}
     </div>
   )
