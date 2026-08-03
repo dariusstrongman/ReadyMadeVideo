@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../App'
-import { RENDER_API, supabase, uploadWithProgress } from '../lib/supabase'
+import { RENDER_API, supabase } from '../lib/supabase'
 import { editorApi } from '../lib/editor'
+import { UPLOAD_LIMIT_TEXT } from '../lib/config'
+import { MultipartUpload, UploadError, createRealTransport, validateFile } from '../lib/s3upload'
 
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024 // 50 MB — current Supabase plan cap
-const ACCEPTED = ['video/mp4', 'video/quicktime']
+const fmtBytes = (n) => n >= 1073741824
+  ? `${(n / 1073741824).toFixed(2)} GB` : `${(n / 1048576).toFixed(1)} MB`
+const fmtSpeed = (bps) => bps ? `${fmtBytes(bps)}/s` : ''
+const fmtEta = (s) => (s == null || !isFinite(s)) ? ''
+  : s >= 60 ? `${Math.round(s / 60)}m ${Math.round(s % 60)}s left` : `${Math.round(s)}s left`
 
 export default function Project() {
   const { id } = useParams()
@@ -164,78 +169,78 @@ function CandidateWorkspace({ projectId, session }) {
   </section>
 }
 
-/* ---------------- upload ---------------- */
+/* ---------------- upload (direct browser -> S3 multipart) ---------------- */
 function Uploader({ projectId, session, onDone }) {
-  const [progress, setProgress] = useState(null)
+  const [prog, setProg] = useState(null)     // {percent,bytesUploaded,totalBytes,speedBps,etaSeconds,state}
   const [error, setError] = useState('')
   const inputRef = useRef()
+  const uploadRef = useRef(null)
 
   async function handleFile(file) {
     setError('')
     if (!file) return
-    if (!ACCEPTED.includes(file.type) && !/\.(mp4|mov)$/i.test(file.name)) {
-      setError('Please choose an MP4 or MOV file.'); return
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setError(`File is ${(file.size / 1048576).toFixed(1)} MB — the current limit is 50 MB per file (storage plan cap).`)
+    try {
+      validateFile(file)   // reject oversize / wrong type BEFORE any network call
+    } catch (err) {
+      setError(err.message); if (inputRef.current) inputRef.current.value = ''
       return
     }
-    const assetId = crypto.randomUUID()
-    const uid = session.user.id
-    const safeName = file.name.replace(/[^\w.\-]+/g, '_').slice(-120)
-    const path = `users/${uid}/projects/${projectId}/raw/${assetId}/${safeName}`
+    const upload = new MultipartUpload({
+      file, projectId,
+      transport: createRealTransport({ accessToken: session.access_token }),
+      onProgress: setProg,
+    })
+    uploadRef.current = upload
     try {
-      setProgress(0)
-      await uploadWithProgress({
-        bucket: 'raw-footage', path, file,
-        accessToken: session.access_token,
-        onProgress: setProgress,
-      })
-      const duration = await probeDuration(file)
-      const { error: ie } = await supabase.from('media_assets').insert({
-        id: assetId, project_id: projectId, user_id: uid,
-        filename: file.name, storage_path: path,
-        mime_type: file.type || 'video/mp4', size_bytes: file.size,
-        duration_seconds: duration,
-      })
-      if (ie) throw new Error(`upload stored but record failed: ${ie.message}`)
-      await supabase.from('projects').update({ status: 'ready' }).eq('id', projectId)
+      await upload.start()
+      // Backend finalize created the validated media_asset and set the project ready.
       onDone()
     } catch (err) {
-      setError(err.message || String(err))
+      if (err instanceof UploadError && err.code === 'cancelled') setError('')
+      else setError(err.message || String(err))
     } finally {
-      setProgress(null)
+      uploadRef.current = null
+      setProg(null)
       if (inputRef.current) inputRef.current.value = ''
     }
   }
 
+  const busy = prog !== null
+  const paused = prog?.state === 'paused'
+  const validating = prog && ['completing', 'finalizing'].includes(prog.state)
+
   return (
     <div className="card">
       <h2>Upload footage</h2>
-      <p className="small">MP4 or MOV, up to 50 MB per file on the current storage plan. Files are stored privately and only visible to you.</p>
+      <p className="small">{UPLOAD_LIMIT_TEXT}. Files are stored privately and only visible to you.</p>
       {error && <div className="err" role="alert">{error}</div>}
-      {progress === null ? (
+      {!busy ? (
         <input ref={inputRef} type="file" accept="video/mp4,video/quicktime,.mp4,.mov"
           style={{ marginTop: 12 }} aria-label="Choose video file"
           onChange={(e) => handleFile(e.target.files?.[0])} />
       ) : (
         <div style={{ marginTop: 14 }}>
-          <div className="progress"><div style={{ width: `${progress}%` }} /></div>
-          <p className="small" style={{ marginTop: 6 }}>Uploading… {progress}%</p>
+          <div className="progress"><div style={{ width: `${prog.percent}%` }} /></div>
+          <p className="small" style={{ marginTop: 6 }}>
+            {validating
+              ? 'Validating upload… processing begins after validation.'
+              : paused ? 'Paused' : 'Uploading'} {prog.percent}%
+            {' · '}{fmtBytes(prog.bytesUploaded)} / {fmtBytes(prog.totalBytes)}
+            {!validating && prog.speedBps ? ` · ${fmtSpeed(prog.speedBps)}` : ''}
+            {!validating && prog.etaSeconds ? ` · ${fmtEta(prog.etaSeconds)}` : ''}
+          </p>
+          {!validating && (
+            <div className="row" style={{ marginTop: 10 }}>
+              {paused
+                ? <button className="btn btn-ghost" onClick={() => uploadRef.current?.resume()}>Resume</button>
+                : <button className="btn btn-ghost" onClick={() => uploadRef.current?.pause()}>Pause</button>}
+              <button className="btn btn-danger" onClick={() => uploadRef.current?.cancel()}>Cancel</button>
+            </div>
+          )}
         </div>
       )}
     </div>
   )
-}
-
-function probeDuration(file) {
-  return new Promise((resolve) => {
-    const v = document.createElement('video')
-    v.preload = 'metadata'
-    v.onloadedmetadata = () => { URL.revokeObjectURL(v.src); resolve(v.duration || null) }
-    v.onerror = () => resolve(null)
-    v.src = URL.createObjectURL(file)
-  })
 }
 
 function AssetList({ assets }) {

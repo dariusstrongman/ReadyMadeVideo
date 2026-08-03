@@ -35,6 +35,9 @@ from .logging_util import log_event
 from .pipeline import telemetry
 from .pipeline.schemas import Segment
 
+RAW_MAX_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(2 * 1024 * 1024 * 1024)))
+EXPORT_STORAGE_PROVIDER = os.environ.get("EXPORT_STORAGE_PROVIDER", "supabase")
+
 WORKER_CONCURRENCY = int(os.environ.get("WORKER_CONCURRENCY", "1"))
 STALE_AFTER_S = int(os.environ.get("JOB_STALE_AFTER_S", "900"))
 POLL_INTERVAL_S = float(os.environ.get("JOB_POLL_INTERVAL_S", "3"))
@@ -218,7 +221,14 @@ def _download_sources(project: dict, tmp: str, ctx: JobContext | None = None):
         if ctx:
             ctx.checkpoint("download_sources")
         dst = os.path.join(tmp, a["id"] + os.path.splitext(a["filename"])[1])
-        supa.storage_download("raw-footage", a["storage_path"], dst)
+        # Provider-aware: S3-provider assets (owned key) come from S3; legacy
+        # Supabase assets keep reading from the raw-footage bucket unchanged.
+        if a.get("storage_provider") == "s3":
+            from . import s3store
+            s3store.download_to_file(a.get("storage_key") or a["storage_path"],
+                                     dst, max_bytes=RAW_MAX_BYTES)
+        else:
+            supa.storage_download("raw-footage", a["storage_path"], dst)
         sources[a["id"]] = dst
     return sources, assets
 
@@ -230,7 +240,11 @@ def _load_segments(project_id: str) -> list[Segment]:
 
 def _upload_export(project: dict, rel: str, local: str) -> str:
     path = f"users/{project['user_id']}/projects/{project['id']}/{rel}"
-    supa.storage_upload("exports", path, local)
+    if EXPORT_STORAGE_PROVIDER == "s3":
+        from . import s3store
+        s3store.upload_file(path, local, "video/mp4")
+    else:
+        supa.storage_upload("exports", path, local)
     return path
 
 
@@ -433,8 +447,8 @@ def handle_final_render(job: dict, project: dict, tmp: str, ctx: JobContext) -> 
             units={"cpu_hours": dur / 3600})
     set_project_status(project["id"], "completed",
                        f"final render {job['id'][:8]} completed")
-    return {"output": path, **{k: result[k] for k in
-                               ("duration", "width", "height", "size_bytes")}}
+    return {"output": path, "export_provider": EXPORT_STORAGE_PROVIDER,
+            **{k: result[k] for k in ("duration", "width", "height", "size_bytes")}}
 
 
 def handle_product_editor_render(job: dict, project: dict, tmp: str,
@@ -557,7 +571,8 @@ def handle_product_editor_render(job: dict, project: dict, tmp: str,
             units={"cpu_hours": 0})
     set_project_status(project["id"], "completed",
                        f"Product Editor revision {row['version']} export completed")
-    return {"output": path, "editor_document_id": row["id"],
+    return {"output": path, "export_provider": EXPORT_STORAGE_PROVIDER,
+            "editor_document_id": row["id"],
             "editor_document_version": row["version"],
             "duration": qc["durationSeconds"], "width": qc["width"],
             "height": qc["height"], "size_bytes": size,

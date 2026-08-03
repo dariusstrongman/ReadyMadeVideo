@@ -50,7 +50,7 @@ class FakeSupabase:
                             "publishability_reports", "tournament_runs",
                             "editor_documents", "editor_operations",
                             "editor_render_requests", "editor_revision_proposals",
-                            "editor_audit_events")}
+                            "editor_audit_events", "raw_upload_sessions")}
         self.storage: dict[str, bytes] = {}          # "bucket/path" -> data
         self.fail_tables: set[str] = set()           # simulate write failures
         self.conflict_once_tables: set[str] = set()  # simulate one unique collision
