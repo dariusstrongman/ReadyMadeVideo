@@ -599,6 +599,17 @@ textarea { resize: vertical; min-height: 80px; }
 }
 .np-name-input { margin-bottom: var(--sp-6); }
 .np-option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); margin-bottom: var(--sp-6); }
+.np-option {
+  background: var(--bg-3); border: 1px solid var(--border-2);
+  border-radius: var(--radius-lg); padding: var(--sp-4); text-align: left;
+  cursor: pointer; width: 100%;
+  color: var(--text); font-family: var(--sans); font-size: var(--text-sm); font-weight: 500;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              background var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out);
+}
+.np-option:hover { border-color: var(--border-3); background: var(--surface); }
+.np-option.selected { border-color: var(--cyan); background: var(--cyan-dim); color: var(--cyan); }
 .np-option-icon { font-size: var(--text-lg); margin-bottom: var(--sp-2); }
 /* option-btn is shared with option-grid pattern */
 .option-btn {
