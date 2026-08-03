@@ -21,7 +21,11 @@ export default function App() {
     return () => sub.subscription.unsubscribe()
   }, [])
   if (session === undefined)
-    return <div className="center"><p className="sub">Restoring session…</p></div>
+    return (
+      <div className="center" role="status" aria-live="polite">
+        <p className="sub">Restoring session…</p>
+      </div>
+    )
   return (
     <AuthCtx.Provider value={session}>
       <Routes>
@@ -66,7 +70,7 @@ function TopNav() {
   }, [])
 
   return (
-    <nav className="nav">
+    <nav className="nav" role="navigation" aria-label="Main navigation">
       <a href="https://www.stromation.com" className="nav-logo">
         <img src={iconUrl} alt="" aria-hidden="true" />
         STROMATION
@@ -74,17 +78,17 @@ function TopNav() {
       <span className="spacer" />
       <Link to="/project/new" className="btn btn-primary btn-sm">+ New video</Link>
       <div className="avatar-wrap" ref={menuRef}>
-        <button className="avatar-btn" onClick={() => setMenuOpen(v => !v)} aria-label="Account menu">
+        <button className="avatar-btn" onClick={() => setMenuOpen(v => !v)} aria-label="Account menu" aria-expanded={menuOpen} aria-haspopup="true">
           {initial}
         </button>
         {menuOpen && (
-          <div className="avatar-menu">
+          <div className="avatar-menu" role="menu" aria-label="Account options">
             <div className="avatar-email">{session?.user?.email}</div>
             <div className="avatar-menu-sep" />
-            <a href="https://www.stromation.com" className="avatar-menu-item" onClick={() => setMenuOpen(false)}>
+            <a href="https://www.stromation.com" className="avatar-menu-item" role="menuitem" onClick={() => setMenuOpen(false)}>
               ← Back to stromation.com
             </a>
-            <button className="avatar-menu-item" onClick={async () => { setMenuOpen(false); await supabase.auth.signOut(); nav('/login') }}>
+            <button className="avatar-menu-item" role="menuitem" onClick={async () => { setMenuOpen(false); await supabase.auth.signOut(); nav('/login') }}>
               Sign out
             </button>
           </div>
