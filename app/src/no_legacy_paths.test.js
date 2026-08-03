@@ -37,6 +37,24 @@ describe('no legacy customer path remains (shipped app source)', () => {
     expect(editor).not.toMatch(/src=\{[^}]*storage_path/)
   })
 
+  it('does not use legacy render_jobs output_* fields', () => {
+    for (const field of ['output_storage_path', 'output_width', 'output_height',
+      'output_duration_seconds', 'output_size_bytes']) {
+      expect(project).not.toContain(field)
+      expect(editor).not.toContain(field)
+    }
+  })
+
+  it('never signs storage directly in the browser (uses the backend sign endpoint)', () => {
+    expect(project).not.toMatch(/createSignedUrl/)
+    expect(editor).not.toMatch(/createSignedUrl/)
+    expect(project).toMatch(/editor\/renders\/[^/]*\/sign/)   // export download via backend
+  })
+
+  it('reads export metadata from pipeline_jobs.artifacts', () => {
+    expect(project).toMatch(/artifacts/)
+  })
+
   it('uses the immutable Product Editor endpoints', () => {
     expect(project).toMatch(/\/workspace/)
     expect(project).toMatch(/editor\/start/)

@@ -2376,11 +2376,17 @@ def customer_editor_render(project_id: str, body: EditorRenderBody,
         )
     except job_service.ConcurrencyLimit as exc:
         raise HTTPException(429, str(exc))
-    _service_insert("editor_render_requests", {
-        "project_id": project_id, "user_id": user["id"],
-        "editor_document_id": document["id"], "editor_document_version": document["version"],
-        "pipeline_job_id": job["id"],
-    })
+    # Idempotent: enqueue_job dedupes to the existing active job on a duplicate
+    # click, so a render-request row for this job may already exist — that's fine.
+    try:
+        _service_insert("editor_render_requests", {
+            "project_id": project_id, "user_id": user["id"],
+            "editor_document_id": document["id"],
+            "editor_document_version": document["version"],
+            "pipeline_job_id": job["id"],
+        })
+    except Exception:  # noqa: BLE001 — tracking row only; the job is the source of truth
+        pass
     return job
 
 
