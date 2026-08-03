@@ -1,10 +1,17 @@
 """In-memory boto3-S3-client fake for CI-independent tests (no AWS, no boto3).
 
-Implements the subset of the boto3 S3 client API that app/s3store.py calls.
-`put_part()` is a test helper that simulates the browser PUTting a part directly
-to S3 via the presigned URL — the backend never sees those bytes.
+Implements the subset of the boto3 S3 client API that app/s3store.py calls, and is
+deliberately strict so tests prove real bindings:
+  - completion is bound to the multipart's stored Key,
+  - each completed part's ETag must match what the (simulated) part upload returned,
+  - presigned URLs encode the UploadId + PartNumber,
+  - completing an unknown/aborted UploadId raises (NoSuchUpload).
+`put_part()` simulates the browser PUTting a part straight to S3 and returns its ETag
+(the backend never sees these bytes).
 """
 from __future__ import annotations
+
+import hashlib
 
 
 class _BytesBody:
@@ -20,9 +27,13 @@ class _BytesBody:
         return chunk
 
 
+class FakeS3Error(RuntimeError):
+    pass
+
+
 class FakeS3:
     def __init__(self):
-        self.multipart: dict[str, dict] = {}   # upload_id -> {key, content_type, parts}
+        self.multipart: dict[str, dict] = {}   # upload_id -> {key, content_type, parts:{n:{data,etag}}}
         self.objects: dict[str, dict] = {}     # key -> {body, content_type, etag, size, force_size?}
         self._n = 0
 
@@ -37,19 +48,29 @@ class FakeS3:
         return {"UploadId": up}
 
     def generate_presigned_url(self, operation, Params, ExpiresIn=3600):
-        return (f"https://s3.fake/{Params['Bucket']}/{Params['Key']}"
-                f"?op={operation}&exp={ExpiresIn}")
+        base = f"https://s3.fake/{Params['Bucket']}/{Params['Key']}?op={operation}&exp={ExpiresIn}"
+        if "UploadId" in Params:
+            base += f"&uploadId={Params['UploadId']}"
+        if "PartNumber" in Params:
+            base += f"&partNumber={Params['PartNumber']}"
+        return base
 
     def complete_multipart_upload(self, Bucket, Key, UploadId, MultipartUpload):
         mp = self.multipart.get(UploadId)
         if not mp:
-            raise RuntimeError("NoSuchUpload")
+            raise FakeS3Error("NoSuchUpload")
+        if mp["key"] != Key:
+            raise FakeS3Error("key does not match this multipart upload")
         body = b""
         for part in MultipartUpload["Parts"]:
             number = part["PartNumber"]
-            if number not in mp["parts"]:
-                raise RuntimeError(f"InvalidPart: {number} was never uploaded")
-            body += mp["parts"][number]
+            stored = mp["parts"].get(number)
+            if not stored:
+                raise FakeS3Error(f"InvalidPart: {number} was never uploaded")
+            supplied = str(part["ETag"]).strip().strip('"')
+            if supplied != stored["etag"]:
+                raise FakeS3Error(f"InvalidPart: ETag mismatch for part {number}")
+            body += stored["data"]
         etag = self._id("etag")
         self.objects[Key] = {"body": body, "content_type": mp["content_type"],
                              "etag": etag, "size": len(body)}
@@ -63,14 +84,14 @@ class FakeS3:
     def head_object(self, Bucket, Key):
         obj = self.objects.get(Key)
         if not obj:
-            raise RuntimeError("NoSuchKey")
+            raise FakeS3Error("NoSuchKey")
         return {"ContentLength": obj.get("force_size", obj["size"]),
                 "ContentType": obj["content_type"], "ETag": f'"{obj["etag"]}"'}
 
     def get_object(self, Bucket, Key):
         obj = self.objects.get(Key)
         if not obj:
-            raise RuntimeError("NoSuchKey")
+            raise FakeS3Error("NoSuchKey")
         return {"Body": _BytesBody(obj["body"])}
 
     def put_object(self, Bucket, Key, Body=None, ContentType=None, **kw):
@@ -88,5 +109,7 @@ class FakeS3:
         return {}
 
     # ---- test helper: simulate the browser uploading a part to S3 ----
-    def put_part(self, upload_id: str, part_number: int, data: bytes):
-        self.multipart[upload_id]["parts"][part_number] = data
+    def put_part(self, upload_id: str, part_number: int, data: bytes) -> str:
+        etag = hashlib.md5(data).hexdigest()  # noqa: S324 — S3 part ETag is md5
+        self.multipart[upload_id]["parts"][part_number] = {"data": data, "etag": etag}
+        return etag

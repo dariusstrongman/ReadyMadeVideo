@@ -35,7 +35,6 @@ from .logging_util import log_event
 from .pipeline import telemetry
 from .pipeline.schemas import Segment
 
-RAW_MAX_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(2 * 1024 * 1024 * 1024)))
 EXPORT_STORAGE_PROVIDER = os.environ.get("EXPORT_STORAGE_PROVIDER", "supabase")
 
 WORKER_CONCURRENCY = int(os.environ.get("WORKER_CONCURRENCY", "1"))
@@ -215,20 +214,15 @@ class JobContext:
 
 # ---------------- handlers ----------------
 def _download_sources(project: dict, tmp: str, ctx: JobContext | None = None):
+    from . import media_store
     assets = supa.db_select("media_assets", f"project_id=eq.{project['id']}")
     sources = {}
     for a in assets:
         if ctx:
             ctx.checkpoint("download_sources")
         dst = os.path.join(tmp, a["id"] + os.path.splitext(a["filename"])[1])
-        # Provider-aware: S3-provider assets (owned key) come from S3; legacy
-        # Supabase assets keep reading from the raw-footage bucket unchanged.
-        if a.get("storage_provider") == "s3":
-            from . import s3store
-            s3store.download_to_file(a.get("storage_key") or a["storage_path"],
-                                     dst, max_bytes=RAW_MAX_BYTES)
-        else:
-            supa.storage_download("raw-footage", a["storage_path"], dst)
+        # Single ownership-validating, provider-aware choke point.
+        media_store.download_media_asset(a, project, dst)
         sources[a["id"]] = dst
     return sources, assets
 

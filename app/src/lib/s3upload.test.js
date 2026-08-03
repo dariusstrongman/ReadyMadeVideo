@@ -124,16 +124,41 @@ describe('MultipartUpload', () => {
     const store = (() => { const m = new Map(); return {
       get: (k) => m.get(k) || null, set: (k, v) => m.set(k, v), remove: (k) => m.delete(k) } })()
     const file = fakeFile({ size: 12 * MB })
-    // seed a resume record as if parts 1 and 2 already uploaded
-    const key = `stromation_upload_p_${file.name}_${file.size}_${file.lastModified}`
+    // seed a resume record as if parts 1 and 2 already uploaded (key includes userId)
+    const key = `stromation_upload_u1_p_${file.name}_${file.size}_${file.lastModified}`
     store.set(key, { sessionId: 's1', assetId: 'a1', partSize: 5 * MB,
                      parts: [{ partNumber: 1, etag: 'e1' }, { partNumber: 2, etag: 'e2' }] })
     const t = makeTransport()
     const up = new MultipartUpload({
-      file, projectId: 'p', transport: t, retryBaseMs: 1, resumeStore: store,
+      file, projectId: 'p', userId: 'u1', transport: t, retryBaseMs: 1, resumeStore: store,
     })
     await up.start()
     expect(t.initiate).not.toHaveBeenCalled()    // resumed, no re-initiate
     expect(t._putCalls).toBe(1)                  // only the final missing part
+  })
+
+  it('does not share a resume record across users', async () => {
+    const m = new Map()
+    const store = { get: (k) => m.get(k) || null, set: (k, v) => m.set(k, v), remove: (k) => m.delete(k) }
+    const file = fakeFile({ size: 12 * MB })
+    // user u1 seeds a record
+    const t1 = makeTransport()
+    await new MultipartUpload({ file, projectId: 'p', userId: 'u1', transport: t1,
+                                retryBaseMs: 1, resumeStore: store }).start()
+    // user u2, SAME file/project — must not reuse u1's record
+    const t2 = makeTransport()
+    await new MultipartUpload({ file, projectId: 'p', userId: 'u2', transport: t2,
+                               retryBaseMs: 1, resumeStore: store }).start()
+    expect(t2.initiate).toHaveBeenCalled()       // fresh session for the other user
+  })
+
+  it('clears the resume record on terminal failure (no poisoning)', async () => {
+    const m = new Map()
+    const store = { get: (k) => m.get(k) || null, set: (k, v) => m.set(k, v), remove: (k) => m.delete(k) }
+    const t = makeTransport({ putPart: async () => { throw new UploadError('server', 'permanent') } })
+    const up = new MultipartUpload({ file: fakeFile({ size: 4 * MB }), projectId: 'p',
+                                     userId: 'u1', transport: t, retryBaseMs: 1, resumeStore: store })
+    await expect(up.start()).rejects.toThrow()
+    expect(m.size).toBe(0)                        // record cleared, next attempt starts clean
   })
 })

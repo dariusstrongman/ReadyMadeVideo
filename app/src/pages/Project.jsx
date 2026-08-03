@@ -186,7 +186,7 @@ function Uploader({ projectId, session, onDone }) {
       return
     }
     const upload = new MultipartUpload({
-      file, projectId,
+      file, projectId, userId: session.user.id,
       transport: createRealTransport({ accessToken: session.access_token }),
       onProgress: setProg,
     })

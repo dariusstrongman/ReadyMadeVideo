@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
+import { clearResumeRecords } from './lib/s3upload'
 import Login from './pages/Login'
 import ResetPassword from './pages/ResetPassword'
 import Dashboard from './pages/Dashboard'
@@ -60,7 +61,10 @@ function TopNav() {
       <span className="spacer" />
       <a href="https://www.stromation.com" className="btn btn-ghost">← Back to website</a>
       <span className="who">{session?.user?.email}</span>
-      <button className="btn btn-ghost" onClick={async () => { await supabase.auth.signOut(); nav('/login') }}>
+      <button className="btn btn-ghost" onClick={async () => {
+        clearResumeRecords(session?.user?.id)
+        await supabase.auth.signOut(); nav('/login')
+      }}>
         Sign out
       </button>
     </nav>

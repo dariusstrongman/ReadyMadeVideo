@@ -148,12 +148,60 @@ def delete_object(key: str) -> None:
 
 
 def check_connectivity() -> dict:
-    """Non-secret readiness probe: can we reach the configured bucket? Never
-    raises and never returns credentials."""
+    """Shallow, non-secret readiness probe: can we reach the configured bucket?
+    Never raises and never returns credentials."""
     if not enabled():
         return {"enabled": False, "reachable": False}
     try:
         client().head_bucket(Bucket=bucket())
-        return {"enabled": True, "reachable": True, "region": region()}
+        return {"enabled": True, "reachable": True}
+    except Exception:  # noqa: BLE001
+        return {"enabled": True, "reachable": False}
+
+
+def check_canary() -> dict:
+    """Operator-only deep probe: exercises multipart create/abort and object
+    put/get/delete under a controlled users/_readiness/ prefix, cleaning up in
+    finally. Confirms the IAM permissions the upload flow actually needs — which
+    a bare HeadBucket cannot."""
+    import uuid
+    if not enabled():
+        return {"enabled": False}
+    marker = f"users/_readiness/{uuid.uuid4()}/probe"
+    checks: dict = {}
+    upload_id = None
+    try:
+        upload_id = create_multipart(marker, "application/octet-stream")
+        checks["multipart_create"] = True
     except Exception as exc:  # noqa: BLE001
-        return {"enabled": True, "reachable": False, "error": type(exc).__name__}
+        checks["multipart_create"] = False
+        checks["error"] = type(exc).__name__
+    finally:
+        if upload_id:
+            try:
+                abort_multipart(marker, upload_id)
+                checks["multipart_abort"] = True
+            except Exception:  # noqa: BLE001
+                checks["multipart_abort"] = False
+    try:
+        params = {"Bucket": bucket(), "Key": marker, "Body": b"ok",
+                  "ContentType": "application/octet-stream"}
+        if SSE_ALGO:
+            params["ServerSideEncryption"] = SSE_ALGO
+        client().put_object(**params)
+        checks["put"] = True
+        client().get_object(Bucket=bucket(), Key=marker)
+        checks["get"] = True
+    except Exception as exc:  # noqa: BLE001
+        checks.setdefault("put", False)
+        checks.setdefault("get", False)
+        checks["error"] = type(exc).__name__
+    finally:
+        try:
+            delete_object(marker)
+            checks["delete"] = True
+        except Exception:  # noqa: BLE001
+            checks["delete"] = False
+    checks["ok"] = all(checks.get(k) for k in
+                       ("multipart_create", "multipart_abort", "put", "get", "delete"))
+    return {"enabled": True, **checks}

@@ -96,17 +96,35 @@ function localStore() {
   } catch { return memoryStore() }
 }
 
-const fingerprint = (projectId, file) =>
-  `stromation_upload_${projectId}_${file.name}_${file.size}_${file.lastModified || 0}`
+// Include userId so two accounts on the same browser can never share/overwrite a
+// resume record. (Two different files with identical name+size+lastModified for the
+// same user still collide — inherent to metadata fingerprints; a full fix needs
+// content hashing, which is impractical for 2 GB files.)
+const fingerprint = (userId, projectId, file) =>
+  `stromation_upload_${userId || 'anon'}_${projectId}_${file.name}_${file.size}_${file.lastModified || 0}`
+
+/** Clear any resume records for a user (call on logout to avoid cross-user reuse). */
+export function clearResumeRecords(userId, store) {
+  const s = store || localStore()
+  try {
+    if (typeof localStorage === 'undefined') return
+    const prefix = `stromation_upload_${userId}_`
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith(prefix)) s.remove(key)
+    }
+  } catch { /* ignore */ }
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 export class MultipartUpload {
-  constructor({ file, projectId, transport, onProgress, onState,
+  constructor({ file, projectId, userId, transport, onProgress, onState,
                 partSize = UPLOAD_PART_SIZE, maxRetries = 4, retryBaseMs = 1000,
                 resumeStore } = {}) {
     this.file = file
     this.projectId = projectId
+    this.userId = userId
     this.transport = transport
     this.onProgress = onProgress || (() => {})
     this.onState = onState || (() => {})
@@ -155,7 +173,7 @@ export class MultipartUpload {
     validateFile(this.file)
     this._startedAt = Date.now()
     this._setState('uploading')
-    const key = fingerprint(this.projectId, this.file)
+    const key = fingerprint(this.userId, this.projectId, this.file)
     let saved = this.store.get(key)
 
     let session
@@ -211,6 +229,10 @@ export class MultipartUpload {
         this._setState('cancelled')
         throw new UploadError('cancelled', 'upload cancelled')
       }
+      // Clear the record so a poisoned/stale session can't loop the next attempt;
+      // a fresh retry re-initiates cleanly. (Page-reload resume is unaffected — it
+      // never reaches this catch.)
+      this.store.remove(key)
       this._setState('failed')
       throw err
     }

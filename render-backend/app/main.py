@@ -22,7 +22,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import PurePosixPath
 from typing import Literal
 from uuid import UUID, uuid4
@@ -180,16 +180,18 @@ def _fail_job(job_id: str, message: str) -> None:
                     "completed_at": _now()})
 
 
-def _run_render_job(job_id: str, plan_dict: dict, asset_path: str) -> None:
+def _run_render_job(job_id: str, plan_dict: dict, asset: dict, project: dict) -> None:
     """Background worker: download -> render -> upload -> record."""
+    from . import media_store
     from .timeline import RenderPlan
     plan = RenderPlan(**plan_dict)
     tmp = tempfile.mkdtemp(prefix=f"stromation-render-{job_id[:8]}-")
     try:
         supa.db_update("render_jobs", f"id=eq.{job_id}",
                        {"status": "processing", "progress": 10, "started_at": _now()})
-        src = os.path.join(tmp, "source" + os.path.splitext(asset_path)[1])
-        supa.storage_download("raw-footage", asset_path, src)
+        src = os.path.join(tmp, "source" + os.path.splitext(asset.get("filename")
+                                                            or asset["storage_path"])[1])
+        media_store.download_media_asset(asset, project, src)
         supa.db_update("render_jobs", f"id=eq.{job_id}", {"progress": 30})
 
         dst = os.path.join(tmp, "output.mp4")
@@ -256,10 +258,20 @@ def readyz():
 
 @app.get("/readyz/s3")
 def readyz_s3():
-    """S3 connectivity probe for the raw-footage upload backend. Returns a
-    non-secret status (no bucket name, keys, or paths). Informational — does not
-    gate the main /readyz health check."""
-    return s3store.check_connectivity()
+    """Shallow public S3 probe: {enabled, reachable} only — no bucket name,
+    region, keys, paths, or error class. Informational; does not gate /readyz."""
+    status = s3store.check_connectivity()
+    return {"enabled": bool(status.get("enabled")),
+            "reachable": bool(status.get("reachable"))}
+
+
+@app.get("/readyz/s3/canary")
+def readyz_s3_canary(authorization: str = Header(default="")):
+    """Operator-only deep S3 probe: multipart create/abort + object put/get/delete
+    under users/_readiness/, cleaned up in finally. Verifies the upload flow's IAM
+    permissions (which HeadBucket cannot)."""
+    _require_operator(authorization)
+    return s3store.check_canary()
 
 
 # ==================== operator API (P3/P4) ====================
@@ -1509,11 +1521,12 @@ def op_audio_render(project_id: str, body: AudioRenderBody,
             match = match_picture_to_actual_track(
                 candidate, plan, analysis, media_info.durationSeconds,
             )
+            from . import media_store
             sources = {}
             for asset_id in required_ids:
                 row = asset_by_id[asset_id]
                 local = os.path.join(tmp, f"source-{asset_id}.mp4")
-                supa.storage_download("raw-footage", row["storage_path"], local)
+                media_store.download_media_asset(row, project, local)
                 sources[asset_id] = local
             preview = os.path.join(tmp, "completed-audio-preview.mp4")
             measurement, ducking = render_completed_mix(
@@ -1901,10 +1914,11 @@ def op_editorial_intelligence(
         supa.storage_download(
             "exports", lineage["audio_run"]["preview_storage_path"], completed_preview,
         )
+        from . import media_store
         source_paths = {}
         for asset_id in required_ids:
             local = os.path.join(tmp, f"source-{asset_id}.mp4")
-            supa.storage_download("raw-footage", asset_by_id[asset_id]["storage_path"], local)
+            media_store.download_media_asset(asset_by_id[asset_id], project, local)
             source_paths[asset_id] = local
 
         def evaluate(candidate):
@@ -2364,9 +2378,10 @@ def customer_editor_render_sign(project_id: str, job_id: UUID,
     if job["status"] != "completed" or not path or not path.startswith(expected):
         raise HTTPException(409, "completed export is not available")
     _editor_audit(user["id"], project_id, "sign_editor_export", {"job_id": job["id"]})
-    # Prefer the provider recorded on the job (self-describing); fall back to the
-    # deployment default. Old Supabase jobs keep signing via Supabase.
-    provider = (job.get("artifacts") or {}).get("export_provider") or EXPORT_STORAGE_PROVIDER
+    # Use the provider recorded on the job (self-describing). Older jobs that never
+    # recorded one predate S3 exports and MUST default to Supabase — never to the
+    # current deployment default, or switching the env would mis-sign old objects.
+    provider = (job.get("artifacts") or {}).get("export_provider") or "supabase"
     if provider == "s3":
         url = s3store.presign_get(path, expires=3600,
                                   download_name=f"stromation-{str(job_id)[:8]}.mp4")
@@ -2408,6 +2423,9 @@ class RawUploadCompleteBody(BaseModel):
     parts: list[RawUploadCompletedPart] = Field(min_length=1)
 
 
+RAW_UPLOAD_TTL_S = int(os.environ.get("RAW_UPLOAD_TTL_S", str(24 * 3600)))
+
+
 def _require_s3() -> None:
     if not s3store.enabled():
         raise HTTPException(503, "raw-footage S3 uploads are not configured")
@@ -2423,7 +2441,8 @@ def _raw_session(session_id: str, user: dict, project_id: str) -> dict:
 
 def _raw_fail(session: dict, reason: str, delete_object: bool = False) -> None:
     """Best-effort cleanup: abort the multipart, optionally delete a completed
-    object, and record an auditable failure reason. Never raises."""
+    object, and record an auditable failure reason. Never raises. Never downgrades
+    a finalized session."""
     if delete_object:
         try:
             s3store.delete_object(session["object_key"])
@@ -2434,11 +2453,35 @@ def _raw_fail(session: dict, reason: str, delete_object: bool = False) -> None:
     except Exception:  # noqa: BLE001
         pass
     try:
-        supa.db_update("raw_upload_sessions", f"id=eq.{session['id']}",
+        # Conditional: never move a finalized/aborted session to failed.
+        _service_patch("raw_upload_sessions",
+                       f"id=eq.{session['id']}&status=in.(initiated,completing,"
+                       "completed,finalizing,failed)",
                        {"status": "failed", "error_reason": reason[:400],
                         "updated_at": _now()})
     except Exception:  # noqa: BLE001
         pass
+
+
+def _session_expired(session: dict) -> bool:
+    expires_at = session.get("expires_at")
+    if not expires_at:
+        return False
+    try:
+        exp = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return datetime.now(timezone.utc) >= exp
+
+
+def _raw_claim(session_id: str, from_status: str, to_status: str,
+               extra: dict | None = None) -> bool:
+    """Atomically move a session from one status to another. Returns True iff this
+    caller won the transition (matched exactly the expected prior status)."""
+    body = {"status": to_status, "updated_at": _now(), **(extra or {})}
+    matched = _service_patch(
+        "raw_upload_sessions", f"id=eq.{session_id}&status=eq.{from_status}", body)
+    return bool(matched)
 
 
 @app.post("/projects/{project_id}/raw-uploads/initiate")
@@ -2460,12 +2503,22 @@ def raw_upload_initiate(project_id: str, body: RawUploadInitiateBody,
     _editor_audit(user["id"], project_id, "raw_upload_initiate",
                   {"asset_id": asset_id, "size": body.size, "key": key})
     upload_id = s3store.create_multipart(key, body.contentType)
-    session = _service_insert("raw_upload_sessions", {
-        "user_id": user["id"], "project_id": project_id, "asset_id": asset_id,
-        "provider": "s3", "bucket": s3store.bucket(), "object_key": key,
-        "upload_id": upload_id, "filename": safe, "content_type": body.contentType,
-        "declared_size": body.size, "part_size": plan["part_size"],
-        "status": "initiated"})
+    try:
+        session = _service_insert("raw_upload_sessions", {
+            "user_id": user["id"], "project_id": project_id, "asset_id": asset_id,
+            "provider": "s3", "bucket": s3store.bucket(), "object_key": key,
+            "upload_id": upload_id, "filename": safe, "content_type": body.contentType,
+            "declared_size": body.size, "part_size": plan["part_size"],
+            "status": "initiated",
+            "expires_at": (datetime.now(timezone.utc)
+                           + timedelta(seconds=RAW_UPLOAD_TTL_S)).isoformat()})
+    except Exception as exc:  # noqa: BLE001
+        # Never leak an orphan multipart if the session row can't be persisted.
+        try:
+            s3store.abort_multipart(key, upload_id)
+        except Exception:  # noqa: BLE001
+            pass
+        raise HTTPException(503, "could not start upload session") from exc
     return {"sessionId": session["id"], "assetId": asset_id,
             "bucket": s3store.bucket(), "objectKey": key, "uploadId": upload_id,
             "partSize": plan["part_size"], "partCount": plan["part_count"],
@@ -2482,6 +2535,9 @@ def raw_upload_sign_parts(project_id: str, session_id: UUID,
     session = _raw_session(str(session_id), user, project_id)
     if session["status"] != "initiated":
         raise HTTPException(409, f"upload session is {session['status']}")
+    if _session_expired(session):
+        _raw_fail(session, "session expired before signing", delete_object=False)
+        raise HTTPException(409, "upload session has expired; start a new upload")
     max_parts = raw_uploads.plan_parts(
         session["declared_size"], session["part_size"])["part_count"]
     signed = []
@@ -2501,19 +2557,50 @@ def raw_upload_complete(project_id: str, session_id: UUID,
     _require_s3()
     user, _ = _owned_project(project_id, authorization)
     session = _raw_session(str(session_id), user, project_id)
+    # Idempotent: a duplicate/replayed completion of an already-finished session
+    # returns success rather than clobbering it.
+    if session["status"] in ("completed", "finalized"):
+        return {"sessionId": session["id"], "status": session["status"],
+                "objectKey": session["object_key"]}
     if session["status"] != "initiated":
         raise HTTPException(409, f"upload session is {session['status']}")
+    if _session_expired(session):
+        _raw_fail(session, "session expired before completion")
+        raise HTTPException(409, "upload session has expired; start a new upload")
     if not raw_uploads.key_belongs_to(session["object_key"], user["id"], project_id):
         raise HTTPException(403, "object key ancestry check failed")
+    # Validate the manifest BEFORE calling S3.
+    expected = raw_uploads.plan_parts(
+        session["declared_size"], session["part_size"])["part_count"]
+    manifest = [{"partNumber": p.partNumber, "etag": p.etag} for p in body.parts]
+    try:
+        raw_uploads.validate_part_manifest(manifest, expected)
+    except raw_uploads.UploadValidationError as exc:
+        raise HTTPException(422, {"code": exc.code, "message": exc.message})
+    # Atomically claim the completion so only one caller drives S3.
+    if not _raw_claim(session["id"], "initiated", "completing"):
+        fresh = _raw_session(str(session_id), user, project_id)
+        if fresh["status"] in ("completed", "finalized"):
+            return {"sessionId": fresh["id"], "status": fresh["status"],
+                    "objectKey": fresh["object_key"]}
+        raise HTTPException(409, f"upload session is {fresh['status']}")
     parts = [{"PartNumber": p.partNumber, "ETag": p.etag} for p in body.parts]
     try:
         s3store.complete_multipart(session["object_key"], session["upload_id"], parts)
     except Exception as exc:  # noqa: BLE001 — missing/invalid parts land here
-        _raw_fail(session, f"complete failed: {type(exc).__name__}")
-        raise HTTPException(409, "multipart completion failed "
-                                 "(missing or invalid parts)") from exc
-    supa.db_update("raw_upload_sessions", f"id=eq.{session['id']}",
-                   {"status": "completed", "updated_at": _now()})
+        # If the object is actually present (e.g. a prior completion won), treat as
+        # done; otherwise fail the claim we hold.
+        try:
+            s3store.head_object(session["object_key"])
+            _raw_claim(session["id"], "completing", "completed")
+            return {"sessionId": session["id"], "status": "completed",
+                    "objectKey": session["object_key"]}
+        except Exception:  # noqa: BLE001
+            _raw_fail({**session, "status": "completing"},
+                      f"complete failed: {type(exc).__name__}")
+            raise HTTPException(409, "multipart completion failed "
+                                     "(missing or invalid parts)") from exc
+    _raw_claim(session["id"], "completing", "completed")
     return {"sessionId": session["id"], "status": "completed",
             "objectKey": session["object_key"]}
 
@@ -2522,19 +2609,35 @@ def raw_upload_complete(project_id: str, session_id: UUID,
 def raw_upload_finalize(project_id: str, session_id: UUID,
                         authorization: str = Header(default="")):
     from . import mediaprobe
+
+    def _existing_asset(asset_id):
+        rows = supa.db_select("media_assets", f"id=eq.{asset_id}&limit=1")
+        return rows[0] if rows else None
+
     _require_s3()
     user, _ = _owned_project(project_id, authorization)
+    _rate_check(user["id"], "raw_finalize")
     session = _raw_session(str(session_id), user, project_id)
+    # Idempotent: an already-finalized session returns its committed asset.
     if session["status"] == "finalized":
-        existing = supa.db_select("media_assets",
-                                  f"id=eq.{session['asset_id']}&limit=1")
-        if existing:
-            return existing[0]
+        asset = _existing_asset(session["asset_id"])
+        if asset:
+            return asset
     if session["status"] != "completed":
         raise HTTPException(409, f"session is {session['status']}, not completed")
     key = session["object_key"]
     if not raw_uploads.key_belongs_to(key, user["id"], project_id):
         raise HTTPException(403, "object key ancestry check failed")
+    # Atomically claim finalization: prevents duplicate probes AND blocks abort
+    # from deleting the object mid-validation.
+    if not _raw_claim(session["id"], "completed", "finalizing"):
+        fresh = _raw_session(str(session_id), user, project_id)
+        if fresh["status"] == "finalized":
+            asset = _existing_asset(fresh["asset_id"])
+            if asset:
+                return asset
+        raise HTTPException(409, f"session is {fresh['status']}, not finalizable")
+    session = {**session, "status": "finalizing"}
     try:
         head = s3store.head_object(key)
     except Exception as exc:  # noqa: BLE001
@@ -2557,15 +2660,19 @@ def raw_upload_finalize(project_id: str, session_id: UUID,
         raise HTTPException(422, "uploaded file is not a valid video")
     _editor_audit(user["id"], project_id, "raw_upload_finalize",
                   {"asset_id": session["asset_id"], "key": key, "size": head["size"]})
-    asset = _service_insert("media_assets", {
-        "id": session["asset_id"], "project_id": project_id, "user_id": user["id"],
-        "filename": session["filename"], "storage_path": key,
-        "storage_provider": "s3", "storage_bucket": session["bucket"],
-        "storage_key": key, "etag": head["etag"], "content_type": content_type,
-        "mime_type": content_type, "size_bytes": head["size"],
-        "duration_seconds": probe["duration"], "validation_status": "validated"})
-    supa.db_update("raw_upload_sessions", f"id=eq.{session['id']}",
-                   {"status": "finalized", "updated_at": _now()})
+    try:
+        asset = _service_insert("media_assets", {
+            "id": session["asset_id"], "project_id": project_id, "user_id": user["id"],
+            "filename": session["filename"], "storage_path": key,
+            "storage_provider": "s3", "storage_bucket": session["bucket"],
+            "storage_key": key, "etag": head["etag"], "content_type": content_type,
+            "mime_type": content_type, "size_bytes": head["size"],
+            "duration_seconds": probe["duration"], "validation_status": "validated"})
+    except Exception:  # noqa: BLE001 — a prior finalize may have inserted it
+        asset = _existing_asset(session["asset_id"])
+        if not asset:
+            raise
+    _raw_claim(session["id"], "finalizing", "finalized")
     supa.db_update("projects", f"id=eq.{project_id}",
                    {"status": "ready",
                     "status_reason": "footage uploaded and validated"})
@@ -2580,6 +2687,18 @@ def raw_upload_abort(project_id: str, session_id: UUID,
     session = _raw_session(str(session_id), user, project_id)
     if session["status"] == "finalized":
         raise HTTPException(409, "session already finalized")
+    if session["status"] == "finalizing":
+        # Never delete an object while finalize is validating/committing it.
+        raise HTTPException(409, "session is being finalized; cannot abort")
+    if session["status"] == "aborted":
+        return {"sessionId": session["id"], "status": "aborted"}
+    # Only abort from a non-terminal state; guards against racing a finalize that
+    # just claimed the session.
+    if not _raw_claim(session["id"], session["status"], "aborted"):
+        fresh = _raw_session(str(session_id), user, project_id)
+        if fresh["status"] == "aborted":
+            return {"sessionId": fresh["id"], "status": "aborted"}
+        raise HTTPException(409, f"session is {fresh['status']}; cannot abort")
     try:
         s3store.abort_multipart(session["object_key"], session["upload_id"])
     except Exception:  # noqa: BLE001
@@ -2588,8 +2707,6 @@ def raw_upload_abort(project_id: str, session_id: UUID,
         s3store.delete_object(session["object_key"])
     except Exception:  # noqa: BLE001
         pass
-    supa.db_update("raw_upload_sessions", f"id=eq.{session['id']}",
-                   {"status": "aborted", "updated_at": _now()})
     _editor_audit(user["id"], project_id, "raw_upload_abort",
                   {"session": session["id"]})
     return {"sessionId": session["id"], "status": "aborted"}
@@ -2626,6 +2743,44 @@ def op_sign_url(project_id: str, body: SignBody,
     if r.status_code != 200:
         raise HTTPException(404, "object not found or could not be signed")
     return {"url": f"{supa.SUPABASE_URL}/storage/v1{r.json()['signedURL']}"}
+
+
+@app.post("/projects/{project_id}/assets/{asset_id}/sign")
+def op_sign_asset(project_id: str, asset_id: UUID,
+                  authorization: str = Header(default="")):
+    """Operator preview URL for a raw-footage asset BY ID — provider-aware. Loads
+    the asset, verifies it belongs to this project, and signs the stored
+    authoritative key (S3 presign or Supabase sign). Works for both S3 and legacy
+    Supabase footage."""
+    import httpx as _hx
+    op = _require_operator(authorization)
+    project = _get_project(project_id)
+    rows = supa.db_select("media_assets", f"id=eq.{asset_id}&limit=1")
+    if (not rows or rows[0]["project_id"] != project_id
+            or rows[0]["user_id"] != project["user_id"]):
+        raise HTTPException(404, "asset not found for this project")
+    asset = rows[0]
+    _audit(op, "sign_asset_preview", project_id, {"asset_id": str(asset_id)})
+    provider = asset.get("storage_provider") or "supabase"
+    if provider == "s3":
+        key = asset.get("storage_key") or asset["storage_path"]
+        if (asset.get("storage_bucket") != s3store.bucket()
+                or not raw_uploads.key_belongs_to(key, project["user_id"], project_id)):
+            raise HTTPException(403, "asset key ancestry check failed")
+        return {"url": s3store.presign_get(key, expires=900),
+                "expiresIn": 900, "provider": "s3"}
+    path = asset["storage_path"]
+    if not raw_uploads.supabase_path_belongs_to(path, project["user_id"], project_id):
+        raise HTTPException(403, "asset path ancestry check failed")
+    r = _hx.post(f"{supa.SUPABASE_URL}/storage/v1/object/sign/raw-footage/{path}",
+                 headers={"apikey": supa.SERVICE_KEY,
+                          "Authorization": f"Bearer {supa.SERVICE_KEY}",
+                          "Content-Type": "application/json"},
+                 json={"expiresIn": 900}, timeout=30)
+    if r.status_code != 200:
+        raise HTTPException(404, "asset could not be signed")
+    return {"url": f"{supa.SUPABASE_URL}/storage/v1{r.json()['signedURL']}",
+            "expiresIn": 900, "provider": "supabase"}
 
 
 class EvalPatch(BaseModel):
@@ -2714,5 +2869,5 @@ def start_render(req: RenderRequest, background: BackgroundTasks,
 
     # 5. run
     background.add_task(_run_render_job, req.job_id, plan.model_dump(),
-                        assets[0]["storage_path"])
+                        assets[0], projects[0])
     return {"job_id": req.job_id, "status": "queued"}

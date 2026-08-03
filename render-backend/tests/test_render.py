@@ -98,7 +98,11 @@ def test_job_worker_cleans_temp_files(monkeypatch, fixtures):
                         lambda b, p, d: open(d, "wb").write(b"junk"))
 
     before = set(glob.glob(os.path.join(tempfile.gettempdir(), "stromation-render-*")))
-    main_mod._run_render_job("deadbeef-0000", make_plan().model_dump(), "users/u/raw/x.mp4")
+    project = {"id": "p", "user_id": "u"}
+    asset = {"id": "a", "user_id": "u", "project_id": "p", "filename": "x.mp4",
+             "storage_provider": "supabase",
+             "storage_path": "users/u/projects/p/raw/x.mp4"}
+    main_mod._run_render_job("deadbeef-0000", make_plan().model_dump(), asset, project)
     after = set(glob.glob(os.path.join(tempfile.gettempdir(), "stromation-render-*")))
     assert after <= before, "temp dir leaked"
     assert any(u.get("status") == "failed" for u in calls["updates"]), \

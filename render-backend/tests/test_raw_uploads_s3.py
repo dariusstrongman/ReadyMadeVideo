@@ -1,6 +1,7 @@
 """S3 multipart raw-footage upload flow: auth, ownership, validation, cleanup,
 provenance, and the guarantee that no customer video body flows through Railway."""
 import inspect
+import json
 import os
 
 import pytest
@@ -129,10 +130,10 @@ def _run_upload(fake, s3, client, token, project, data=b"x" * (6 * 1024 * 1024),
     assert sign.json()["parts"][0]["url"].startswith("https://s3.fake/")   # goes to S3, not Railway
     # simulate the browser PUTting the bytes straight to S3
     session = fake.tables["raw_upload_sessions"][-1]
-    s3.put_part(session["upload_id"], 1, data)
+    etag = s3.put_part(session["upload_id"], 1, data)   # real md5 ETag
     complete = client.post(f"/projects/{project['id']}/raw-uploads/{sid}/complete",
                            headers=_auth(token),
-                           json={"parts": [{"partNumber": 1, "etag": "etag-1"}]})
+                           json={"parts": [{"partNumber": 1, "etag": etag}]})
     assert complete.status_code == 200, complete.text
     return sid, session
 
@@ -292,7 +293,7 @@ def test_worker_downloads_owned_source_from_s3(env, tmp_path):
     fake.insert("media_assets", {"id": "asset-1", "project_id": project["id"],
                                  "user_id": uid, "filename": "clip.mp4",
                                  "storage_path": key, "storage_provider": "s3",
-                                 "storage_key": key})
+                                 "storage_bucket": "test-bucket", "storage_key": key})
     sources, assets = jobs._download_sources(project, str(tmp_path))
     assert len(assets) == 1
     with open(sources["asset-1"], "rb") as fh:
@@ -332,3 +333,243 @@ def test_no_raw_upload_route_accepts_a_file_body():
         for param in inspect.signature(route.endpoint).parameters.values():
             assert param.annotation not in (UploadFile, Request), \
                 f"{route.path} must not receive a file/body — video goes to S3, not Railway"
+
+
+# ---------------- worker ownership validation (review blocker #1) ----------------
+def _s3_asset(uid, pid, key, bucket="test-bucket"):
+    return {"id": "asset-x", "user_id": uid, "project_id": pid, "filename": "clip.mp4",
+            "storage_provider": "s3", "storage_bucket": bucket,
+            "storage_key": key, "storage_path": key}
+
+
+def test_worker_rejects_forged_cross_user_key(env, tmp_path):
+    from app import media_store
+    fake, s3 = env
+    attacker, _, project = _owner(fake)  # project owned by attacker
+    victim_key = "users/VICTIM/projects/VICTIM/raw-footage/a/private.mp4"
+    s3.objects[victim_key] = {"body": b"secret", "content_type": "video/mp4",
+                              "etag": "e", "size": 6}
+    forged = _s3_asset(attacker, project["id"], victim_key)
+    with pytest.raises(media_store.MediaOwnershipError):
+        media_store.download_media_asset(forged, project, str(tmp_path / "x.mp4"))
+
+
+def test_worker_rejects_wrong_bucket(env, tmp_path):
+    from app import media_store
+    fake, s3 = env
+    uid, _, project = _owner(fake)
+    key = f"users/{uid}/projects/{project['id']}/raw-footage/a/clip.mp4"
+    asset = _s3_asset(uid, project["id"], key, bucket="someone-elses-bucket")
+    with pytest.raises(media_store.MediaOwnershipError):
+        media_store.download_media_asset(asset, project, str(tmp_path / "x.mp4"))
+
+
+def test_worker_rejects_cross_project_asset(env, tmp_path):
+    from app import media_store
+    fake, s3 = env
+    uid, _, project = _owner(fake)
+    asset = _s3_asset(uid, "OTHER-PROJECT",
+                      "users/x/projects/OTHER-PROJECT/raw-footage/a/clip.mp4")
+    with pytest.raises(media_store.MediaOwnershipError):
+        media_store.download_media_asset(asset, project, str(tmp_path / "x.mp4"))
+
+
+def test_worker_downloads_legacy_supabase_asset(env, tmp_path):
+    from app import media_store
+    fake, s3 = env
+    uid, _, project = _owner(fake)
+    path = f"users/{uid}/projects/{project['id']}/raw/asset/clip.mp4"
+    fake.storage[f"raw-footage/{path}"] = b"LEGACYBYTES"
+    asset = {"id": "a", "user_id": uid, "project_id": project["id"],
+             "filename": "clip.mp4", "storage_provider": "supabase", "storage_path": path}
+    dest = str(tmp_path / "out.mp4")
+    media_store.download_media_asset(asset, project, dest)
+    with open(dest, "rb") as fh:
+        assert fh.read() == b"LEGACYBYTES"
+
+
+# ---------------- idempotency + races (review blocker #4) ----------------
+def test_complete_is_idempotent(env, client):
+    fake, s3 = env
+    _, token, project = _owner(fake)
+    sid, _ = _run_upload(fake, s3, client, token, project)  # already completes once
+    again = client.post(f"/projects/{project['id']}/raw-uploads/{sid}/complete",
+                        headers=_auth(token), json={"parts": [{"partNumber": 1, "etag": "x"}]})
+    assert again.status_code == 200 and again.json()["status"] == "completed"
+
+
+def test_finalize_is_idempotent(env, client):
+    fake, s3 = env
+    _, token, project = _owner(fake)
+    sid, _ = _run_upload(fake, s3, client, token, project)
+    first = client.post(f"/projects/{project['id']}/raw-uploads/{sid}/finalize", headers=_auth(token))
+    second = client.post(f"/projects/{project['id']}/raw-uploads/{sid}/finalize", headers=_auth(token))
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.json()["id"] == second.json()["id"]
+    assert len(fake.tables["media_assets"]) == 1   # not duplicated
+
+
+def test_abort_refused_during_finalizing(env, client):
+    fake, s3 = env
+    _, token, project = _owner(fake)
+    sid, _ = _run_upload(fake, s3, client, token, project)
+    fake.patch("raw_upload_sessions", f"id=eq.{sid}", {"status": "finalizing"})
+    r = client.post(f"/projects/{project['id']}/raw-uploads/{sid}/abort", headers=_auth(token))
+    assert r.status_code == 409
+
+
+def test_replay_cannot_downgrade_finalized_to_failed(env, client):
+    fake, s3 = env
+    _, token, project = _owner(fake)
+    sid, session = _run_upload(fake, s3, client, token, project)
+    client.post(f"/projects/{project['id']}/raw-uploads/{sid}/finalize", headers=_auth(token))
+    # a late complete replay must not fail the finalized session
+    client.post(f"/projects/{project['id']}/raw-uploads/{sid}/complete",
+                headers=_auth(token), json={"parts": [{"partNumber": 1, "etag": "x"}]})
+    assert fake.tables["raw_upload_sessions"][-1]["status"] == "finalized"
+
+
+# ---------------- manifest validation (review important) ----------------
+def _init(fake, s3, client, token, project, size=6 * 1024 * 1024):
+    return client.post(f"/projects/{project['id']}/raw-uploads/initiate",
+                       headers=_auth(token),
+                       json={"filename": "clip.mp4", "contentType": "video/mp4",
+                             "size": size}).json()
+
+
+def test_manifest_duplicate_parts_rejected(env, client):
+    fake, s3 = env
+    _, token, project = _owner(fake)
+    init = _init(fake, s3, client, token, project, size=20 * 1024 * 1024)  # -> 2 parts
+    r = client.post(f"/projects/{project['id']}/raw-uploads/{init['sessionId']}/complete",
+                    headers=_auth(token),
+                    json={"parts": [{"partNumber": 1, "etag": "a"}, {"partNumber": 1, "etag": "b"}]})
+    assert r.status_code == 422
+
+
+def test_manifest_bad_etag_rejected(env, client):
+    fake, s3 = env
+    _, token, project = _owner(fake)
+    init = _init(fake, s3, client, token, project)
+    r = client.post(f"/projects/{project['id']}/raw-uploads/{init['sessionId']}/complete",
+                    headers=_auth(token),
+                    json={"parts": [{"partNumber": 1, "etag": "has spaces/and*bad"}]})
+    assert r.status_code == 422
+
+
+def test_completion_wrong_etag_rejected(env, client):
+    fake, s3 = env
+    _, token, project = _owner(fake)
+    init = _init(fake, s3, client, token, project)
+    session = fake.tables["raw_upload_sessions"][-1]
+    s3.put_part(session["upload_id"], 1, b"x" * (6 * 1024 * 1024))  # real etag stored
+    r = client.post(f"/projects/{project['id']}/raw-uploads/{init['sessionId']}/complete",
+                    headers=_auth(token),
+                    json={"parts": [{"partNumber": 1, "etag": "deadbeef"}]})  # valid format, wrong value
+    assert r.status_code == 409
+    assert fake.tables["raw_upload_sessions"][-1]["status"] == "failed"
+
+
+# ---------------- expiry + orphan cleanup (review important) ----------------
+def test_expired_session_rejected_on_sign(env, client):
+    fake, s3 = env
+    _, token, project = _owner(fake)
+    init = _init(fake, s3, client, token, project)
+    fake.patch("raw_upload_sessions", f"id=eq.{init['sessionId']}",
+               {"expires_at": "2000-01-01T00:00:00+00:00"})
+    r = client.post(f"/projects/{project['id']}/raw-uploads/{init['sessionId']}/sign-parts",
+                    headers=_auth(token), json={"partNumbers": [1]})
+    assert r.status_code == 409
+    assert fake.tables["raw_upload_sessions"][-1]["status"] == "failed"
+
+
+def test_initiate_db_failure_aborts_multipart(env, client):
+    fake, s3 = env
+    _, token, project = _owner(fake)
+    fake.fail_tables.add("raw_upload_sessions")
+    r = client.post(f"/projects/{project['id']}/raw-uploads/initiate",
+                    headers=_auth(token),
+                    json={"filename": "clip.mp4", "contentType": "video/mp4", "size": 6 * 1024 * 1024})
+    assert r.status_code == 503
+    assert not s3.multipart          # newly created multipart was aborted (no orphan)
+
+
+def test_zero_byte_rejected_at_initiate(env, client):
+    fake, s3 = env
+    _, token, project = _owner(fake)
+    r = client.post(f"/projects/{project['id']}/raw-uploads/initiate",
+                    headers=_auth(token),
+                    json={"filename": "clip.mp4", "contentType": "video/mp4", "size": 0})
+    assert r.status_code == 422   # pydantic ge=1
+
+
+# ---------------- real ffprobe media validation (skips without ffmpeg) ----------------
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+
+_HAS_FF = shutil.which("ffmpeg") and shutil.which("ffprobe")
+
+
+def _ff(args):
+    return subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *args],
+                          capture_output=True, timeout=60).returncode == 0
+
+
+@pytest.mark.skipif(not _HAS_FF, reason="ffmpeg/ffprobe not installed")
+def test_real_media_validation(tmp_path):
+    """Real ffmpeg-generated fixtures: a real video passes, audio-only fails."""
+    from app import mediaprobe
+    valid = str(tmp_path / "valid.mp4")
+    audio = str(tmp_path / "audio.mp4")
+    assert _ff(["-f", "lavfi", "-i", "testsrc=duration=1:size=320x240:rate=10",
+                "-pix_fmt", "yuv420p", valid])
+    assert _ff(["-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:a", "aac", audio])
+    assert mediaprobe.probe_video(valid)["valid"] is True
+    assert mediaprobe.probe_video(audio)["valid"] is False       # audio-only rejected
+
+
+def test_probe_rejects_attached_pic_audio_and_zero_duration(monkeypatch):
+    """Deterministic (no ffmpeg needed): the probe's strictness — attached cover
+    artwork, audio-only, zero/invalid duration, and insane dimensions are rejected;
+    a real non-attached video stream with positive duration is accepted."""
+    from types import SimpleNamespace
+
+    from app import mediaprobe
+
+    def fake_run(payload, rc=0):
+        def _run(*a, **k):
+            return SimpleNamespace(returncode=rc, stdout=json.dumps(payload), stderr="")
+        return _run
+
+    # attached cover artwork masquerading as video
+    monkeypatch.setattr(subprocess, "run", fake_run({
+        "streams": [{"codec_type": "video", "width": 640, "height": 480,
+                     "disposition": {"attached_pic": 1}}],
+        "format": {"duration": "5.0"}}))
+    assert mediaprobe.probe_video("x")["valid"] is False
+
+    # audio-only (no video streams)
+    monkeypatch.setattr(subprocess, "run", fake_run({"streams": [], "format": {"duration": "5.0"}}))
+    assert mediaprobe.probe_video("x")["valid"] is False
+
+    # zero duration
+    monkeypatch.setattr(subprocess, "run", fake_run({
+        "streams": [{"codec_type": "video", "width": 640, "height": 480,
+                     "disposition": {"attached_pic": 0}}],
+        "format": {"duration": "0"}}))
+    assert mediaprobe.probe_video("x")["valid"] is False
+
+    # insane dimensions
+    monkeypatch.setattr(subprocess, "run", fake_run({
+        "streams": [{"codec_type": "video", "width": 999999, "height": 480,
+                     "disposition": {"attached_pic": 0}}],
+        "format": {"duration": "5.0"}}))
+    assert mediaprobe.probe_video("x")["valid"] is False
+
+    # a real video stream
+    monkeypatch.setattr(subprocess, "run", fake_run({
+        "streams": [{"codec_type": "video", "width": 1080, "height": 1920,
+                     "disposition": {"attached_pic": 0}}],
+        "format": {"duration": "8.0"}}))
+    result = mediaprobe.probe_video("x")
+    assert result["valid"] is True and result["duration"] == 8.0

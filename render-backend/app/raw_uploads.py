@@ -79,6 +79,34 @@ def key_belongs_to(key: str, user_id: str, project_id: str) -> bool:
     return bool(key) and key.startswith(prefix) and ".." not in key
 
 
+def supabase_path_belongs_to(path: str, user_id: str, project_id: str) -> bool:
+    """Legacy Supabase raw-footage paths: users/{uid}/projects/{pid}/..."""
+    prefix = f"users/{user_id}/projects/{project_id}/"
+    return bool(path) and path.startswith(prefix) and ".." not in path
+
+
+_ETAG_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
+
+
+def validate_part_manifest(parts: list[dict], expected_count: int) -> None:
+    """Reject malformed completion manifests before calling S3: wrong count,
+    duplicates, gaps/out-of-range numbers, malformed ETags."""
+    numbers = [p["partNumber"] for p in parts]
+    if len(numbers) != expected_count:
+        raise UploadValidationError(
+            "part_count", f"expected {expected_count} parts, got {len(numbers)}")
+    if len(set(numbers)) != len(numbers):
+        raise UploadValidationError("duplicate_parts", "duplicate part numbers")
+    if sorted(numbers) != list(range(1, expected_count + 1)):
+        raise UploadValidationError(
+            "non_consecutive", "parts must be a consecutive 1..N manifest with no gaps")
+    for part in parts:
+        etag = str(part["etag"]).strip().strip('"')
+        if not etag or not _ETAG_RE.match(etag):
+            raise UploadValidationError(
+                "bad_etag", f"malformed ETag for part {part['partNumber']}")
+
+
 def plan_parts(size: int, part_size: int = DEFAULT_PART_SIZE) -> dict:
     """Choose a part size that satisfies S3 constraints for this file size."""
     part_size = max(int(part_size or DEFAULT_PART_SIZE), S3_MIN_PART_SIZE)
