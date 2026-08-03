@@ -92,7 +92,7 @@ class CloudStore:
     def save(self, kind: str, data, status="completed", error=None, paths=None):
         import httpx
         r = httpx.post(
-            f"{self.supa.SUPABASE_URL}/rest/v1/asset_analysis",
+            f"{self.supa.SUPABASE_URL}/rest/v1/asset_analysis?on_conflict=asset_id,kind,version",
             headers={"apikey": self.supa.SERVICE_KEY,
                      "Authorization": f"Bearer {self.supa.SERVICE_KEY}",
                      "Content-Type": "application/json",
@@ -120,7 +120,7 @@ class CloudStore:
                  "data": s.model_dump(), "search_text": s.searchText,
                  "schema_version": s.schemaVersion} for s in segments]
         r = httpx.post(
-            f"{self.supa.SUPABASE_URL}/rest/v1/segments",
+            f"{self.supa.SUPABASE_URL}/rest/v1/segments?on_conflict=asset_id,segment_key,schema_version",
             headers={"apikey": self.supa.SERVICE_KEY,
                      "Authorization": f"Bearer {self.supa.SERVICE_KEY}",
                      "Content-Type": "application/json",
