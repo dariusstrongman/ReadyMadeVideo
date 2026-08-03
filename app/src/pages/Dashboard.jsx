@@ -122,19 +122,24 @@ export default function Dashboard() {
 
   // ── Empty state ──────────────────────────────────────────────────────
   if (total === 0) {
+    const steps = [
+      { n: '01', title: 'Name your video', desc: 'Give your project a name.' },
+      { n: '02', title: 'Drop in footage', desc: 'Raw clips from your phone, camera, or drone.' },
+      { n: '03', title: 'AI builds the edit', desc: 'Stromation assembles a complete first cut.' },
+      { n: '04', title: 'Watch and download', desc: 'Approve the edit, then export your MP4.' },
+    ]
     return (
       <div className="dashboard-empty">
         <div className="empty-icon-wrap">
-          <FilmIcon size={48} />
+          <FilmIcon size={32} />
         </div>
         <h1 className="empty-title">Your studio is ready.</h1>
         <p className="empty-sub">
-          Upload raw footage and Stromation builds your first edit.<br />
-          No editing experience needed.
+          Upload raw footage. Stromation builds your first edit.
         </p>
         <div className="empty-actions">
           <Link to="/project/new" className="btn btn-primary btn-lg">
-            Start your first video
+            + Create your first video
           </Link>
           <a
             href="https://www.stromation.com/showcase.html"
@@ -145,18 +150,11 @@ export default function Dashboard() {
           </a>
         </div>
         <div className="empty-steps">
-          {[
-            { n: '01', title: 'Name your video', desc: 'Tell Stromation what you\'re making.' },
-            { n: '02', title: 'Drop in your footage', desc: 'Raw clips from your phone, camera, or drone.' },
-            { n: '03', title: 'Stromation builds the edit', desc: 'AI assembles a complete first cut from your clips.' },
-            { n: '04', title: 'Watch, refine, download', desc: 'Approve the edit or tweak it — then export your MP4.' },
-          ].map(s => (
+          {steps.map(s => (
             <div key={s.n} className="empty-step">
               <span className="empty-step-n">{s.n}</span>
-              <div>
-                <p className="empty-step-title">{s.title}</p>
-                <p className="empty-step-desc">{s.desc}</p>
-              </div>
+              <p className="empty-step-title">{s.title}</p>
+              <p className="empty-step-desc">{s.desc}</p>
             </div>
           ))}
         </div>
