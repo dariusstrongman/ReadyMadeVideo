@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
 import { RENDER_API } from '../lib/config'
+import { probeDuration } from '../lib/media'
 
 const STATUS_LABEL = {
   draft:           'Ready for footage',
@@ -202,6 +203,9 @@ export default function Project() {
         },
       })
       if (upErr) { setError(upErr.message); setUploading(false); return }
+      // Probe duration so the Product Editor has real per-asset bounds. Best
+      // effort: null if it can't be read (never blocks the upload).
+      const duration = await probeDuration(file)
       // Step 2: Insert media_assets row using the correct schema column names:
       //   filename (NOT original_filename) — required NOT NULL
       //   size_bytes (NOT file_size_bytes)
@@ -212,6 +216,7 @@ export default function Project() {
         filename: file.name,
         size_bytes: file.size,
         mime_type: file.type,
+        duration_seconds: duration,
       })
       if (dbErr) {
         // DB insert failed — clean up the orphaned storage object to avoid

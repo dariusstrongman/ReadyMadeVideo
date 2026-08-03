@@ -211,14 +211,32 @@ class JobContext:
 
 
 # ---------------- handlers ----------------
+def owned_raw_storage_path(path: str, user_id: str, project_id: str) -> bool:
+    """Defense-in-depth ancestry check for a raw-footage object key.
+
+    media_assets is client-writable (RLS only checks user_id = auth.uid(), not the
+    storage_path), so the service-role worker must never blindly trust a stored
+    path. A legitimate object always lives under the project owner's prefix:
+        users/{user_id}/projects/{project_id}/...
+    Rejects foreign-owner paths and any path traversal. This does not change how
+    existing valid uploads (which already use this prefix) are handled.
+    """
+    prefix = f"users/{user_id}/projects/{project_id}/"
+    return bool(path) and path.startswith(prefix) and ".." not in path
+
+
 def _download_sources(project: dict, tmp: str, ctx: JobContext | None = None):
     assets = supa.db_select("media_assets", f"project_id=eq.{project['id']}")
     sources = {}
     for a in assets:
         if ctx:
             ctx.checkpoint("download_sources")
+        path = a["storage_path"]
+        if not owned_raw_storage_path(path, project["user_id"], project["id"]):
+            raise RuntimeError(
+                f"media asset {a['id']} storage path failed ownership check")
         dst = os.path.join(tmp, a["id"] + os.path.splitext(a["filename"])[1])
-        supa.storage_download("raw-footage", a["storage_path"], dst)
+        supa.storage_download("raw-footage", path, dst)
         sources[a["id"]] = dst
     return sources, assets
 
