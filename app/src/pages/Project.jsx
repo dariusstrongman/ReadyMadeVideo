@@ -193,6 +193,7 @@ export default function Project() {
     for (const { file } of pendingFiles) {
       const ext = file.name.split('.').pop()
       const key = `users/${uid}/projects/${projectId}/raw/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+      // Step 1: Upload to Supabase Storage (raw-footage bucket)
       const { error: upErr } = await supabase.storage.from('raw-footage').upload(key, file, {
         cacheControl: '3600', upsert: false,
         onUploadProgress: ({ loaded, total: t }) => {
@@ -201,15 +202,35 @@ export default function Project() {
         },
       })
       if (upErr) { setError(upErr.message); setUploading(false); return }
-      await supabase.from('media_assets').insert({
-        project_id: projectId, user_id: uid,
-        storage_path: key, original_filename: file.name,
-        file_size_bytes: file.size, mime_type: file.type,
+      // Step 2: Insert media_assets row using the correct schema column names:
+      //   filename (NOT original_filename) — required NOT NULL
+      //   size_bytes (NOT file_size_bytes)
+      const { error: dbErr } = await supabase.from('media_assets').insert({
+        project_id: projectId,
+        user_id: uid,
+        storage_path: key,
+        filename: file.name,
+        size_bytes: file.size,
+        mime_type: file.type,
       })
+      if (dbErr) {
+        // DB insert failed — clean up the orphaned storage object to avoid
+        // footage that the worker can never find
+        await supabase.storage.from('raw-footage').remove([key])
+        setError(`Could not save footage record: ${dbErr.message}. Please try again.`)
+        setUploading(false)
+        return
+      }
       done++
       setUploadPct(Math.round((done / total) * 100))
     }
-    await supabase.from('projects').update({ status: 'ready' }).eq('id', projectId)
+    // Only mark project ready if all inserts succeeded
+    const { error: statusErr } = await supabase.from('projects').update({ status: 'ready' }).eq('id', projectId)
+    if (statusErr) {
+      setError(`Upload complete but could not start processing: ${statusErr.message}`)
+      setUploading(false)
+      return
+    }
     // Trigger analysis — idempotent: backend returns existing job if one is already active
     try {
       await fetch(`${RENDER_API}/projects/${projectId}/request-analysis`, {
@@ -377,8 +398,8 @@ export default function Project() {
             <div className="grid">
               {assets.map(a => (
                 <div key={a.id} className="list-item">
-                  <span style={{ flex: 1, fontSize: '0.85rem' }}>{a.original_filename}</span>
-                  <span className="small">{a.file_size_bytes ? fmtSize(a.file_size_bytes) : ''}</span>
+                  <span style={{ flex: 1, fontSize: '0.85rem' }}>{a.filename}</span>
+                  <span className="small">{a.size_bytes ? fmtSize(a.size_bytes) : ''}</span>
                 </div>
               ))}
             </div>
