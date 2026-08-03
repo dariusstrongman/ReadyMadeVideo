@@ -67,10 +67,10 @@ function TopNav() {
 
   return (
     <nav className="nav">
-      <Link to="/" className="nav-logo">
+      <a href="https://www.stromation.com" className="nav-logo">
         <img src={iconUrl} alt="" aria-hidden="true" />
         STROMATION
-      </Link>
+      </a>
       <span className="spacer" />
       <Link to="/project/new" className="btn btn-primary btn-sm">+ New video</Link>
       <div className="avatar-wrap" ref={menuRef}>

@@ -128,10 +128,10 @@ export default function Editor() {
     <div className="editor-page">
       {/* Top bar */}
       <div className="editor-topbar">
-        <Link to="/" className="nav-logo" style={{ flexShrink: 0 }}>
+        <a href="https://www.stromation.com" className="nav-logo" style={{ flexShrink: 0 }}>
           <img src={iconUrl} alt="" aria-hidden="true" />
           STROMATION
-        </Link>
+        </a>
         <span style={{ color: 'var(--border-2)' }}>/</span>
         <Link to={`/project/${projectId}`} style={{ color: 'var(--text-3)', fontSize: '0.78rem' }}>{project.name}</Link>
         <span style={{ color: 'var(--border-2)' }}>/</span>
