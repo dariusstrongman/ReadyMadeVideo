@@ -87,7 +87,7 @@ input, textarea, select { font-family: var(--sans); }
   transition: background 0.3s;
 }
 .nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
-.nav-logo svg { width: 28px; height: 28px; flex-shrink: 0; }
+.nav-logo svg { width: 24px; height: 24px; flex-shrink: 0; }
 .nav-logo-text { font-family: var(--mono); font-weight: 700; font-size: 0.9rem; letter-spacing: 0.15em; color: var(--text); }
 .nav-links { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .nav-links a { color: var(--text-2); font-size: 0.875rem; font-weight: 500; padding: 6px 12px; border-radius: 8px; transition: color 0.2s, background 0.2s; }
@@ -106,7 +106,7 @@ input, textarea, select { font-family: var(--sans); }
 /* ── Buttons ── */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; font-size: 0.9rem; padding: 11px 22px; border-radius: var(--radius); transition: all 0.2s; white-space: nowrap; text-decoration: none !important; }
 .btn-primary { background: var(--cyan); color: var(--text-inv); }
-.btn-primary:hover { background: #33dcff; transform: translateY(-1px); box-shadow: 0 4px 24px var(--cyan-glow); }
+.btn-primary:hover { background: #1adcff; transform: translateY(-1px); box-shadow: 0 4px 24px var(--cyan-glow); }
 .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border-2); }
 .btn-secondary:hover { background: var(--surface-2); border-color: var(--border-2); transform: translateY(-1px); }
 .btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
