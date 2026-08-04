@@ -91,4 +91,10 @@ describe('no legacy customer path remains (shipped app source)', () => {
     expect(editor).toMatch(/stateRef\.current\.pending\.length/)
     expect(editor).toMatch(/export cancelled/)
   })
+
+  it('autosave retry reschedules itself after repeated failures', () => {
+    expect(editor).toMatch(/scheduleRetry/)
+    // the retry re-arms itself on failure (not a single one-shot retry)
+    expect(editor).toMatch(/\.catch\(\(\) => scheduleRetry\(\)\)/)
+  })
 })

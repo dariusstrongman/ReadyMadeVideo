@@ -40,11 +40,14 @@ def _next_version(db_select, table: str, project_id: str) -> int:
     return (int(rows[0]["version"]) + 1) if rows else 1
 
 
-def _find_bridge_preproduction(db_select, project_id: str) -> dict | None:
-    """Reuse a bridge preproduction row left by a prior partial run (recovery),
-    so a failed bridge never orphans immutable ancestry or creates duplicates."""
+def _find_bridge_preproduction(db_select, project_id: str, timeline_id: str) -> dict | None:
+    """Reuse a bridge preproduction row left by a prior partial run FOR THE SAME
+    source timeline (recovery), so a failed bridge never orphans immutable ancestry
+    or associates a new timeline with another timeline's partial ancestry."""
     for row in db_select("preproduction_runs", f"project_id=eq.{project_id}&order=version.desc"):
-        if (row.get("request") or {}).get("origin") == "basic_autoedit":
+        req = row.get("request") or {}
+        if (req.get("origin") == "basic_autoedit"
+                and str(req.get("timeline_id")) == str(timeline_id)):
             return row
     return None
 
@@ -77,24 +80,26 @@ def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: 
 
     uid = project["user_id"]
     brief = project.get("name") or "basic autoedit"
+    timeline_id = str(timeline_row["id"])
 
     # Real, minimal preproduction ancestry (honest defaults; no fabricated analysis).
-    # Reuse a prior bridge run's ancestry if present (recovery — no orphan/duplicate),
-    # and allocate a safe version otherwise.
-    pre = _find_bridge_preproduction(db_select, project["id"])
+    # Reuse a prior partial run's ancestry ONLY when it originated from THIS timeline
+    # (recovery — no orphan/duplicate, no cross-timeline mismatch); safe version.
+    pre = _find_bridge_preproduction(db_select, project["id"], timeline_id)
     if not pre:
         pre = insert("preproduction_runs", {
             "project_id": project["id"], "user_id": uid,
             "version": _next_version(db_select, "preproduction_runs", project["id"]),
             "status": "ready",
-            "request": {"origin": "basic_autoedit", "brief": brief},
+            "request": {"origin": "basic_autoedit", "brief": brief, "timeline_id": timeline_id},
             "creative_treatment": {"origin": "basic_autoedit", "brief": brief},
             "capture_quality_report": {"origin": "basic_autoedit"},
             "composition_by_segment": {}, "story_variants": [],
         }).json()[0]
 
     # Real picture ancestry derived from the actual autoedit timeline (reuse-or-create).
-    picture_candidate_id = f"bridged-{timeline_row['id']}"
+    # The preproduction row is timeline-bound, so its picture child is too.
+    picture_candidate_id = f"bridged-{timeline_id}"
     existing_pic = db_select("picture_edit_runs",
                              f"preproduction_run_id=eq.{pre['id']}&limit=1")
     if existing_pic:
@@ -105,7 +110,8 @@ def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: 
             "project_id": project["id"], "user_id": uid,
             "preproduction_run_id": pre["id"],
             "version": _next_version(db_select, "picture_edit_runs", project["id"]),
-            "status": "ready", "request": {"origin": "basic_autoedit"},
+            "status": "ready",
+            "request": {"origin": "basic_autoedit", "timeline_id": timeline_id},
             "visual_rhythm_plans": [],
             "candidates": [{
                 "candidateId": picture_candidate_id, "source": "basic_autoedit",

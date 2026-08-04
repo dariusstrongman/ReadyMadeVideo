@@ -416,10 +416,9 @@ def op_request_analysis(project_id: str,
     Called by the frontend immediately after upload completes.
     """
     from . import jobs
-    user = _auth_user(authorization)
-    project = _get_project(project_id)
-    if project["user_id"] != user["id"]:
-        raise HTTPException(403, "you do not own this project")
+    # _owned_project also rejects soft-deleted projects (404) — a deleted project
+    # can never restart analysis.
+    user, _ = _owned_project(project_id, authorization)
     # Idempotency: return existing active analysis job if present
     active = supa.db_select(
         "pipeline_jobs",
@@ -2418,6 +2417,19 @@ def customer_editor_render(project_id: str, body: EditorRenderBody,
     _editor_audit(user["id"], project_id, "render_editor_document", {
         "document_id": document["id"], "version": document["version"],
     })
+    # Version-bound idempotency: enqueue_job dedupes only on (project, kind), so an
+    # active render for a DIFFERENT editor revision must never be reused for this one.
+    active_renders = supa.db_select(
+        "pipeline_jobs",
+        f"project_id=eq.{project_id}&kind=eq.final_render"
+        "&status=in.(queued,processing,cancel_requested)&order=created_at.desc")
+    for existing in active_renders:
+        params = existing.get("params") or {}
+        if (params.get("editor_document_id") == document["id"]
+                and params.get("editor_document_version") == document["version"]):
+            return existing   # duplicate export of the SAME revision -> same job
+        raise HTTPException(409, "another export is already in progress for this "
+                                 "project; wait for it to finish before exporting again")
     try:
         job = job_service.enqueue_job(
             project_id, user["id"], "final_render",

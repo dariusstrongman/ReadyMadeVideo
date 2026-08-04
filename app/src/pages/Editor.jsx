@@ -119,19 +119,21 @@ export default function Editor() {
     }
   }, [projectId, session])
 
+  // Self-rescheduling retry: keeps re-attempting every RETRY_MS until pending clears,
+  // so a SECOND (or Nth) consecutive failure never strands unsaved edits.
+  const scheduleRetry = useCallback(() => {
+    if (retryRef.current) clearTimeout(retryRef.current)
+    retryRef.current = setTimeout(() => {
+      if (!stateRef.current.pending.length) return
+      save().catch(() => scheduleRetry())
+    }, 3000)
+  }, [save])
+
   useEffect(() => {
     if (!state.pending.length) return undefined
-    const t = setTimeout(() => {
-      // Failed autosave auto-reschedules so a transient error never strands edits.
-      save().catch(() => {
-        if (retryRef.current) clearTimeout(retryRef.current)
-        retryRef.current = setTimeout(() => {
-          if (stateRef.current.pending.length) save().catch(() => {})
-        }, 3000)
-      })
-    }, AUTOSAVE_MS)
+    const t = setTimeout(() => { save().catch(() => scheduleRetry()) }, AUTOSAVE_MS)
     return () => clearTimeout(t)
-  }, [state.pending, save])
+  }, [state.pending, save, scheduleRetry])
 
   useEffect(() => () => { if (retryRef.current) clearTimeout(retryRef.current) }, [])
 

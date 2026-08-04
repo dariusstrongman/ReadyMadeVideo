@@ -75,24 +75,32 @@ def storage_remove_prefix(bucket: str, prefix: str) -> int:
     error (callers record retryable state rather than swallowing failures). Returns
     the number of objects removed. Covers raw footage, proxies/wav/thumbs, autoedit
     drafts, licensed music, and every export/finishing preview under the prefix."""
+    page = 1000
     base = prefix.rstrip("/")
     to_visit = [base]
     paths: list[str] = []
     while to_visit:
         folder = to_visit.pop()
-        r = httpx.post(f"{SUPABASE_URL}/storage/v1/object/list/{bucket}",
-                       headers={**_service_headers, "Content-Type": "application/json"},
-                       json={"prefix": folder, "limit": 1000}, timeout=60)
-        r.raise_for_status()
-        for entry in r.json():
-            name = entry.get("name")
-            if not name:
-                continue
-            full = f"{folder}/{name}" if folder else name
-            if entry.get("id") is None:      # a folder — descend
-                to_visit.append(full)
-            else:
-                paths.append(full)
+        offset = 0
+        while True:   # paginate: a folder may hold more than one page of objects
+            r = httpx.post(f"{SUPABASE_URL}/storage/v1/object/list/{bucket}",
+                           headers={**_service_headers, "Content-Type": "application/json"},
+                           json={"prefix": folder, "limit": page, "offset": offset},
+                           timeout=60)
+            r.raise_for_status()
+            entries = r.json()
+            for entry in entries:
+                name = entry.get("name")
+                if not name:
+                    continue
+                full = f"{folder}/{name}" if folder else name
+                if entry.get("id") is None:      # a folder — descend
+                    to_visit.append(full)
+                else:
+                    paths.append(full)
+            if len(entries) < page:
+                break
+            offset += page
     for start in range(0, len(paths), 100):
         batch = paths[start:start + 100]
         rr = httpx.request("DELETE", f"{SUPABASE_URL}/storage/v1/object/{bucket}",

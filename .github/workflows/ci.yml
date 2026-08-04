@@ -115,6 +115,8 @@ jobs:
           echo "editorial-intelligence PostgreSQL integrity assertions passed"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/bridged_candidate_integrity.sql
           echo "bridged-candidate PostgreSQL integrity assertions passed"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/project_deletion_integrity.sql
+          echo "project-deletion-state PostgreSQL integrity assertions passed"
 
   secret-scan:
     runs-on: ubuntu-latest
