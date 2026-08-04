@@ -29,9 +29,10 @@ begin
       where schemaname = 'public' and tablename = t
         and cmd in ('SELECT', 'ALL')
         -- most tables call project_not_deleted(project_id); project_status_events uses an
-        -- inline EXISTS(projects ... deleted_at is null). Accept either form.
-        and (coalesce(qual, '') like '%project_not_deleted%'
-             or coalesce(qual, '') like '%deleted_at is null%')) then
+        -- inline EXISTS(projects ... deleted_at IS NULL). Accept either form. ILIKE because
+        -- pg_get_expr decompiles the predicate as uppercase "IS NULL".
+        and (coalesce(qual, '') ilike '%project_not_deleted%'
+             or coalesce(qual, '') ilike '%deleted_at is null%')) then
       missing := missing || ' ' || t;
     end if;
   end loop;
@@ -61,9 +62,9 @@ begin
         'human_edit_timing_events','timeline_scorecards','project_status_events')
       and cmd in ('SELECT', 'ALL')
   loop
-    if r.q like '%auth.uid()%'
-       and r.q not like '%project_not_deleted%'
-       and r.q not like '%deleted_at is null%' then
+    if r.q ilike '%auth.uid()%'
+       and r.q not ilike '%project_not_deleted%'
+       and r.q not ilike '%deleted_at is null%' then
       leaking := leaking || ' ' || r.tablename || '.' || r.policyname;
     end if;
   end loop;
