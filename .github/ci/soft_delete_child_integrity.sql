@@ -114,8 +114,11 @@ insert into auth.users(id, email) values
 insert into public.operators(user_id) values ('f7000000-0000-0000-0000-0000000000AA');
 
 -- Grant table privileges so the assertions below exercise RLS, not missing GRANTs.
-grant select on public.media_assets, public.edit_runs, public.preproduction_runs,
-                public.draft_evaluations, public.project_status_events to authenticated;
+-- projects is granted too: project_status_events' policy reads it via an inline EXISTS
+-- (authenticated has this grant in production; RLS still filters the rows).
+grant select on public.projects, public.media_assets, public.edit_runs,
+                public.preproduction_runs, public.draft_evaluations,
+                public.project_status_events to authenticated;
 grant insert on public.render_jobs to authenticated;
 
 -- Resolve auth.uid() to the owner for the RLS checks.
