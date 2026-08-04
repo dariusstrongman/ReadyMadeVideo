@@ -479,6 +479,66 @@ def test_orphan_cleanup_reopens_resolved_record_on_repeat_failure(monkeypatch, t
     assert f"{bucket}/{path}" not in fake.storage
 
 
+def test_cleanup_persistence_500_is_raised_not_swallowed(monkeypatch, tmp_path, capsys):
+    """Codex repro: remove fails AND the tracking insert returns HTTP 500. Previously this
+    was silently swallowed and the orphan became permanently untracked. Now it is logged
+    and RAISED — never silent."""
+    fake, uid, token, project, asset_id, _ = _setup(monkeypatch, tmp_path, bridge=False)
+    fake.fail_tables.add("pending_storage_cleanup")     # insert -> 500
+
+    def dead(_b, _p):
+        raise RuntimeError("storage down")
+
+    with pytest.raises(RuntimeError):
+        autoedit_bridge._cleanup_or_persist(
+            remove=dead, insert=jobs._insert, update=supa.db_update, now=jobs._now,
+            project=project, bucket="exports",
+            path=f"users/{uid}/projects/{project['id']}/autoedit/o.mp4",
+            reason="cleanup failed")
+    assert "CLEANUP-PERSIST-FAILED" in capsys.readouterr().out   # visible, not silent
+    assert fake.select("pending_storage_cleanup", f"project_id=eq.{project['id']}") == []
+
+
+def test_cleanup_reopen_update_failure_is_raised(monkeypatch, tmp_path):
+    """409 path: a resolved row exists but the reopen UPDATE fails — must raise, because a
+    swallowed reopen leaves cleaned_at set and the drain skips the orphan forever."""
+    fake, uid, token, project, asset_id, _ = _setup(monkeypatch, tmp_path, bridge=False)
+    path = f"users/{uid}/projects/{project['id']}/autoedit/r.mp4"
+    fake.insert("pending_storage_cleanup", {           # previously-resolved row
+        "project_id": project["id"], "user_id": uid, "bucket": "exports",
+        "object_path": path, "attempts": 1, "cleaned_at": jobs._now()})
+
+    def dead(_b, _p):
+        raise RuntimeError("storage down")
+
+    def broken_update(_t, _f, _b):
+        raise RuntimeError("db unavailable")
+
+    with pytest.raises(RuntimeError):
+        autoedit_bridge._cleanup_or_persist(
+            remove=dead, insert=jobs._insert, update=broken_update, now=jobs._now,
+            project=project, bucket="exports", path=path, reason="cleanup failed again")
+
+
+def test_bridge_double_cleanup_failure_fails_loudly_with_original_error(monkeypatch, tmp_path):
+    """Whole-bridge path: candidate insert fails AND cleanup persistence fails. The bridge
+    must raise (the job fails loudly and is retryable) — the raised error is the ORIGINAL
+    candidate-insert failure, with the persistence failure chained/logged."""
+    fake, uid, token, project, asset_id, _ = _setup(monkeypatch, tmp_path, bridge=False)
+    tl_row = _timeline_row(fake, project, asset_id, uid, tid="T-DOUBLE")
+    preview = tmp_path / "p.mp4"
+    preview.write_bytes(b"P")
+    fake.fail_tables.add("candidate_runs")
+    fake.fail_tables.add("pending_storage_cleanup")
+
+    def dead(_b, _p):
+        raise RuntimeError("storage down")
+
+    with pytest.raises(RuntimeError, match="HTTP 500"):   # original candidate-insert error
+        _bridge(project, tl_row, preview, remove=dead)
+    assert fake.select("candidate_runs", f"project_id=eq.{project['id']}") == []
+
+
 def test_concurrent_orphan_reopen_is_safe(monkeypatch, tmp_path):
     import threading
     from concurrent.futures import ThreadPoolExecutor

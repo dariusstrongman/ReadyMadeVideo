@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import uuid
 
+from .logging_util import log_event
+
 # Deterministic namespace so a project always maps to the same bridged batch_id —
 # repeated runs collide on (batch_id, candidate_key) and are skipped, not duplicated.
 _BRIDGE_NS = uuid.UUID("5f3b9d2e-0000-4000-a000-000000000b21")
@@ -112,40 +114,61 @@ def _persist_or_reopen_cleanup(*, insert, update, now, project: dict, bucket: st
     would be orphaned forever (the drain skips resolved rows). So on a unique conflict the
     row is reopened: cleaned_at cleared and retry metadata refreshed, making it eligible
     for the drain worker again. Concurrent reopeners converge on the same row (the UNIQUE
-    index prevents duplicates; the reopen UPDATE is idempotent)."""
+    index prevents duplicates; the reopen UPDATE is idempotent).
+
+    RAISES if the record can be neither created nor reopened (missing dependency, non-201/
+    non-409 insert response, or a failed reopen UPDATE) — a cleanup failure must never
+    become silently untracked."""
     if not insert:
-        return
+        raise RuntimeError("cleanup persistence unavailable: no insert dependency")
     resp = insert("pending_storage_cleanup", {
         "project_id": project["id"], "user_id": project["user_id"],
         "bucket": bucket, "object_path": path, "reason": reason,
         "attempts": 1, "last_attempt_at": now(), "cleaned_at": None})
-    status = getattr(resp, "status_code", 500)
+    status = getattr(resp, "status_code", None)
     if status == 201:
         return
-    if status == 409 and update:      # row already exists — reopen it for the drain worker
-        update("pending_storage_cleanup",
+    if status == 409:                 # row already exists — reopen it for the drain worker
+        if not update:
+            raise RuntimeError("cleanup reopen unavailable: no update dependency")
+        update("pending_storage_cleanup",     # raises on failure — never silent
                f"bucket=eq.{bucket}&object_path=eq.{path}",
                {"cleaned_at": None, "reason": reason, "last_attempt_at": now(),
                 "last_error": "reopened: cleanup failed again"})
+        return
+    # Unexpected persistence response (e.g. 500): surface it, never ignore it.
+    raise_for = getattr(resp, "raise_for_status", None)
+    if callable(raise_for):
+        raise_for()
+    raise RuntimeError(f"cleanup persistence failed with status {status}")
 
 
 def _cleanup_or_persist(*, remove, insert, update, now, project: dict, bucket: str,
                         path: str, reason: str) -> bool:
     """Remove an orphaned preview object. If removal fails the failure is NOT swallowed —
     a retryable pending_storage_cleanup row is persisted (or reopened) so a later run
-    drains it. Returns True when removed immediately."""
+    drains it. Returns True when removed immediately.
+
+    If BOTH the removal and its tracking record fail, the double failure is logged and
+    RAISED — an orphaned object must never become silently untracked. (The bridge only
+    calls this on the failed-candidate path, where the edit is already failing; successful
+    edits are never affected.)"""
     if not (remove and path):
         return False
     try:
         remove(bucket, path)
         return True
-    except Exception:  # noqa: BLE001 — surfaced via the persisted/reopened retry row
+    except Exception as cleanup_exc:  # noqa: BLE001 — surfaced via the retry row below
         try:
             _persist_or_reopen_cleanup(insert=insert, update=update, now=now,
                                        project=project, bucket=bucket, path=path,
                                        reason=reason)
-        except Exception:  # noqa: BLE001 — last resort; never fails a successful edit
-            pass
+        except Exception as persist_exc:
+            log_event("CLEANUP-PERSIST-FAILED", bucket=bucket, object_path=path,
+                      project_id=project.get("id"),
+                      cleanup_error=f"{type(cleanup_exc).__name__}: {cleanup_exc}"[:300],
+                      persist_error=f"{type(persist_exc).__name__}: {persist_exc}"[:300])
+            raise
         return False
 
 
@@ -263,10 +286,15 @@ def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: 
             return again[0]
     # Candidate creation failed for real: no candidate references the just-uploaded preview
     # (the per-project idempotency check above guarantees no prior bridged candidate exists),
-    # so it is a true orphan. Remove it; a cleanup failure is persisted for retry (not
-    # swallowed), then the original candidate-insert error is raised.
-    _cleanup_or_persist(remove=remove, insert=insert, update=update, now=now, project=project,
-                        bucket="exports", path=preview_path,
-                        reason="bridged candidate insert failed: orphaned preview")
-    resp.raise_for_status()
+    # so it is a true orphan. Remove it; a cleanup failure is persisted for retry. If even
+    # the persistence fails, that double failure is logged and raised (never silent) — the
+    # finally still raises the ORIGINAL candidate-insert error as the root cause, with the
+    # persistence failure chained into the traceback. The job fails loudly either way and a
+    # retry re-runs the bridge against the same deterministic preview key.
+    try:
+        _cleanup_or_persist(remove=remove, insert=insert, update=update, now=now,
+                            project=project, bucket="exports", path=preview_path,
+                            reason="bridged candidate insert failed: orphaned preview")
+    finally:
+        resp.raise_for_status()
     return None
