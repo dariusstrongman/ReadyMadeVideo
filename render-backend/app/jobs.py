@@ -477,6 +477,55 @@ def handle_revision(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict
     return handle_autoedit(job, project, tmp, ctx)
 
 
+def handle_editorial_plan(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict:
+    """Editorial Planner v1 — separate structured planning stage.
+
+    Sits between analysis (segment catalog) and timeline generation. Emits a
+    grounded EditorialPlan JSON into editorial_plans for downstream picture-
+    edit / graphics / audio / color / render consumption. Does NOT touch the
+    existing autoedit pipeline, timelines or project status."""
+    from .pipeline import editorial_planner
+
+    params = job.get("params") or {}
+    segments = _load_segments(project["id"])
+    if not segments:
+        raise RuntimeError("no segment catalog — run analysis first")
+    # Licensed music must actually EXIST for the plan to reference music at all.
+    music_available = bool(supa.db_select(
+        "licensed_music_assets", f"project_id=eq.{project['id']}&limit=1"))
+    update_job(job["id"], {"current_stage": "editorial planning", "progress": 10})
+    t0 = time.time()
+    result = editorial_planner.plan_editorial(
+        segments,
+        constraints={k: params.get(k) for k in (
+            "brief", "platform", "tone", "style", "durationMin", "durationMax",
+            "mustInclude", "mustExclude")},
+        music_available=music_available,
+        generate=editorial_planner.gemini_generate)
+    ctx.checkpoint("before_plan_persist")
+    existing = supa.db_select(
+        "editorial_plans",
+        f"project_id=eq.{project['id']}&order=version.desc&limit=1")
+    version = (int(existing[0]["version"]) + 1) if existing else 1
+    row = _insert("editorial_plans", {
+        "project_id": project["id"], "user_id": project["user_id"],
+        "version": version, "status": result["status"],
+        "quality_score": result["qualityScore"], "attempts": result["attempts"],
+        "request": params, "plan": result["plan"],
+        "validation": {"violationsHistory": result["violationsHistory"]},
+    })
+    row.raise_for_status()
+    plan_id = row.json()[0]["id"]
+    dur = time.time() - t0
+    ctx.rec("editorial_plan", round(dur, 2),
+            units={"gemini_requests": result["attempts"]})
+    return {"editorialPlanId": plan_id, "planVersion": version,
+            "status": result["status"], "qualityScore": result["qualityScore"],
+            "attempts": result["attempts"],
+            "plannedDurationSeconds":
+                result["plan"].get("plannedDurationSeconds")}
+
+
 def handle_final_render(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict:
     import json as _json
 
@@ -696,7 +745,10 @@ def handle_product_editor_render(job: dict, project: dict, tmp: str,
 
 
 HANDLERS = {"analysis": handle_analysis, "autoedit": handle_autoedit,
-            "revision": handle_revision, "final_render": handle_final_render}
+            "revision": handle_revision, "final_render": handle_final_render,
+            "editorial_plan": handle_editorial_plan}
+# editorial_plan is deliberately absent: a failed OPTIONAL planning stage must
+# never move the project's state machine (the guard below skips unknown kinds).
 FAIL_STATUS = {"analysis": "analysis_failed", "autoedit": "analysis_failed",
                "revision": "analysis_failed", "final_render": "render_failed"}
 
@@ -745,11 +797,13 @@ def _run_job(job: dict) -> None:
                                              ctx.telemetry_status()},
                                "processing_seconds": round(time.time() - t0, 2),
                                "completed_at": _now()})
-        try:
-            set_project_status(job["project_id"], FAIL_STATUS[job["kind"]],
-                               f"job {job['id'][:8]} failed: {err[:200]}")
-        except Exception:
-            pass
+        fail_status = FAIL_STATUS.get(job["kind"])
+        if fail_status:      # optional stages (editorial_plan) never move status
+            try:
+                set_project_status(job["project_id"], fail_status,
+                                   f"job {job['id'][:8]} failed: {err[:200]}")
+            except Exception:
+                pass
         log_event("JOB-FAILED", job_id=job["id"], kind=job["kind"],
                   error=err[:300], trace=traceback.format_exc()[-400:])
     finally:

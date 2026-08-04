@@ -13,7 +13,7 @@ on:
                codex/audio-asset-library-ingestion,
                codex/audio-library-pipeline-integration,
                codex/product-editor-phase-1,
-               repair/audit-fixes]
+               repair/audit-fixes, feat/editorial-planner-v1]
 
 jobs:
   frontend:
@@ -123,6 +123,8 @@ jobs:
           echo "project-deletion-state PostgreSQL integrity assertions passed"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/soft_delete_child_integrity.sql
           echo "soft-deleted-child RLS + render_jobs insert-denial PostgreSQL integrity assertions passed"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/editorial_planner_integrity.sql
+          echo "editorial-planner PostgreSQL integrity assertions passed"
 
   secret-scan:
     runs-on: ubuntu-latest
