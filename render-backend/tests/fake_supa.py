@@ -325,6 +325,13 @@ def install(monkeypatch, fake: FakeSupabase):
                                                  open(s, "rb").read()))
     monkeypatch.setattr(supa, "storage_remove",
                         lambda b, p: fake.storage.pop(f"{b}/{p}", None))
+
+    def _remove_prefix(bucket, prefix):
+        victims = [k for k in list(fake.storage) if k.startswith(f"{bucket}/{prefix}")]
+        for k in victims:
+            del fake.storage[k]
+        return len(victims)
+    monkeypatch.setattr(supa, "storage_remove_prefix", _remove_prefix)
     monkeypatch.setattr(httpx, "post", fake.httpx_post)
     monkeypatch.setattr(httpx, "patch", fake.httpx_patch)
     monkeypatch.setattr(httpx, "get", fake.httpx_get)

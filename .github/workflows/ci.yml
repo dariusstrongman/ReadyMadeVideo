@@ -12,7 +12,8 @@ on:
                codex/audiovisual-milestone-6-editorial-intelligence,
                codex/audio-asset-library-ingestion,
                codex/audio-library-pipeline-integration,
-               codex/product-editor-phase-1]
+               codex/product-editor-phase-1,
+               repair/audit-fixes]
 
 jobs:
   frontend:
@@ -98,6 +99,8 @@ jobs:
           echo "migration 0013 reapplied cleanly (idempotency check)"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260802_0014_product_editor_phase1.sql
           echo "migration 0014 reapplied cleanly (idempotency check)"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260803_0016_bridged_candidate_origin.sql
+          echo "migration 0016 reapplied cleanly (restores bridge trigger after the 0013 reapply)"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/human_ceiling_integrity.sql
           echo "human-ceiling PostgreSQL integrity assertions passed"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/picture_editor_integrity.sql
@@ -110,6 +113,8 @@ jobs:
           echo "visual-finishing PostgreSQL integrity assertions passed"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/editorial_intelligence_integrity.sql
           echo "editorial-intelligence PostgreSQL integrity assertions passed"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/bridged_candidate_integrity.sql
+          echo "bridged-candidate PostgreSQL integrity assertions passed"
 
   secret-scan:
     runs-on: ubuntu-latest

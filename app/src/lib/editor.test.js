@@ -75,6 +75,24 @@ describe('editor operation reducer', () => {
     },
   )
 
+  it('rebase preserves + rebases pending and undo history onto the fresh server doc', () => {
+    // one saved-then-undone op in history + one live pending op
+    const op = makeOperation('update_caption', 'caption', 1, { text: 'Mine' })
+    let state = apply(createEditorState(document, 1), op)
+    // the server advanced to v5 WITHOUT our op (a real conflict)
+    const server = { ...document, tracks: document.tracks.map((t) => ({ ...t })) }
+    const rebased = editorReducer(state, { type: 'rebase', document: server, version: 5 })
+    // pending is preserved, rebased to the latest version, and replayed onto server doc
+    expect(rebased.pending).toHaveLength(1)
+    expect(rebased.pending[0].operationId).toBe(op.operationId)
+    expect(rebased.pending[0].baseVersion).toBe(5)
+    expect(rebased.version).toBe(5)
+    expect(rebased.savedDocument).toEqual(server)
+    expect(rebased.document.tracks[1].items[0].text).toBe('Mine')  // our edit still applied
+    // undo history is preserved (not discarded)
+    expect(rebased.past).toHaveLength(state.past.length)
+  })
+
   it('reconciles a successful retry against the returned immutable revision', () => {
     const operation = makeOperation('update_caption', 'caption', 1, { text: 'Retried' })
     const pending = apply(createEditorState(document, 1), operation)

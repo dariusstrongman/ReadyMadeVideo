@@ -77,4 +77,18 @@ describe('no legacy customer path remains (shipped app source)', () => {
     expect(dashboard).toMatch(/editorApi\(`\/projects\/\$\{p\.id\}`/)
     expect(dashboard).toMatch(/DELETE/)
   })
+
+  it('recovers from a save conflict by rebasing (not reloading/discarding)', () => {
+    // On 409 the editor dispatches a rebase (preserving pending), never a raw load.
+    expect(editor).toMatch(/type: 'rebase'/)
+    expect(editor).toMatch(/e\.status === 409/)
+    // conflict path must not wipe state via loadDoc()
+    expect(editor).not.toMatch(/409[\s\S]{0,200}loadDoc\(/)
+  })
+
+  it('export waits for a confirmed save and aborts on unsaved changes', () => {
+    expect(editor).toMatch(/savingPromiseRef/)
+    expect(editor).toMatch(/stateRef\.current\.pending\.length/)
+    expect(editor).toMatch(/export cancelled/)
+  })
 })

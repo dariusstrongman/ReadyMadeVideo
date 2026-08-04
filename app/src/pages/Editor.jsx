@@ -41,17 +41,18 @@ export default function Editor() {
   stateRef.current = state
 
   const doc = state.document
-  // Each save produces a NEW immutable editor_documents row; track the current id
-  // (starts at the route id) so subsequent saves/exports target the latest version.
-  const [docId, setDocId] = useState(documentId)
+  // Each save produces a NEW immutable editor_documents row. docIdRef is updated
+  // SYNCHRONOUSLY (not via render) so an export right after a save always targets
+  // the confirmed latest revision — never a stale render snapshot.
   const docIdRef = useRef(documentId)
-  docIdRef.current = docId
+  const savingPromiseRef = useRef(null)   // the in-flight save, so export can await it
+  const retryRef = useRef(null)
 
   const loadDoc = useCallback(async (targetId) => {
     setError('')
     try {
       const row = await editorApi(`/projects/${projectId}/editor/${targetId}`, session)
-      setDocId(row.id)
+      docIdRef.current = row.id
       dispatch({ type: 'load', document: row.document, version: row.version })
       setSaveStatus('Saved')
       setProjectName(row.document?.projectName || 'Studio')
@@ -71,43 +72,68 @@ export default function Editor() {
 
   useEffect(() => { loadDoc(documentId) }, [documentId, loadDoc])
 
-  // Autosave: flush pending operations as one OperationBatch, debounced.
+  // Autosave: flush pending operations as one OperationBatch, debounced. On a
+  // version conflict we REBASE pending onto the fresh server document and retry —
+  // pending ops and undo/redo history are never discarded. Returns the confirmed
+  // latest document id, or throws so callers (export) can abort.
   const save = useCallback(async () => {
+    if (savingPromiseRef.current) return savingPromiseRef.current
     const current = stateRef.current
-    if (savingRef.current || !current.document || !current.pending.length) return
+    if (!current.document || !current.pending.length) return docIdRef.current
     savingRef.current = true
-    const batch = current.pending
-    const operationIds = batch.map((op) => op.operationId)
-    setSaveStatus('Saving…')
-    try {
-      const saved = await editorApi(
-        `/projects/${projectId}/editor/${docIdRef.current}/operations`, session,
-        { method: 'POST',
-          body: JSON.stringify({ expectedVersion: current.version, operations: batch }) })
-      setDocId(saved.id)   // advance to the new immutable revision
-      dispatch({ type: 'save_succeeded', document: saved.document,
-        version: saved.version, operationIds })
-      setSaveStatus('Saved')
-    } catch (e) {
-      if (e.status === 409) {
-        // Version conflict — follow the server's latest revision and rehydrate.
-        const latest = e.payload?.detail?.latestDocumentId
-        setError('This edit changed elsewhere — reloaded the latest version.')
-        await loadDoc(latest || docIdRef.current)
-      } else {
-        // Keep pending; the next change (or retry) re-attempts. Nothing is lost.
+    const run = (async () => {
+      const batch = current.pending
+      const operationIds = batch.map((op) => op.operationId)
+      setSaveStatus('Saving…')
+      try {
+        const saved = await editorApi(
+          `/projects/${projectId}/editor/${docIdRef.current}/operations`, session,
+          { method: 'POST',
+            body: JSON.stringify({ expectedVersion: current.version, operations: batch }) })
+        docIdRef.current = saved.id                       // advance synchronously
+        dispatch({ type: 'save_succeeded', document: saved.document,
+          version: saved.version, operationIds })
+        setSaveStatus('Saved')
+        return saved.id
+      } catch (e) {
+        if (e.status === 409) {
+          // Rebase pending onto the server's latest revision (no edits lost).
+          const latestId = e.payload?.detail?.latestDocumentId || docIdRef.current
+          const fresh = await editorApi(
+            `/projects/${projectId}/editor/${latestId}`, session)
+          docIdRef.current = fresh.id
+          dispatch({ type: 'rebase', document: fresh.document, version: fresh.version })
+          setSaveStatus('Reconciling…')
+          throw e   // still unsaved; caller must not treat this as saved
+        }
         setSaveStatus('Save failed — will retry')
+        throw e
       }
+    })()
+    savingPromiseRef.current = run
+    try {
+      return await run
     } finally {
       savingRef.current = false
+      savingPromiseRef.current = null
     }
-  }, [projectId, session, loadDoc])
+  }, [projectId, session])
 
   useEffect(() => {
     if (!state.pending.length) return undefined
-    const t = setTimeout(save, AUTOSAVE_MS)
+    const t = setTimeout(() => {
+      // Failed autosave auto-reschedules so a transient error never strands edits.
+      save().catch(() => {
+        if (retryRef.current) clearTimeout(retryRef.current)
+        retryRef.current = setTimeout(() => {
+          if (stateRef.current.pending.length) save().catch(() => {})
+        }, 3000)
+      })
+    }, AUTOSAVE_MS)
     return () => clearTimeout(t)
   }, [state.pending, save])
+
+  useEffect(() => () => { if (retryRef.current) clearTimeout(retryRef.current) }, [])
 
   // Sync playhead <-> preview video.
   useEffect(() => {
@@ -133,8 +159,21 @@ export default function Editor() {
   }
 
   async function startExport() {
-    if (state.pending.length) { setSaveStatus('Saving…'); await save() }   // save first
-    setExporting(true); setError('')
+    setError('')
+    // Export must use the CONFIRMED saved immutable revision. Wait for any in-flight
+    // save, flush remaining pending, and abort if anything is still unsaved.
+    try {
+      if (savingPromiseRef.current) await savingPromiseRef.current
+      if (stateRef.current.pending.length) await save()
+    } catch {
+      setError('Could not save your latest changes — export cancelled. Please retry.')
+      return
+    }
+    if (stateRef.current.pending.length) {
+      setError('You have unsaved changes — export cancelled. Please retry.')
+      return
+    }
+    setExporting(true)
     try {
       await editorApi(`/projects/${projectId}/editor/render`, session,
         { method: 'POST', body: JSON.stringify({ documentId: docIdRef.current }) })

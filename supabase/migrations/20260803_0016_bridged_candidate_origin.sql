@@ -28,6 +28,8 @@ alter table public.candidate_runs
 -- 3. Re-enforce full lineage for initial/revised and require empty lineage for
 --    bridged (reject mixed/contradictory ancestry) at the schema level.
 alter table public.candidate_runs
+  drop constraint if exists candidate_runs_bridged_ancestry_check;
+alter table public.candidate_runs
   add constraint candidate_runs_bridged_ancestry_check check (
     (generation_kind in ('initial', 'revised')
        and music_sound_run_id is not null and audio_mix_run_id is not null

@@ -27,7 +27,7 @@ from pathlib import PurePosixPath
 from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError
 
@@ -37,7 +37,6 @@ config.validate()          # fail fast with clear errors before anything imports
 
 from . import supa
 from .renderer import RenderError, render
-from .timeline import Timeline, plan_render
 
 app = FastAPI(title="Stromation Render Backend", version="0.1.0")
 
@@ -2074,11 +2073,16 @@ def op_editorial_intelligence(
 # ==================== customer Product Editor API ====================
 
 
-def _owned_project(project_id: str, authorization: str) -> tuple[dict, dict]:
+def _owned_project(project_id: str, authorization: str,
+                   allow_deleted: bool = False) -> tuple[dict, dict]:
     user = _auth_user(authorization)
     project = _get_project(project_id)
     if project["user_id"] != user["id"]:
         raise HTTPException(403, "project ownership check failed")
+    # Soft-deleted projects are rejected from every customer API (only the delete
+    # endpoint opts in via allow_deleted to finish/retry cleanup).
+    if not allow_deleted and project.get("deleted_at"):
+        raise HTTPException(404, "project not found")
     return user, project
 
 
@@ -2146,24 +2150,19 @@ def customer_workspace(project_id: str, authorization: str = Header(default=""))
     }
 
 
-def _cleanup_project_storage(user_id: str, project_id: str) -> None:
-    """Best-effort, idempotent removal of a project's heavy storage artifacts:
-    raw footage, candidate previews, and export renders. Runs AFTER the project is
-    marked deleted, so a failure here never orphans a still-visible project."""
-    def safe(bucket, path):
-        if not path:
-            return
+def _cleanup_project_storage(user_id: str, project_id: str) -> list[str]:
+    """Remove EVERY object under the project's storage prefixes (raw footage +
+    proxies/wav/thumbs + licensed music + exports + autoedit drafts + finishing
+    previews). Failures are NOT swallowed — returns the list of buckets that failed
+    so the caller can record retryable state."""
+    prefix = f"users/{user_id}/projects/{project_id}/"
+    failures = []
+    for bucket in ("raw-footage", "exports"):
         try:
-            supa.storage_remove(bucket, path)
-        except Exception:  # noqa: BLE001 — best-effort cleanup
-            pass
-    for asset in supa.db_select("media_assets", f"project_id=eq.{project_id}"):
-        safe("raw-footage", asset.get("storage_key") or asset.get("storage_path"))
-    for candidate in supa.db_select("candidate_runs", f"project_id=eq.{project_id}"):
-        safe(candidate.get("preview_storage_bucket") or "exports",
-             candidate.get("preview_storage_path"))
-    for job in supa.db_select("pipeline_jobs", f"project_id=eq.{project_id}"):
-        safe("exports", (job.get("artifacts") or {}).get("output"))
+            supa.storage_remove_prefix(bucket, prefix)
+        except Exception as exc:  # noqa: BLE001 — surfaced, not swallowed
+            failures.append(f"{bucket} ({type(exc).__name__})")
+    return failures
 
 
 @app.delete("/projects/{project_id}")
@@ -2172,17 +2171,29 @@ def customer_delete_project(project_id: str, authorization: str = Header(default
 
     Immutable evidence (candidate_runs/editor_documents/timelines/audio ancestry) is
     preserved by design — protect_*_evidence triggers make a hard delete impossible.
-    The project is marked deleted (hidden from the customer) FIRST, then its storage
-    artifacts are cleaned up — so a partial failure never leaves orphaned footage.
-    Idempotent + retry-tolerant."""
-    user, project = _owned_project(project_id, authorization)
-    if project.get("deleted_at"):
-        return {"status": "deleted", "projectId": project_id}   # idempotent no-op
-    _editor_audit(user["id"], project_id, "delete_project", {})
-    supa.db_update("projects", f"id=eq.{project_id}",
-                   {"deleted_at": _now(), "status_reason": "deleted by owner"})
-    _cleanup_project_storage(user["id"], project_id)
-    return {"status": "deleted", "projectId": project_id}
+    The project is marked deleted (hidden from the customer) FIRST, then all project
+    storage prefixes are cleaned. Cleanup failures are recorded (deleted_cleanup_done
+    = false) and surfaced; a repeated DELETE RETRIES the cleanup rather than no-opping.
+    Idempotent + retry-safe."""
+    user, project = _owned_project(project_id, authorization, allow_deleted=True)
+    if project.get("deleted_at") and project.get("deleted_cleanup_done"):
+        return {"status": "deleted", "cleanup": "complete", "projectId": project_id}
+    if not project.get("deleted_at"):
+        _editor_audit(user["id"], project_id, "delete_project", {})
+        supa.db_update("projects", f"id=eq.{project_id}",
+                       {"deleted_at": _now(), "deleted_cleanup_done": False,
+                        "status_reason": "deleted by owner"})
+    failures = _cleanup_project_storage(user["id"], project_id)
+    if failures:
+        supa.db_update("projects", f"id=eq.{project_id}",
+                       {"deleted_cleanup_done": False,
+                        "status_reason": f"deleted; storage cleanup pending: "
+                                         f"{', '.join(failures)}"[:300]})
+        raise HTTPException(503, {"status": "deleted", "cleanup": "pending",
+                                  "message": "project deleted; storage cleanup "
+                                             "incomplete — retry to finish cleanup"})
+    supa.db_update("projects", f"id=eq.{project_id}", {"deleted_cleanup_done": True})
+    return {"status": "deleted", "cleanup": "complete", "projectId": project_id}
 
 
 @app.post("/projects/{project_id}/candidates/{candidate_id}/preview-url")
@@ -2545,57 +2556,11 @@ def op_patch_evaluation(project_id: str, body: EvalPatch,
 
 
 @app.post("/render")
-def start_render(req: RenderRequest, background: BackgroundTasks,
-                 authorization: str = Header(default="")):
-    # 1. authenticate
-    token = authorization.removeprefix("Bearer ").strip()
-    try:
-        user = supa.verify_user(token)
-    except supa.AuthError as e:
-        raise HTTPException(401, str(e))
-    uid = user["id"]
+def start_render(authorization: str = Header(default="")):
+    """DEPRECATED legacy render surface — DISABLED.
 
-    # 2. load job + ownership
-    jobs = supa.db_select("render_jobs", f"id=eq.{req.job_id}")
-    if not jobs:
-        raise HTTPException(404, "render job not found")
-    job = jobs[0]
-    if job["user_id"] != uid:
-        raise HTTPException(403, "you do not own this render job")
-    if job["status"] not in ("queued", "failed"):
-        raise HTTPException(409, f"job is {job['status']}, not renderable")
-
-    # 3. ownership chain: project -> timeline -> asset
-    projects = supa.db_select("projects", f"id=eq.{job['project_id']}")
-    if not projects or projects[0]["user_id"] != uid:
-        raise HTTPException(403, "project ownership check failed")
-    timelines = supa.db_select("timelines", f"id=eq.{job['timeline_id']}")
-    if not timelines or timelines[0]["user_id"] != uid \
-            or timelines[0]["project_id"] != job["project_id"]:
-        raise HTTPException(403, "timeline ownership check failed")
-
-    # 4. validate timeline + resolve asset
-    tl_json = timelines[0]["timeline_json"]
-    if isinstance(tl_json, str):
-        tl_json = json.loads(tl_json)
-    try:
-        tl = Timeline(**tl_json)
-        plan = plan_render(tl)
-    except (ValidationError, ValueError) as e:
-        _fail_job(req.job_id, f"invalid timeline: {e}")
-        raise HTTPException(422, f"invalid timeline: {e}")
-
-    assets = supa.db_select("media_assets", f"id=eq.{plan.asset_id}")
-    if not assets or assets[0]["user_id"] != uid \
-            or assets[0]["project_id"] != job["project_id"]:
-        _fail_job(req.job_id, "timeline references an asset you do not own")
-        raise HTTPException(422, "timeline references an invalid or foreign asset")
-
-    # reset for retry case
-    supa.db_update("render_jobs", f"id=eq.{req.job_id}",
-                   {"status": "queued", "progress": 0, "error_message": None})
-
-    # 5. run
-    background.add_task(_run_render_job, req.job_id, plan.model_dump(),
-                        assets[0]["storage_path"])
-    return {"job_id": req.job_id, "status": "queued"}
+    The customer journey exports through /projects/{id}/editor/render (immutable,
+    version-bound, pipeline_jobs); operators use /projects/{id}/render-final. This
+    legacy render_jobs path is retained only to return an explicit 410 (instead of a
+    silent 404) for any stale client, and is no longer reachable by customers."""
+    raise HTTPException(410, "legacy /render is disabled; use the Product Editor export")

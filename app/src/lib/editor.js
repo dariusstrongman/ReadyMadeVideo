@@ -190,6 +190,28 @@ export function editorReducer(state, action) {
       future: reconcileHistory(state.future, savedIds, action.version),
     }
   }
+  if (action.type === 'rebase') {
+    // Version-conflict recovery: the server advanced WITHOUT our ops. Keep every
+    // pending op (rebased to the latest version) and replay it onto the fresh server
+    // document; undo/redo history is preserved. Nothing is discarded.
+    const version = action.version
+    const pending = rebaseOperations(state.pending, version)
+    let document
+    try {
+      document = replay(action.document, pending)
+    } catch {
+      document = action.document   // diverged too far to replay; pending kept for retry
+    }
+    return {
+      ...state,
+      savedDocument: action.document,
+      version,
+      document,
+      pending,
+      past: reconcileHistory(state.past, new Set(), version),
+      future: reconcileHistory(state.future, new Set(), version),
+    }
+  }
   return state
 }
 
