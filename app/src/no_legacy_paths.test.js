@@ -7,6 +7,7 @@ const dir = path.dirname(fileURLToPath(import.meta.url))
 const read = (rel) => readFileSync(path.join(dir, rel), 'utf8')
 const project = read('pages/Project.jsx')
 const editor = read('pages/Editor.jsx')
+const dashboard = read('pages/Dashboard.jsx')
 
 describe('no legacy customer path remains (shipped app source)', () => {
   it('never queries edit_candidates', () => {
@@ -68,5 +69,12 @@ describe('no legacy customer path remains (shipped app source)', () => {
     // openCandidate uses the doc returned by /editor/start, not the candidate id
     expect(project).toMatch(/editorApi\([^)]*editor\/start/)
     expect(project).toMatch(/editor\/\$\{doc\.id\}/)
+  })
+
+  it('deletes projects via the server endpoint, not client-side', () => {
+    expect(dashboard).not.toMatch(/from\(['"]projects['"]\)\.delete/)
+    expect(dashboard).not.toMatch(/storage\.from\([^)]*\)\.remove/)
+    expect(dashboard).toMatch(/editorApi\(`\/projects\/\$\{p\.id\}`/)
+    expect(dashboard).toMatch(/DELETE/)
   })
 })

@@ -41,15 +41,20 @@ export default function Editor() {
   stateRef.current = state
 
   const doc = state.document
+  // Each save produces a NEW immutable editor_documents row; track the current id
+  // (starts at the route id) so subsequent saves/exports target the latest version.
+  const [docId, setDocId] = useState(documentId)
+  const docIdRef = useRef(documentId)
+  docIdRef.current = docId
 
-  const load = useCallback(async () => {
+  const loadDoc = useCallback(async (targetId) => {
     setError('')
     try {
-      const row = await editorApi(`/projects/${projectId}/editor/${documentId}`, session)
+      const row = await editorApi(`/projects/${projectId}/editor/${targetId}`, session)
+      setDocId(row.id)
       dispatch({ type: 'load', document: row.document, version: row.version })
       setSaveStatus('Saved')
       setProjectName(row.document?.projectName || 'Studio')
-      // Signed preview via the authorized backend endpoint (candidate ancestry).
       if (row.candidate_run_id) {
         editorApi(`/projects/${projectId}/candidates/${row.candidate_run_id}/preview-url`,
           session, { method: 'POST', body: JSON.stringify({}) })
@@ -62,9 +67,9 @@ export default function Editor() {
       setError(e.message || 'Could not load this edit.')
       setSaveStatus('Error')
     }
-  }, [projectId, documentId, session])
+  }, [projectId, session])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { loadDoc(documentId) }, [documentId, loadDoc])
 
   // Autosave: flush pending operations as one OperationBatch, debounced.
   const save = useCallback(async () => {
@@ -76,17 +81,19 @@ export default function Editor() {
     setSaveStatus('Saving…')
     try {
       const saved = await editorApi(
-        `/projects/${projectId}/editor/${documentId}/operations`, session,
+        `/projects/${projectId}/editor/${docIdRef.current}/operations`, session,
         { method: 'POST',
           body: JSON.stringify({ expectedVersion: current.version, operations: batch }) })
+      setDocId(saved.id)   // advance to the new immutable revision
       dispatch({ type: 'save_succeeded', document: saved.document,
         version: saved.version, operationIds })
       setSaveStatus('Saved')
     } catch (e) {
       if (e.status === 409) {
-        // Version conflict — rehydrate to the authoritative latest version.
+        // Version conflict — follow the server's latest revision and rehydrate.
+        const latest = e.payload?.detail?.latestDocumentId
         setError('This edit changed elsewhere — reloaded the latest version.')
-        await load()
+        await loadDoc(latest || docIdRef.current)
       } else {
         // Keep pending; the next change (or retry) re-attempts. Nothing is lost.
         setSaveStatus('Save failed — will retry')
@@ -94,7 +101,7 @@ export default function Editor() {
     } finally {
       savingRef.current = false
     }
-  }, [projectId, documentId, session, load])
+  }, [projectId, session, loadDoc])
 
   useEffect(() => {
     if (!state.pending.length) return undefined
@@ -126,14 +133,12 @@ export default function Editor() {
   }
 
   async function startExport() {
-    if (!state.document || state.pending.length) {
-      if (state.pending.length) { setError('Saving your changes first…'); await save() }
-    }
+    if (state.pending.length) { setSaveStatus('Saving…'); await save() }   // save first
     setExporting(true); setError('')
     try {
       await editorApi(`/projects/${projectId}/editor/render`, session,
-        { method: 'POST', body: JSON.stringify({ documentId }) })
-      navigate(`/project/${projectId}`)   // export progress + download live on the project (Slice 4)
+        { method: 'POST', body: JSON.stringify({ documentId: docIdRef.current }) })
+      navigate(`/project/${projectId}`)   // export progress + download live on the project
     } catch (e) {
       setError(e.message || 'Could not start the export.')
     } finally { setExporting(false) }

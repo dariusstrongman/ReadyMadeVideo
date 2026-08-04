@@ -2146,6 +2146,45 @@ def customer_workspace(project_id: str, authorization: str = Header(default=""))
     }
 
 
+def _cleanup_project_storage(user_id: str, project_id: str) -> None:
+    """Best-effort, idempotent removal of a project's heavy storage artifacts:
+    raw footage, candidate previews, and export renders. Runs AFTER the project is
+    marked deleted, so a failure here never orphans a still-visible project."""
+    def safe(bucket, path):
+        if not path:
+            return
+        try:
+            supa.storage_remove(bucket, path)
+        except Exception:  # noqa: BLE001 — best-effort cleanup
+            pass
+    for asset in supa.db_select("media_assets", f"project_id=eq.{project_id}"):
+        safe("raw-footage", asset.get("storage_key") or asset.get("storage_path"))
+    for candidate in supa.db_select("candidate_runs", f"project_id=eq.{project_id}"):
+        safe(candidate.get("preview_storage_bucket") or "exports",
+             candidate.get("preview_storage_path"))
+    for job in supa.db_select("pipeline_jobs", f"project_id=eq.{project_id}"):
+        safe("exports", (job.get("artifacts") or {}).get("output"))
+
+
+@app.delete("/projects/{project_id}")
+def customer_delete_project(project_id: str, authorization: str = Header(default="")):
+    """Safe, server-authorized project deletion (soft-delete).
+
+    Immutable evidence (candidate_runs/editor_documents/timelines/audio ancestry) is
+    preserved by design — protect_*_evidence triggers make a hard delete impossible.
+    The project is marked deleted (hidden from the customer) FIRST, then its storage
+    artifacts are cleaned up — so a partial failure never leaves orphaned footage.
+    Idempotent + retry-tolerant."""
+    user, project = _owned_project(project_id, authorization)
+    if project.get("deleted_at"):
+        return {"status": "deleted", "projectId": project_id}   # idempotent no-op
+    _editor_audit(user["id"], project_id, "delete_project", {})
+    supa.db_update("projects", f"id=eq.{project_id}",
+                   {"deleted_at": _now(), "status_reason": "deleted by owner"})
+    _cleanup_project_storage(user["id"], project_id)
+    return {"status": "deleted", "projectId": project_id}
+
+
 @app.post("/projects/{project_id}/candidates/{candidate_id}/preview-url")
 def customer_candidate_preview_url(project_id: str, candidate_id: UUID,
                                    authorization: str = Header(default="")):

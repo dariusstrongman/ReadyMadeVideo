@@ -61,6 +61,15 @@ def storage_download(bucket: str, path: str, dest_file: str) -> None:
             f.writelines(r.iter_bytes(1024 * 1024))
 
 
+def storage_remove(bucket: str, path: str) -> None:
+    """Delete one storage object. Idempotent: a missing object (404) is fine —
+    used for best-effort project artifact cleanup."""
+    r = httpx.delete(f"{SUPABASE_URL}/storage/v1/object/{bucket}/{path}",
+                     headers=_service_headers, timeout=30)
+    if r.status_code not in (200, 404):
+        r.raise_for_status()
+
+
 def storage_upload(bucket: str, path: str, src_file: str,
                    content_type: str = "video/mp4") -> None:
     with open(src_file, "rb") as f:

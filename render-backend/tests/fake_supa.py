@@ -323,6 +323,8 @@ def install(monkeypatch, fake: FakeSupabase):
                         lambda b, p, s, content_type="video/mp4":
                         fake.storage.__setitem__(f"{b}/{p}",
                                                  open(s, "rb").read()))
+    monkeypatch.setattr(supa, "storage_remove",
+                        lambda b, p: fake.storage.pop(f"{b}/{p}", None))
     monkeypatch.setattr(httpx, "post", fake.httpx_post)
     monkeypatch.setattr(httpx, "patch", fake.httpx_patch)
     monkeypatch.setattr(httpx, "get", fake.httpx_get)

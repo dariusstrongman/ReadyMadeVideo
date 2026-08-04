@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
+import { editorApi } from '../lib/editor'
 
 const STATUS_LABEL = {
   draft:           'Ready for footage',
@@ -89,6 +90,7 @@ export default function Dashboard() {
     const [{ data: projs, error: pe }, { data: js }] = await Promise.all([
       supabase.from('projects')
         .select('id, name, status, created_at, updated_at')
+        .is('deleted_at', null)          // hide soft-deleted projects
         .order('updated_at', { ascending: false }),
       supabase.from('pipeline_jobs')
         .select('id, project_id, status, kind, created_at, artifacts')
@@ -275,25 +277,15 @@ function ProjectCard({ project: p, onDelete }) {
   async function del(e) {
     e.stopPropagation()
     if (!confirm(`Delete "${p.name}"? This cannot be undone.`)) return
+    // Server-authorized, safe deletion: ownership-checked, marks the project deleted
+    // and cleans storage server-side (preserving immutable edit evidence). Idempotent.
     try {
-      const uid = session.user.id
-      for (const bucket of ['raw-footage', 'exports']) {
-        const prefix = bucket === 'raw-footage'
-          ? `users/${uid}/projects/${p.id}/raw`
-          : `users/${uid}/projects/${p.id}/exports`
-        const { data: entries } = await supabase.storage.from(bucket).list(prefix, { limit: 100 })
-        for (const entry of entries || []) {
-          const base = `${prefix}/${entry.name}`
-          if (entry.id === null) {
-            const { data: files } = await supabase.storage.from(bucket).list(base, { limit: 100 })
-            if (files?.length) await supabase.storage.from(bucket).remove(files.map(f => `${base}/${f.name}`))
-          } else {
-            await supabase.storage.from(bucket).remove([base])
-          }
-        }
-      }
-    } catch { /* best effort */ }
-    await supabase.from('projects').delete().eq('id', p.id)
+      await editorApi(`/projects/${p.id}`, session, { method: 'DELETE' })
+    } catch (err) {
+      // eslint-disable-next-line no-alert
+      alert(err.message || 'Could not delete the project.')
+      return
+    }
     onDelete()
   }
 
