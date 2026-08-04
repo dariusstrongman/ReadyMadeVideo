@@ -72,4 +72,45 @@ select pg_temp.expect_rejected($sql$
     3, 'approved', 85, '{}')
 $sql$, 'editorial plan outside project ownership');
 
+-- ---- pipeline_jobs kind: editorial_plan is a VALID kind; junk kinds still rejected ----
+insert into public.pipeline_jobs(id, project_id, user_id, kind) values
+ ('f8000000-0000-0000-0000-000000000030', 'f8000000-0000-0000-0000-000000000010',
+  'f8000000-0000-0000-0000-000000000001', 'editorial_plan');
+do $$ begin
+  if not exists (select 1 from public.pipeline_jobs
+                 where id = 'f8000000-0000-0000-0000-000000000030'
+                   and kind = 'editorial_plan' and status = 'queued') then
+    raise exception 'editorial_plan pipeline job insert did not persist';
+  end if;
+end $$;
+select pg_temp.expect_rejected($sql$
+  insert into public.pipeline_jobs(project_id, user_id, kind) values
+   ('f8000000-0000-0000-0000-000000000010', 'f8000000-0000-0000-0000-000000000001',
+    'made_up_kind')
+$sql$, 'invalid pipeline job kind must still be rejected');
+
+-- ---- RLS: the owner sees plans of LIVE projects only (soft-delete gate) ----
+insert into public.projects(id, user_id, name, status, deleted_at) values
+ ('f8000000-0000-0000-0000-000000000011', 'f8000000-0000-0000-0000-000000000001',
+  'Deleted Plan Project', 'ready', now());
+-- seed the deleted project's plan (service-role context here bypasses RLS)
+insert into public.editorial_plans
+ (project_id, user_id, version, status, quality_score, plan) values
+ ('f8000000-0000-0000-0000-000000000011', 'f8000000-0000-0000-0000-000000000001',
+  1, 'approved', 84, '{}');
+grant select on public.editorial_plans to authenticated;
+create or replace function auth.uid() returns uuid language sql stable as
+  $f$ select 'f8000000-0000-0000-0000-000000000001'::uuid $f$;
+do $$
+declare visible int;
+begin
+  set local role authenticated;
+  select count(*) into visible from public.editorial_plans;
+  reset role;
+  if visible <> 1 then
+    raise exception 'editorial_plans RLS leak: expected only the live project plan, got %', visible;
+  end if;
+end $$;
+reset role;
+
 rollback;

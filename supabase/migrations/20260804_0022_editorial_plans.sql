@@ -1,4 +1,4 @@
--- Migration 0022: Editorial Planner v1 storage.
+-- Migration 0022: Editorial Planner v1 storage + job kind.
 --
 -- A separate, structured planning stage that sits between analysis (the segment
 -- catalog) and timeline generation. Each row is one versioned, immutable-to-
@@ -39,3 +39,15 @@ create policy operator_read on public.editorial_plans
 drop trigger if exists own_project_check on public.editorial_plans;
 create trigger own_project_check before insert or update on public.editorial_plans
   for each row execute function public.enforce_project_ownership();
+
+-- ---- pipeline_jobs: allow the new OPTIONAL job kind (existing kinds unchanged) ----
+-- Migration 0005 defined pipeline_jobs_kind_check as
+-- (analysis, autoedit, revision, final_render); the planner enqueues
+-- kind='editorial_plan'. Idempotent drop-then-add; 0005 is never reapplied in CI,
+-- and this file runs after it, so reapplications cannot revert the widened check.
+alter table public.pipeline_jobs
+  drop constraint if exists pipeline_jobs_kind_check;
+alter table public.pipeline_jobs
+  add constraint pipeline_jobs_kind_check
+  check (kind in ('analysis', 'autoedit', 'revision', 'final_render',
+                  'editorial_plan'));

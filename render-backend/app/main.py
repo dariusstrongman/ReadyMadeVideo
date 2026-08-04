@@ -437,6 +437,7 @@ class EditorialPlanRequest(BaseModel):
     """Binding creative constraints for the Editorial Planner (all optional)."""
     brief: str | None = Field(default=None, max_length=2000)
     platform: str | None = Field(default=None, max_length=40)
+    aspectRatio: str | None = Field(default=None, max_length=10)
     tone: str | None = Field(default=None, max_length=200)
     style: str | None = Field(default=None, max_length=200)
     durationMin: float | None = Field(default=None, gt=0, le=3600)

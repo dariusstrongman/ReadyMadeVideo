@@ -498,8 +498,8 @@ def handle_editorial_plan(job: dict, project: dict, tmp: str, ctx: JobContext) -
     result = editorial_planner.plan_editorial(
         segments,
         constraints={k: params.get(k) for k in (
-            "brief", "platform", "tone", "style", "durationMin", "durationMax",
-            "mustInclude", "mustExclude")},
+            "brief", "platform", "aspectRatio", "tone", "style",
+            "durationMin", "durationMax", "mustInclude", "mustExclude")},
         music_available=music_available,
         generate=editorial_planner.gemini_generate)
     ctx.checkpoint("before_plan_persist")
@@ -510,9 +510,12 @@ def handle_editorial_plan(job: dict, project: dict, tmp: str, ctx: JobContext) -
     row = _insert("editorial_plans", {
         "project_id": project["id"], "user_id": project["user_id"],
         "version": version, "status": result["status"],
+        # quality_score is the DETERMINISTIC gate score; the model's own
+        # self-assessment is stored inside the plan as advisory metadata only.
         "quality_score": result["qualityScore"], "attempts": result["attempts"],
         "request": params, "plan": result["plan"],
-        "validation": {"violationsHistory": result["violationsHistory"]},
+        "validation": {"violationsHistory": result["violationsHistory"],
+                       "deterministicGate": result["deterministicGate"]},
     })
     row.raise_for_status()
     plan_id = row.json()[0]["id"]
@@ -780,11 +783,12 @@ def _run_job(job: dict) -> None:
                                              ctx.telemetry_status()},
                                "processing_seconds": round(time.time() - t0, 2),
                                "completed_at": _now()})
-        try:
-            set_project_status(job["project_id"], "ready",
-                               f"job {job['id'][:8]} cancelled")
-        except Exception:
-            pass
+        if job["kind"] in FAIL_STATUS:   # optional stages (editorial_plan) must
+            try:                          # preserve the exact prior status
+                set_project_status(job["project_id"], "ready",
+                                   f"job {job['id'][:8]} cancelled")
+            except Exception:
+                pass
         log_event("JOB-CANCELLED", job_id=job["id"], kind=job["kind"],
                   checkpoint=str(e))
     except Exception as e:  # noqa: BLE001 — a job must never kill the worker

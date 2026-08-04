@@ -105,6 +105,12 @@ class FakeSupabase:
         for b in rows:
             b = dict(b)
             if table == "pipeline_jobs":
+                # Mirror migration 0022's pipeline_jobs_kind_check.
+                if b.get("kind") not in ("analysis", "autoedit", "revision",
+                                         "final_render", "editorial_plan"):
+                    return resp(400, {"message": "new row for relation "
+                                                 "\"pipeline_jobs\" violates check "
+                                                 "constraint \"pipeline_jobs_kind_check\""})
                 dup = [r for r in self.tables[table]
                        if r["project_id"] == b["project_id"]
                        and r["kind"] == b["kind"] and r["status"] in ACTIVE]
