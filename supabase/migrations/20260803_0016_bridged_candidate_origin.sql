@@ -60,9 +60,16 @@ begin
     if pp.project_id is null or pp.project_id <> new.project_id or pp.user_id <> new.user_id then
       raise exception 'bridged candidate preproduction ancestry is outside owner/project';
     end if;
-    select project_id, user_id into pe from public.picture_edit_runs where id=new.picture_edit_run_id;
+    select project_id, user_id, preproduction_run_id into pe
+      from public.picture_edit_runs where id=new.picture_edit_run_id;
     if pe.project_id is null or pe.project_id <> new.project_id or pe.user_id <> new.user_id then
       raise exception 'bridged candidate picture ancestry is outside owner/project';
+    end if;
+    -- EXACT ancestry: the picture_edit_run must DIRECTLY descend from the candidate's
+    -- selected preproduction_run (not merely share project/user). Rejects a
+    -- same-project/same-user but mismatched preproduction/picture pair.
+    if pe.preproduction_run_id is distinct from new.preproduction_run_id then
+      raise exception 'bridged candidate picture_edit_run does not descend from its preproduction_run';
     end if;
     if coalesce(new.manifest->>'fabricatedFootage','true') <> 'false' then
       raise exception 'bridged candidate may not fabricate footage';

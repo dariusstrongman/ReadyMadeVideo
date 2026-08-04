@@ -406,6 +406,111 @@ def test_orphan_preview_cleanup_is_persisted_then_drained(monkeypatch, tmp_path)
     assert f"{orphan['bucket']}/{orphan['object_path']}" not in fake.storage
 
 
+def _preproduction(fake, project, uid, version):
+    return fake.insert("preproduction_runs", {
+        "project_id": project["id"], "user_id": uid, "version": version, "status": "ready",
+        "request": {}, "creative_treatment": {}, "capture_quality_report": {},
+        "composition_by_segment": {}, "story_variants": []}).json()[0]
+
+
+def test_bridged_candidate_with_mismatched_ancestry_is_rejected(monkeypatch, tmp_path):
+    """DB-level exact ancestry (mirrored in the fake): a bridged candidate pairing
+    preproduction B with a picture run tied to preproduction A is rejected even though all
+    rows share project + user."""
+    fake, uid, token, project, asset_id, cand = _setup(monkeypatch, tmp_path)
+    pre_a = _preproduction(fake, project, uid, 10)
+    pre_b = _preproduction(fake, project, uid, 11)
+    pic_a = fake.insert("picture_edit_runs", {
+        "project_id": project["id"], "user_id": uid, "preproduction_run_id": pre_a["id"],
+        "version": 10, "status": "ready", "request": {}, "visual_rhythm_plans": [],
+        "candidates": [], "selected_candidate_id": "x"}).json()[0]
+    resp = jobs._insert("candidate_runs", {
+        "batch_id": str(uuid4()), "project_id": project["id"], "user_id": uid,
+        "preproduction_run_id": pre_b["id"], "picture_edit_run_id": pic_a["id"],
+        "candidate_key": "bridged", "candidate_index": 9, "generation_kind": "bridged",
+        "source_picture_candidate_id": "x", "variant_config": {},
+        "manifest": {"fabricatedFootage": False}, "render_qc": {},
+        "preview_storage_bucket": "exports",
+        "preview_storage_path": f"users/{uid}/projects/{project['id']}/autoedit/z.mp4",
+        "created_by": uid})
+    assert resp.status_code == 400
+    assert "descend" in resp.json()["message"]
+
+
+def test_orphan_cleanup_reopens_resolved_record_on_repeat_failure(monkeypatch, tmp_path):
+    fake, uid, token, project, asset_id, _ = _setup(monkeypatch, tmp_path, bridge=False)
+    bucket = "exports"
+    path = f"users/{uid}/projects/{project['id']}/autoedit/orphan.mp4"
+
+    def dead(_b, _p):
+        raise RuntimeError("storage down")
+
+    def persist():
+        autoedit_bridge._cleanup_or_persist(
+            remove=dead, insert=jobs._insert, update=supa.db_update, now=jobs._now,
+            project=project, bucket=bucket, path=path, reason="cleanup failed")
+
+    def drain():
+        return autoedit_bridge._drain_pending_cleanup(
+            db_select=supa.db_select, remove=supa.storage_remove, update=supa.db_update,
+            now=jobs._now, project_id=project["id"])
+
+    # 1) first failure creates a pending record
+    fake.storage[f"{bucket}/{path}"] = b"orphan"
+    persist()
+    rows = fake.select("pending_storage_cleanup", f"project_id=eq.{project['id']}")
+    assert len(rows) == 1 and rows[0]["cleaned_at"] is None
+    rid = rows[0]["id"]
+
+    # 2) successful drain marks cleaned_at
+    assert drain() == 1
+    assert fake.select("pending_storage_cleanup", f"id=eq.{rid}")[0]["cleaned_at"]
+
+    # 3) same path fails again later -> the SAME row is reopened (no duplicate, eligible)
+    fake.storage[f"{bucket}/{path}"] = b"orphan-again"
+    persist()
+    rows = fake.select("pending_storage_cleanup", f"project_id=eq.{project['id']}")
+    assert len(rows) == 1                                  # reopened, not duplicated
+    assert rows[0]["id"] == rid and rows[0]["cleaned_at"] is None
+
+    # 4) later drain processes the reopened row -> back to resolved
+    assert drain() == 1
+    assert fake.select("pending_storage_cleanup", f"id=eq.{rid}")[0]["cleaned_at"]
+    assert f"{bucket}/{path}" not in fake.storage
+
+
+def test_concurrent_orphan_reopen_is_safe(monkeypatch, tmp_path):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    fake, uid, token, project, asset_id, _ = _setup(monkeypatch, tmp_path, bridge=False)
+    bucket = "exports"
+    path = f"users/{uid}/projects/{project['id']}/autoedit/c.mp4"
+    # a previously-resolved row for this object
+    fake.insert("pending_storage_cleanup", {
+        "project_id": project["id"], "user_id": uid, "bucket": bucket, "object_path": path,
+        "attempts": 1, "cleaned_at": jobs._now()})
+
+    lock, orig_insert = threading.Lock(), fake.insert
+    def locked_insert(table, body):
+        with lock:
+            return orig_insert(table, body)
+    monkeypatch.setattr(fake, "insert", locked_insert)
+
+    def dead(_b, _p):
+        raise RuntimeError("storage down")
+
+    def reopen(_i):
+        autoedit_bridge._cleanup_or_persist(
+            remove=dead, insert=jobs._insert, update=supa.db_update, now=jobs._now,
+            project=project, bucket=bucket, path=path, reason="concurrent reopen")
+
+    list(ThreadPoolExecutor(max_workers=4).map(reopen, range(4)))
+    rows = fake.select("pending_storage_cleanup", f"project_id=eq.{project['id']}")
+    assert len(rows) == 1                 # UNIQUE(bucket, object_path): no duplicate rows
+    assert rows[0]["cleaned_at"] is None  # reopened -> eligible for the drain worker again
+
+
 def test_idempotency_race_returns_winner_without_touching_shared_preview(monkeypatch, tmp_path):
     """On the idempotency-race (409) path the winner is returned. Because the preview key
     is deterministic per project, our upload IS the winner's referenced object, so it must

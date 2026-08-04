@@ -103,25 +103,49 @@ def _drain_pending_cleanup(*, db_select, remove, update, now, project_id: str) -
     return cleaned
 
 
-def _cleanup_or_persist(*, remove, insert, now, project: dict, bucket: str, path: str,
-                        reason: str) -> bool:
+def _persist_or_reopen_cleanup(*, insert, update, now, project: dict, bucket: str,
+                               path: str, reason: str) -> None:
+    """Record a pending_storage_cleanup row, or REOPEN an existing one.
+
+    pending_storage_cleanup has UNIQUE(bucket, object_path). If a previously-RESOLVED row
+    exists for the same object (cleaned_at set), a plain insert would 409 and the object
+    would be orphaned forever (the drain skips resolved rows). So on a unique conflict the
+    row is reopened: cleaned_at cleared and retry metadata refreshed, making it eligible
+    for the drain worker again. Concurrent reopeners converge on the same row (the UNIQUE
+    index prevents duplicates; the reopen UPDATE is idempotent)."""
+    if not insert:
+        return
+    resp = insert("pending_storage_cleanup", {
+        "project_id": project["id"], "user_id": project["user_id"],
+        "bucket": bucket, "object_path": path, "reason": reason,
+        "attempts": 1, "last_attempt_at": now(), "cleaned_at": None})
+    status = getattr(resp, "status_code", 500)
+    if status == 201:
+        return
+    if status == 409 and update:      # row already exists — reopen it for the drain worker
+        update("pending_storage_cleanup",
+               f"bucket=eq.{bucket}&object_path=eq.{path}",
+               {"cleaned_at": None, "reason": reason, "last_attempt_at": now(),
+                "last_error": "reopened: cleanup failed again"})
+
+
+def _cleanup_or_persist(*, remove, insert, update, now, project: dict, bucket: str,
+                        path: str, reason: str) -> bool:
     """Remove an orphaned preview object. If removal fails the failure is NOT swallowed —
-    a retryable pending_storage_cleanup row is persisted so a later run drains it. Returns
-    True when removed immediately. The persisted row is the visible, recoverable record."""
+    a retryable pending_storage_cleanup row is persisted (or reopened) so a later run
+    drains it. Returns True when removed immediately."""
     if not (remove and path):
         return False
     try:
         remove(bucket, path)
         return True
-    except Exception:  # noqa: BLE001 — surfaced via the persisted retry row
-        if insert:
-            try:
-                insert("pending_storage_cleanup", {
-                    "project_id": project["id"], "user_id": project["user_id"],
-                    "bucket": bucket, "object_path": path, "reason": reason,
-                    "attempts": 1, "last_attempt_at": now()})
-            except Exception:  # noqa: BLE001 — last resort; never fails a successful edit
-                pass
+    except Exception:  # noqa: BLE001 — surfaced via the persisted/reopened retry row
+        try:
+            _persist_or_reopen_cleanup(insert=insert, update=update, now=now,
+                                       project=project, bucket=bucket, path=path,
+                                       reason=reason)
+        except Exception:  # noqa: BLE001 — last resort; never fails a successful edit
+            pass
         return False
 
 
@@ -241,7 +265,7 @@ def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: 
     # (the per-project idempotency check above guarantees no prior bridged candidate exists),
     # so it is a true orphan. Remove it; a cleanup failure is persisted for retry (not
     # swallowed), then the original candidate-insert error is raised.
-    _cleanup_or_persist(remove=remove, insert=insert, now=now, project=project,
+    _cleanup_or_persist(remove=remove, insert=insert, update=update, now=now, project=project,
                         bucket="exports", path=preview_path,
                         reason="bridged candidate insert failed: orphaned preview")
     resp.raise_for_status()

@@ -103,6 +103,8 @@ jobs:
           echo "migration 0016 reapplied cleanly (restores bridge trigger after the 0013 reapply)"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260803_0019_soft_delete_child_rls.sql
           echo "migration 0019 reapplied cleanly (restores child-table not-deleted RLS after the 0013/0014 reapplies)"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260803_0021_soft_delete_child_rls_complete.sql
+          echo "migration 0021 reapplied cleanly (restores remaining child-table not-deleted RLS after the 0012 reapply)"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/human_ceiling_integrity.sql
           echo "human-ceiling PostgreSQL integrity assertions passed"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/picture_editor_integrity.sql

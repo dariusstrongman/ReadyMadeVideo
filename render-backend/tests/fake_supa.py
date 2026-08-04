@@ -189,6 +189,14 @@ class FakeSupabase:
                 if kind == "bridged" and present:
                     return resp(400, {"message": "bridged candidate must not carry "
                                                  "music/audio/graphics/caption/color lineage"})
+                # Mirror enforce_editorial_candidate_refs exact bridged ancestry: the
+                # picture_edit_run must descend from the candidate's preproduction_run.
+                if kind == "bridged" and b.get("picture_edit_run_id") is not None:
+                    pe = [r for r in self.tables["picture_edit_runs"]
+                          if r.get("id") == b.get("picture_edit_run_id")]
+                    if pe and pe[0].get("preproduction_run_id") != b.get("preproduction_run_id"):
+                        return resp(400, {"message": "bridged candidate picture_edit_run "
+                                                     "does not descend from its preproduction_run"})
                 if kind in ("initial", "revised") and len(present) != len(lineage):
                     return resp(400, {"message": "initial/revised candidate requires "
                                                  "full music/audio/graphics/caption/color lineage"})

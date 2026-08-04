@@ -44,6 +44,28 @@ insert into public.candidate_runs
   'f5000000-0000-0000-0000-000000000001');
 do $$ begin raise notice 'bridged candidate accepted after all migration reapplications'; end $$;
 
+-- EXACT ANCESTRY: a SECOND valid preproduction run in the same project/user. A bridged
+-- candidate that pairs preproduction B with the picture run tied to preproduction A must be
+-- rejected even though every row shares project + user (the picture does not descend from B).
+insert into public.preproduction_runs
+ (id, project_id, user_id, version, status, request, creative_treatment,
+  capture_quality_report, composition_by_segment, story_variants) values
+ ('f5000000-0000-0000-0000-000000000021', 'f5000000-0000-0000-0000-000000000010',
+  'f5000000-0000-0000-0000-000000000001', 2, 'ready', '{"origin":"basic_autoedit"}',
+  '{}', '{}', '{}', '{}');
+select pg_temp.expect_rejected($sql$
+  insert into public.candidate_runs
+   (batch_id, project_id, user_id, preproduction_run_id, picture_edit_run_id,
+    candidate_key, candidate_index, generation_kind, source_picture_candidate_id,
+    variant_config, manifest, render_qc, preview_storage_bucket, preview_storage_path, created_by)
+  values ('f5000000-0000-0000-0000-000000000081', 'f5000000-0000-0000-0000-000000000010',
+    'f5000000-0000-0000-0000-000000000001', 'f5000000-0000-0000-0000-000000000021',
+    'f5000000-0000-0000-0000-000000000030', 'bridged4', 4, 'bridged', 'bridged-pc', '{}',
+    '{"fabricatedFootage":false}', '{}', 'exports',
+    'users/f5000000-0000-0000-0000-000000000001/projects/f5000000-0000-0000-0000-000000000010/autoedit/m.mp4',
+    'f5000000-0000-0000-0000-000000000001')
+$sql$, 'bridged candidate picture must descend from its selected preproduction (B mismatch)');
+
 -- initial candidate without full ancestry is rejected (CHECK).
 select pg_temp.expect_rejected($sql$
   insert into public.candidate_runs
