@@ -44,10 +44,10 @@ def _option():
                               "footageSupport", "emotionalInterest",
                               "visualVariety", "platformFit", "durationFit",
                               "originality")}
-    return {"premise": _editorial("the crew at work"),
+    return {"premise": _editorial("the work process"),
             "viewerPromise": "see the finished work", "hook": "reveal first",
             "structure": "results_first",
-            "payoff": _editorial("the finished work"),
+            "payoff": _editorial("the final reveal"),
             "idealDurationSeconds": 12, "strengths": ["s"], "weaknesses": ["w"],
             "footageCoverage": "full", "retentionRisks": ["r"],
             "scores": scores}
@@ -80,10 +80,19 @@ def _valid_plan(music_available=False):
                    "expectedViewerEffect": "curiosity"})
     return {
         "schemaVersion": 1,
-        "storySentence": _editorial("This is a story about the crew at work, "
-                                    "leading to the finished job."),
+        # the story sentence describes REAL footage, so it is a fact with
+        # structured evidence (catalog words never pass as evidence-free labels)
+        "storySentence": {"text": "This is a story about the crew at work, "
+                                  "leading to the finished job.",
+                          "claimType": "fact",
+                          "evidence": [{"sourceType": "segment_metadata",
+                                        "segmentId": "seg-1",
+                                        "quoteOrValue": "crew works on step 1"},
+                                       {"sourceType": "transcript",
+                                        "segmentId": "seg-3",
+                                        "quoteOrValue": "we finished the job"}]},
         "footageSummary": "three usable segments", "intendedAudience": "local",
-        "viewerPromise": _editorial("see the finished work"),
+        "viewerPromise": _editorial("watch until the end"),
         "options": [_option(), _option(), _option()], "chosenOption": 0,
         "hook": {"segmentId": "seg-1", "sourceIn": 0.0, "sourceOut": 2.0,
                  "firstFrame": "reveal", "audioCue": "natural sound",
@@ -271,12 +280,28 @@ def test_editorial_labels_safe_and_unsafe():
     _reject(unsafe, needle="implies unsupported factual content")
 
 
-def test_supported_catalog_claims_pass():
+def test_supported_catalog_claims_pass_as_facts():
     plan = _valid_plan()   # "Dallas" is real catalog metadata (seg-1 location)
-    plan["storySentence"] = _editorial("This is a story about the crew at "
-                                       "work in Dallas, leading to the "
-                                       "finished job.")
+    plan["storySentence"] = {
+        "text": "This is a story about the crew at work in Dallas, leading "
+                "to the finished job.",
+        "claimType": "fact",
+        "evidence": [{"sourceType": "segment_metadata", "segmentId": "seg-1",
+                      "quoteOrValue": "dallas backyard"},
+                     {"sourceType": "transcript", "segmentId": "seg-3",
+                      "quoteOrValue": "we finished the job"}]}
     assert _accept(plan)["status"] == "approved"
+
+
+def test_catalog_words_cannot_pass_as_evidence_free_labels():
+    """Codex repro: 'we finished the job' is REAL transcript text, but an
+    evidence-free editorial label may not state it — footage facts must be
+    claimType=fact with evidence."""
+    plan = _valid_plan()
+    plan["captions"] = [{"claimType": "editorial_label",
+                         "text": "we finished the job", "evidence": [],
+                         "timelineStart": 8.0, "timelineEnd": 11.0}]
+    _reject(plan, needle="must be a factual claim with evidence")
 
 
 # ----------------------- gap 1: closed neutral-label boundary (no finite lexicon)
@@ -296,7 +321,8 @@ def test_unlisted_reactions_fail_closed_without_evidence(text):
 
 @pytest.mark.parametrize("text", [
     "The Final Push", "Step 2", "Part 1", "Watch Until the End",
-    "See the Result", "Behind the Scenes",
+    "See the Result", "Behind the Scenes", "Key Takeaway", "Quick Tip",
+    "Bonus",
 ])
 def test_neutral_structural_labels_accepted(text):
     plan = _valid_plan()
@@ -386,6 +412,24 @@ def test_advisory_unknown_tone_needs_warning_and_reduces_score():
 
 def test_no_tone_supplied_is_not_a_failure():
     assert _accept(_valid_plan())["qualityScore"] == 100
+
+
+def test_high_energy_tone_rejects_listless_plan():
+    """Codex repro: tone='aggressive' with every pacing beat at 0.1 must not
+    silently pass — high-energy requests are enforced symmetrically."""
+    plan = _valid_plan()
+    for pb in plan["pacing"]:
+        pb["energy"] = 0.1
+    flat = _reject(plan, constraints={"tone": "aggressive"})
+    assert "high-energy tone requires" in flat
+    assert "deterministic gate: creative_policy_honored failed" in flat
+
+
+def test_high_energy_tone_accepts_energetic_plan():
+    # default pacing peaks at 0.9 and averages ~0.77 — delivers the request
+    out = ep.plan_editorial(_segments(), {"tone": "aggressive"}, False,
+                            _gen(_valid_plan()))
+    assert out["status"] == "approved" and out["qualityScore"] == 100
 
 
 # ------------------------------ gap 3: closed transition-type enum

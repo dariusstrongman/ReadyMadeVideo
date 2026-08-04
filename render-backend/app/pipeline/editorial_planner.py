@@ -78,6 +78,9 @@ _NEUTRAL_LABEL_WORDS = {
     "reveal", "result", "story", "next", "coming", "soon", "stay", "tuned",
     "follow", "subscribe", "like", "share", "comment", "behind", "scenes",
     "before", "after", "during", "work", "title", "opening", "closing",
+    "key", "takeaway", "takeaways", "tip", "tips", "quick", "bonus",
+    "recap", "summary", "overview", "note", "notes", "highlight",
+    "highlights", "first", "second", "third", "last",
 }
 # digit tokens are allowed in a neutral label ONLY next to a counter word
 _COUNTER_WORDS = {"step", "part", "chapter", "episode", "day", "take",
@@ -483,15 +486,18 @@ def _user_text(constraints: dict) -> str:
                     ).lower()
 
 
-def _non_neutral_tokens(text: str, pool: str) -> list[str]:
+def _non_neutral_tokens(text: str, extra_allowed: str = "") -> list[str]:
     """Tokens that make a label FACTUAL rather than neutral-structural.
 
-    Fail-closed boundary: a neutral editorial label / CTA may only use the
-    closed structural allowlist (plus stopwords, plus words the input data
-    itself contains). EVERYTHING else — people, groups, locations, actions,
-    reactions, emotions, results, quantities, comparisons, outcomes,
-    attributions, known or unknown, capitalized or lowercase — is factual and
-    requires evidence. No synonym list is the safety boundary."""
+    STRICTLY closed boundary: a neutral editorial label / CTA may only use the
+    closed structural allowlist plus stopwords (and, for system-surfaced
+    technical warnings only, a bounded operational vocabulary via
+    ``extra_allowed``). Catalog/transcript words are deliberately NOT allowed
+    here — real footage facts ("we finished the job") must be claimType=fact
+    WITH evidence, never an evidence-free label. Everything outside the
+    allowlist — people, groups, locations, actions, reactions, emotions,
+    results, quantities, comparisons, outcomes, attributions, known or
+    unknown, capitalized or lowercase — is factual and requires evidence."""
     tokens = [m.group(0) for m in _WORD.finditer(text)]
     lowered = [t.lower() for t in tokens]
     has_counter = any(t in _COUNTER_WORDS for t in lowered)
@@ -499,8 +505,8 @@ def _non_neutral_tokens(text: str, pool: str) -> list[str]:
     for token, low in zip(tokens, lowered, strict=True):
         if low in _STOPWORDS or low in _NEUTRAL_LABEL_WORDS:
             continue
-        if low in pool:
-            continue                     # the input data itself says this
+        if extra_allowed and low in extra_allowed:
+            continue                     # warnings: operational vocabulary
         if any(c.isdigit() for c in token):
             if has_counter and token.isdigit():
                 continue                 # "Step 2" / "Part 1"
@@ -523,7 +529,8 @@ def _grounded_text_violations(item: GroundedText | Caption | GraphicItem,
     out: list[str] = []
     text, claim, evidence = item.text, item.claimType, item.evidence
     user_text = _user_text(constraints)
-    pool = pool + " " + extra_vocab if extra_vocab else pool
+    if extra_vocab:
+        pool = pool + " " + extra_vocab
 
     if claim == "fact":
         if not evidence:
@@ -556,15 +563,20 @@ def _grounded_text_violations(item: GroundedText | Caption | GraphicItem,
         if not supported_quotes:
             out.append(f"{where} has no VALID evidence for its factual claim")
             return out
-        # every content word of a factual claim must trace to its evidence or
-        # the input pool — lowercase inventions are rejected exactly like
-        # capitalized ones ("paris", "loved", "transformation", ...)
-        allowed = pool + " " + " ".join(supported_quotes)
+        # every content word of a factual claim must trace to its evidence,
+        # the input pool, or neutral structural connectives — lowercase
+        # inventions are rejected exactly like capitalized ones
+        allowed = (pool + " " + " ".join(supported_quotes) + " "
+                   + " ".join(_NEUTRAL_LABEL_WORDS))
         unsupported = [t for t in _content_tokens(text) if t not in allowed]
         if unsupported:
             out.append(f"{where} unsupported factual content: {unsupported}")
-    else:  # editorial_label / cta: STRUCTURAL words only — fail closed
-        bad = _non_neutral_tokens(text, pool)
+    else:  # editorial_label / cta: STRICTLY structural words — fail closed.
+        # Catalog/transcript words do NOT pass here: real footage facts must
+        # be claimType=fact with evidence, never an evidence-free label.
+        # (extra_vocab + the user's own words apply only to system warnings.)
+        extra = (extra_vocab + " " + user_text) if extra_vocab else ""
+        bad = _non_neutral_tokens(text, extra)
         if bad:
             out.append(f"{where} ({claim}) implies unsupported factual "
                        f"content — {bad} is outside the neutral structural "
@@ -778,6 +790,18 @@ def validate_plan(plan: EditorialPlan, segments: list[Segment],
             v.append("policy: the requested low-energy tone requires "
                      f"restrained pacing but beats {hot_beats} exceed 0.6 "
                      "energy")
+    if policies["toneProfile"]["energy"] == "high":
+        # symmetric enforcement: a high-energy request must actually be
+        # DELIVERED, not silently flattened into a listless edit
+        energies = [pb.energy for pb in plan.pacing]
+        if energies and max(energies) < 0.7:
+            v.append("policy: the requested high-energy tone requires at "
+                     "least one pacing beat at 0.7+ energy, but the plan "
+                     f"peaks at {max(energies)}")
+        if energies and sum(energies) / len(energies) < 0.5:
+            v.append("policy: the requested high-energy tone requires an "
+                     "average pacing energy of at least 0.5, but the plan "
+                     f"averages {round(sum(energies) / len(energies), 2)}")
     allowed_types = policies["allowedTransitionTypes"]
     if allowed_types:
         for t in plan.transitions:
@@ -1094,15 +1118,19 @@ Think before you cut:
    structured evidence:
    {sourceType: transcript|segment_metadata|user_input, segmentId, quoteOrValue}
    where the quote is literally present in that source and every content word
-   of the text traces to it. editorial_label / cta text is limited to NEUTRAL
-   STRUCTURAL wording only (e.g. "The Setup", "Step 2", "The Final Push",
-   "Watch Until the End") — any other word makes it a factual claim.
+   of the text traces to it. editorial_label / cta text is limited to a
+   STRICTLY CLOSED structural vocabulary (e.g. "The Setup", "Step 2",
+   "The Final Push", "Watch Until the End", "Key Takeaway", "Quick Tip",
+   "Bonus") — ANY other word, including words from the footage itself,
+   makes it a factual claim requiring evidence.
    storySentence, viewerPromise, premise, payoff, hook.text, captions,
    graphics and technicalWarnings all use this grounded structure.
 5b. The STRUCTURED CREATIVE POLICIES include a binding tone profile parsed
    from the user's tone/style. A low-energy tone forbids aggressive
    transitions (whip/push/slide/zoom), speed ramps above 2x, more than one
-   graphic, and pacing beats above 0.6 energy. Tone words that could not be
+   graphic, and pacing beats above 0.6 energy. A high-energy tone must be
+   DELIVERED: at least one pacing beat at 0.7+ and average energy 0.5+.
+   Tone words that could not be
    parsed appear in unresolvedToneDirectives — you must NOT ignore them.
 6. EXECUTION-VALID geometry only:
    - speed ramps: sourceStart < sourceEnd, inside the planned cut, speeds in
