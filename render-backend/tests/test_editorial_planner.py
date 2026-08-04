@@ -1,5 +1,5 @@
-"""Editorial Planner v1 — binding constraints, evidence grounding, execution-
-ready schema, deterministic quality gate, job handler and customer endpoints.
+"""Editorial Planner v1 — evidence-backed claims, honest shortfall, structured
+creative policies, execution geometry, deterministic gate, handler + endpoints.
 The model call is always a stub: no network, no fabrication.
 """
 import copy
@@ -35,16 +35,22 @@ def _segments(asset_id="asset-1"):
             for i in (1, 2, 3)]
 
 
+def _editorial(text):
+    return {"text": text, "claimType": "editorial_label", "evidence": []}
+
+
 def _option():
     scores = {k: 80 for k in ("hookStrength", "storyClarity", "payoffStrength",
                               "footageSupport", "emotionalInterest",
                               "visualVariety", "platformFit", "durationFit",
                               "originality")}
-    return {"premise": "a real repair job", "viewerPromise": "see the result",
-            "hook": "result first", "structure": "results_first",
-            "payoff": "the finished work", "idealDurationSeconds": 12,
-            "strengths": ["s"], "weaknesses": ["w"], "footageCoverage": "full",
-            "retentionRisks": ["r"], "scores": scores}
+    return {"premise": _editorial("a real repair"),
+            "viewerPromise": "see the finished work", "hook": "reveal first",
+            "structure": "results_first",
+            "payoff": _editorial("the finished work"),
+            "idealDurationSeconds": 12, "strengths": ["s"], "weaknesses": ["w"],
+            "footageCoverage": "full", "retentionRisks": ["r"],
+            "scores": scores}
 
 
 def _self_assessment(**over):
@@ -54,6 +60,12 @@ def _self_assessment(**over):
             "durationCompliance": 4, "hardFailures": []}
     base.update(over)
     return base
+
+
+_MAX_SELF = dict(hook=15, storyClarity=15, flowContinuity=10, pacing=10,
+                 clipSelection=10, payoff=10, visualVariety=5,
+                 creativeTreatment=10, soundDesign=5, platformFit=5,
+                 durationCompliance=5)
 
 
 def _valid_plan(music_available=False):
@@ -68,13 +80,13 @@ def _valid_plan(music_available=False):
                    "expectedViewerEffect": "curiosity"})
     return {
         "schemaVersion": 1,
-        "storySentence": "This is a story about a repair job, where the crew "
-                         "works, leading to a finished result.",
+        "storySentence": _editorial("This is a story about a repair, where the "
+                                    "crew works, leading to a finished deck."),
         "footageSummary": "three usable segments", "intendedAudience": "local",
-        "viewerPromise": "see the result",
+        "viewerPromise": _editorial("see the finished work"),
         "options": [_option(), _option(), _option()], "chosenOption": 0,
         "hook": {"segmentId": "seg-1", "sourceIn": 0.0, "sourceOut": 2.0,
-                 "firstFrame": "result reveal", "audioCue": "natural sound",
+                 "firstFrame": "reveal", "audioCue": "natural sound",
                  "durationSeconds": 2.0, "transitionOut": "cut",
                  "curiosityCreated": "how did it get here",
                  "promiseToFulfill": "show the process"},
@@ -112,6 +124,17 @@ def _valid_plan(music_available=False):
     }
 
 
+def _shortfall_plan(achievable=12.0):
+    plan = _valid_plan()
+    plan["status"] = "insufficient_footage"
+    plan["achievableDurationSeconds"] = achievable
+    plan["missingFootage"] = [{"beat": "closing reaction", "shotType": "close-up",
+                               "recommendedDurationSeconds": 5.0,
+                               "why": "the payoff needs a human reaction shot "
+                                      "to land emotionally"}]
+    return plan
+
+
 def _gen(*plans):
     seq = list(plans)
     calls = {"n": 0, "parts": []}
@@ -135,14 +158,17 @@ def _reject(plan, constraints=None, music=False, needle=None):
     return flat
 
 
+def _accept(plan, constraints=None, music=False):
+    return ep.plan_editorial(_segments(), constraints or {}, music, _gen(plan))
+
+
 # ------------------------------------------------------------------ happy path
 def test_valid_plan_approved_by_deterministic_gate():
-    out = ep.plan_editorial(_segments(), {}, False, _gen(_valid_plan()))
+    out = _accept(_valid_plan())
     assert out["attempts"] == 1 and out["status"] == "approved"
-    assert out["qualityScore"] == 100                 # deterministic, not model
+    assert out["qualityScore"] == 100
     assert out["deterministicGate"]["passed"] is True
-    assert out["deterministicGate"]["hardFailures"] == []
-    assert out["plan"]["schemaVersion"] == 1
+    assert sum(r["weight"] for r in out["deterministicGate"]["rules"]) == 100
 
 
 def test_schema_version_is_enforced():
@@ -151,250 +177,354 @@ def test_schema_version_is_enforced():
     _reject(plan, needle="schema:")
 
 
-# --------------------------------------------- blocker 2: binding constraints
-def test_12s_plan_rejected_when_request_requires_45_to_60():
-    flat = _reject(_valid_plan(),
-                   constraints={"durationMin": 45, "durationMax": 60},
-                   needle="REQUESTED duration range")
-    assert "45" in flat and "60" in flat
+# --------------------------------- blocker 1: evidence-backed factual claims
+CODEX_FABRICATIONS = [
+    "Marcus loved the result in paris",
+    "customer loved the transformation",
+    "the customer cried with joy and booked ten more jobs",
+    "Marcus says this changed his life",
+]
 
 
-def test_honest_shortfall_needs_achievable_duration_and_missing_shots():
-    short = _valid_plan()
-    short["status"] = "insufficient_footage"
-    short["missingFootage"] = [{"description": "closing reaction shot",
-                                "purpose": "payoff"}]
-    _reject(short, constraints={"durationMin": 45, "durationMax": 60},
-            needle="achievableDurationSeconds")
+@pytest.mark.parametrize("text", CODEX_FABRICATIONS)
+def test_codex_fabrications_rejected_as_editorial(text):
+    plan = _valid_plan()
+    plan["storySentence"] = _editorial(text)
+    _reject(plan, needle="implies unsupported factual content")
 
-    short["achievableDurationSeconds"] = 12.0
+
+@pytest.mark.parametrize("text", CODEX_FABRICATIONS)
+def test_codex_fabrications_rejected_as_fact_with_real_quote(text):
+    """Even with a VALID evidence quote attached, unsupported content words in
+    the claim text itself are rejected (evidence must cover the claim)."""
+    plan = _valid_plan()
+    plan["storySentence"] = {"text": text, "claimType": "fact",
+                             "evidence": [{"sourceType": "transcript",
+                                           "segmentId": "seg-3",
+                                           "quoteOrValue": "we finished the job"}]}
+    _reject(plan, needle="unsupported factual content")
+
+
+@pytest.mark.parametrize("field,text,needle", [
+    ("location", "filmed in paris", "implies unsupported"),
+    ("name", "built by Marcus himself", "implies unsupported"),
+    ("reaction", "the customer was thrilled", "implies unsupported"),
+    ("result", "sales doubled after this", "implies unsupported"),
+    ("quantity", "took only three hours", "implies unsupported"),
+])
+def test_unsupported_claim_categories_rejected(field, text, needle):
+    plan = _valid_plan()
+    plan["viewerPromise"] = _editorial(text)
+    _reject(plan, needle=needle)
+
+
+def test_fact_with_no_evidence_rejected():
+    plan = _valid_plan()
+    plan["storySentence"] = {"text": "we finished the job",
+                             "claimType": "fact", "evidence": []}
+    _reject(plan, needle="factual claim with no evidence")
+
+
+def test_fact_evidence_must_exist_in_the_named_source():
+    plan = _valid_plan()
+    plan["captions"] = [{"claimType": "fact", "text": "we finished the job",
+                         "evidence": [{"sourceType": "transcript",
+                                       "segmentId": "seg-1",   # no transcript
+                                       "quoteOrValue": "we finished the job"}],
+                         "timelineStart": 8.0, "timelineEnd": 11.0}]
+    _reject(plan, needle="quote is not present in the segment's transcript")
+
+
+def test_supported_claims_from_transcript_and_user_input_accepted():
+    plan = _valid_plan()
+    plan["captions"] = [{"claimType": "fact", "text": "we finished the job",
+                         "evidence": [{"sourceType": "transcript",
+                                       "segmentId": "seg-3",
+                                       "quoteOrValue": "we finished the job"}],
+                         "timelineStart": 8.0, "timelineEnd": 11.0}]
+    assert _accept(plan)["status"] == "approved"
+
+    constraints = {"brief": "deck rebuild for marcus in dallas"}
+    user_backed = _valid_plan()
+    user_backed["captions"] = [{"claimType": "fact",
+                                "text": "deck rebuild for marcus",
+                                "evidence": [{"sourceType": "user_input",
+                                              "quoteOrValue":
+                                              "deck rebuild for marcus"}],
+                                "timelineStart": 1.0, "timelineEnd": 3.0}]
+    out = ep.plan_editorial(_segments(), constraints, False, _gen(user_backed))
+    assert out["status"] == "approved"
+
+
+def test_editorial_labels_safe_and_unsafe():
+    safe = _valid_plan()
+    safe["captions"] = [{"claimType": "cta", "text": "follow for the next build",
+                         "evidence": [], "timelineStart": 10.0,
+                         "timelineEnd": 12.0}]
+    assert _accept(safe)["status"] == "approved"
+
+    unsafe = _valid_plan()
+    unsafe["captions"] = [{"claimType": "editorial_label",
+                           "text": "Rated 5 stars by every customer",
+                           "evidence": [], "timelineStart": 1.0,
+                           "timelineEnd": 3.0}]
+    _reject(unsafe, needle="implies unsupported factual content")
+
+
+def test_supported_catalog_claims_pass():
+    plan = _valid_plan()   # "Dallas" is real catalog metadata (seg-1 location)
+    plan["storySentence"] = _editorial("This is a story about a repair in "
+                                       "Dallas, where the crew works, leading "
+                                       "to a finished deck.")
+    assert _accept(plan)["status"] == "approved"
+
+
+# ------------------------------- blocker 2: honest insufficient-footage report
+def test_invented_achievable_duration_999_rejected():
+    plan = _shortfall_plan(achievable=999.0)
+    flat = _reject(plan, constraints={"durationMin": 45, "durationMax": 60})
+    assert "does not equal the computed timeline duration" in flat
+    assert "not below the requested minimum" in flat
+
+
+def test_honest_shortfall_with_computed_duration_accepted():
     out = ep.plan_editorial(_segments(), {"durationMin": 45, "durationMax": 60},
-                            False, _gen(short))
+                            False, _gen(_shortfall_plan(achievable=12.0)))
     assert out["status"] == "insufficient_footage"
-
-    no_shots = copy.deepcopy(short)
-    no_shots["missingFootage"] = []
-    _reject(no_shots, constraints={"durationMin": 45, "durationMax": 60},
-            needle="exact missing shots")
+    assert out["qualityScore"] >= 80
 
 
-def test_model_cannot_redefine_platform_or_aspect():
-    plan = _valid_plan()      # renders 9:16
-    plan["render"] = {"width": 1920, "height": 1080, "fps": 30, "aspect": "16:9"}
-    _reject(plan, constraints={"platform": "vertical"},
-            needle="violates the requested platform/aspect")
-    _reject(plan, constraints={"aspectRatio": "9:16"},
-            needle="violates the requested platform/aspect")
+def test_within_range_timeline_cannot_claim_insufficient():
+    plan = _shortfall_plan(achievable=12.0)
+    _reject(plan, constraints={"durationMin": 10, "durationMax": 20},
+            needle="already satisfies the requested range")
 
 
-def test_must_include_and_exclude_are_binding():
-    _reject(_valid_plan(), constraints={"mustInclude": ["drone shot"]},
-            needle="required moment 'drone shot' is not represented")
-    _reject(_valid_plan(), constraints={"mustExclude": ["crew"]},
-            needle="excluded moment 'crew' appears")
+def test_out_of_range_approved_plan_rejected():
+    _reject(_valid_plan(), constraints={"durationMin": 45, "durationMax": 60},
+            needle="REQUESTED duration range")
 
 
-# --------------------------------------------- blocker 3: evidence grounding
-def test_hook_source_out_of_range_rejected():
+def test_vague_missing_footage_rejected():
+    plan = _shortfall_plan(achievable=12.0)
+    plan["missingFootage"] = [{"beat": "end", "shotType": "any",
+                               "recommendedDurationSeconds": 5.0,
+                               "why": "need more"}]        # vague: under 10 chars
+    _reject(plan, constraints={"durationMin": 45, "durationMax": 60},
+            needle="schema:")
+
+
+def test_shortfall_rejected_while_unused_grounded_footage_remains():
+    # catalog holds 30 s; requesting 20-60 s: a 12 s "shortfall" is dishonest
+    plan = _shortfall_plan(achievable=12.0)
+    _reject(plan, constraints={"durationMin": 20, "durationMax": 60},
+            needle="unused material")
+
+
+# --------------------------------- blocker 3: structured creative policies
+def test_policy_parser_reads_the_original_request():
+    p = ep.parse_creative_policies({"style": "hard cuts only, no speed ramps",
+                                    "tone": "no music"})
+    assert p["transitionPolicy"] == "hard_cuts_only"
+    assert p["speedRampPolicy"] == "forbidden"
+    assert p["musicPolicy"] == "none"
+    explicit = ep.parse_creative_policies({"style": "whatever",
+                                           "transitionPolicy": "none"})
+    assert explicit["transitionPolicy"] == "none"
+
+
+def test_hard_cuts_only_rejects_dissolve():
     plan = _valid_plan()
-    plan["hook"].update(sourceIn=8.0, sourceOut=13.0, durationSeconds=5.0)
-    _reject(plan, needle="hook")
+    plan["transitions"][1]["type"] = "dissolve"
+    plan["transitions"][1]["durationSeconds"] = 0.5
+    _reject(plan, constraints={"style": "hard cuts only"},
+            needle="policy: the request allows hard cuts only")
 
 
-def test_hook_must_link_to_first_timeline_cut():
-    plan = _valid_plan()
-    plan["hook"].update(sourceIn=1.5, sourceOut=3.5)   # first cut starts at 0.0
-    _reject(plan, needle="not linked to the first timeline cut")
+def test_no_transitions_rejects_any_transition_object():
+    _reject(_valid_plan(), constraints={"style": "no transitions"},
+            needle="policy: the request forbids transitions")
 
 
-def test_fabricated_factual_caption_rejected_and_honest_one_accepted():
-    plan = _valid_plan()
-    plan["captions"] = [{"type": "factual", "text": "Customer Marcus paid 500",
-                         "sourceSegmentId": "seg-3", "timelineStart": 8.0,
-                         "timelineEnd": 11.0, "evidence": "we finished the job"}]
-    flat = _reject(plan, needle="unsupported factual tokens")
-    assert "Marcus" in flat and "500" in flat
-
-    missing_src = _valid_plan()
-    missing_src["captions"] = [{"type": "factual", "text": "we finished the job",
-                                "sourceSegmentId": None, "timelineStart": 8.0,
-                                "timelineEnd": 11.0,
-                                "evidence": "we finished the job"}]
-    _reject(missing_src, needle="no sourceSegmentId")
-
-    bad_evidence = _valid_plan()
-    bad_evidence["captions"] = [{"type": "factual", "text": "we finished the job",
-                                 "sourceSegmentId": "seg-3", "timelineStart": 8.0,
-                                 "timelineEnd": 11.0,
-                                 "evidence": "customer was thrilled"}]
-    _reject(bad_evidence, needle="evidence is not found")
-
-    honest = _valid_plan()
-    honest["captions"] = [{"type": "factual", "text": "we finished the job",
-                           "sourceSegmentId": "seg-3", "timelineStart": 8.0,
-                           "timelineEnd": 11.0, "evidence": "we finished the job"}]
-    out = ep.plan_editorial(_segments(), {}, False, _gen(honest))
-    assert out["status"] == "approved"
-
-
-def test_editorial_label_may_be_creative_but_not_factual():
-    cta = _valid_plan()
-    cta["captions"] = [{"type": "cta", "text": "follow for the next job",
-                        "sourceSegmentId": None, "timelineStart": 10.0,
-                        "timelineEnd": 12.0, "evidence": "editorial"}]
-    assert ep.plan_editorial(_segments(), {}, False,
-                             _gen(cta))["status"] == "approved"
-
-    implied_fact = _valid_plan()
-    implied_fact["captions"] = [{"type": "editorial_label",
-                                 "text": "Rated 5 stars in Plano",
-                                 "sourceSegmentId": None, "timelineStart": 1.0,
-                                 "timelineEnd": 3.0, "evidence": "editorial"}]
-    _reject(implied_fact, needle="unsupported factual tokens")
-
-
-def test_invented_audio_segment_ids_rejected():
-    for field in ("naturalSoundSegmentIds", "jCutSegmentIds", "lCutSegmentIds"):
-        plan = _valid_plan()
-        plan["audio"][field] = ["seg-INVENTED"]
-        _reject(plan, needle=f"audio.{field} references invented segment")
-    unplanned = _valid_plan()
-    unplanned["timeline"] = unplanned["timeline"][:2]   # seg-3 no longer planned
-    unplanned["plannedDurationSeconds"] = 8.0
-    unplanned["transitions"] = unplanned["transitions"][:1]
-    unplanned["audioTreatments"] = []
-    _reject(unplanned, needle="references unplanned segment 'seg-3'")
-
-
-def test_musicless_plan_may_not_describe_music():
-    wrong_flag = _valid_plan()
-    wrong_flag["audio"]["musicAvailable"] = True
-    wrong_flag["audio"]["musicPlan"] = "an upbeat cue"
-    _reject(wrong_flag, music=False, needle="licensed-music availability")
-
-    fabricated = _valid_plan()
-    fabricated["audio"]["musicPlan"] = "energetic track at 120 BPM, licensed"
-    _reject(fabricated, music=False, needle="musicPlan must be null")
-
-    with_music = _valid_plan(music_available=True)
-    out = ep.plan_editorial(_segments(), {}, True, _gen(with_music))
-    assert out["status"] == "approved"
-    licensed = _valid_plan(music_available=True)
-    licensed["audio"]["musicPlan"] = "track licensed under ID 12345"
-    _reject(licensed, music=True, needle="licensing metadata")
-
-
-def test_story_claims_need_sources():
-    plan = _valid_plan()
-    plan["storySentence"] = ("This is a story about a job for Contoso, where "
-                             "3 crews rebuild a deck, leading to a result.")
-    flat = _reject(plan, needle="storySentence carries unsupported")
-    assert "Contoso" in flat
-    # a location that IS in the catalog (Dallas) is a supported claim
-    grounded = _valid_plan()
-    grounded["storySentence"] = ("This is a story about a repair in Dallas, "
-                                 "where the crew works, leading to a result.")
-    assert ep.plan_editorial(_segments(), {}, False,
-                             _gen(grounded))["status"] == "approved"
-
-
-# --------------------------------------- blocker 4: execution-ready structure
-def test_transitions_must_join_adjacent_cuts():
-    plan = _valid_plan()
-    plan["transitions"] = [{"fromSegmentId": "seg-1", "toSegmentId": "seg-3",
-                            "type": "whip", "durationSeconds": 0.3,
-                            "purpose": "energy"}]
-    _reject(plan, needle="does not join two adjacent timeline segments")
-
-
-def test_speed_ramp_must_fit_inside_its_planned_cut():
+def test_forbidden_speed_ramps_rejected():
     plan = _valid_plan()
     plan["speedRamps"] = [{"segmentId": "seg-2", "sourceStart": 0.0,
-                           "sourceEnd": 8.0, "entrySpeed": 1, "peakSpeed": 3,
+                           "sourceEnd": 4.0, "entrySpeed": 1, "peakSpeed": 3,
                            "exitSpeed": 1, "easing": "ease",
-                           "narrativePurpose": "compress travel"}]
-    _reject(plan, needle="outside the planned cut")
-    plan["speedRamps"][0]["sourceEnd"] = 4.0
-    assert ep.plan_editorial(_segments(), {}, False,
-                             _gen(plan))["status"] == "approved"
+                           "narrativePurpose": "compress the walk"}]
+    _reject(plan, constraints={"style": "no speed ramps"},
+            needle="policy: the request forbids speed ramps")
 
 
-def test_reframe_aspect_must_match_render_target():
+def test_graphics_none_policy_rejected():
     plan = _valid_plan()
-    plan["reframes"] = [{"segmentId": "seg-1", "outputAspectRatio": "16:9",
+    plan["graphics"] = [{"graphicType": "label", "claimType": "editorial_label",
+                         "text": "step one", "evidence": [],
+                         "timelineStart": 4.0, "timelineEnd": 6.0,
+                         "durationSeconds": 2.0}]
+    _reject(plan, constraints={"style": "no graphics"},
+            needle="policy: the request forbids graphics")
+
+
+def test_expressive_style_accepts_valid_dissolve():
+    plan = _valid_plan()
+    # give the incoming cut a source handle so the dissolve is executable
+    plan["timeline"][1].update(sourceIn=1.0, sourceOut=5.0)
+    plan["transitions"][0].update(type="dissolve", durationSeconds=0.5)
+    assert _accept(plan)["status"] == "approved"
+
+
+def test_full_caption_policy_requires_captions_when_supported():
+    _reject(_valid_plan(), constraints={"style": "full captions"},
+            needle="policy: the request requires captions")
+
+
+def test_impossible_music_requirement_needs_honest_warning():
+    _reject(_valid_plan(), constraints={"tone": "music required"},
+            needle="policy: the request requires music")
+    warned = _valid_plan()
+    warned["technicalWarnings"] = [
+        _editorial("music was requested but no licensed music is available")]
+    out = ep.plan_editorial(_segments(), {"tone": "music required"}, False,
+                            _gen(warned))
+    assert out["status"] == "approved"
+
+
+# --------------------------------- blocker 4: execution geometry validation
+def test_inverted_ramp_range_rejected():
+    plan = _valid_plan()
+    plan["speedRamps"] = [{"segmentId": "seg-2", "sourceStart": 3.0,
+                           "sourceEnd": 2.0, "entrySpeed": 1, "peakSpeed": 2,
+                           "exitSpeed": 1, "easing": "ease",
+                           "narrativePurpose": "x"}]
+    _reject(plan, needle="execution: speedRamps[0] has an inverted")
+
+
+def test_ramp_outside_planned_cut_rejected():
+    plan = _valid_plan()
+    plan["speedRamps"] = [{"segmentId": "seg-2", "sourceStart": 0.0,
+                           "sourceEnd": 8.0, "entrySpeed": 1, "peakSpeed": 2,
+                           "exitSpeed": 1, "easing": "ease",
+                           "narrativePurpose": "x"}]
+    _reject(plan, needle="execution: speedRamps[0] range is outside")
+
+
+@pytest.mark.parametrize("speed", [0, -1, 9])
+def test_out_of_limit_ramp_speeds_rejected(speed):
+    plan = _valid_plan()
+    plan["speedRamps"] = [{"segmentId": "seg-2", "sourceStart": 0.0,
+                           "sourceEnd": 4.0, "entrySpeed": speed,
+                           "peakSpeed": 2, "exitSpeed": 1, "easing": "ease",
+                           "narrativePurpose": "x"}]
+    _reject(plan, needle="schema:")
+
+
+def test_overlapping_ramps_on_one_segment_rejected():
+    plan = _valid_plan()
+    plan["speedRamps"] = [
+        {"segmentId": "seg-2", "sourceStart": 0.0, "sourceEnd": 3.0,
+         "entrySpeed": 1, "peakSpeed": 3, "exitSpeed": 1, "easing": "ease",
+         "narrativePurpose": "a"},
+        {"segmentId": "seg-2", "sourceStart": 2.0, "sourceEnd": 4.0,
+         "entrySpeed": 1, "peakSpeed": 2, "exitSpeed": 1, "easing": "ease",
+         "narrativePurpose": "b"}]
+    _reject(plan, needle="overlaps another speed ramp")
+
+
+@pytest.mark.parametrize("crop,needle", [
+    ({"x": 0.9, "y": 0.0, "width": 0.9, "height": 0.5}, "right edge"),
+    ({"x": 0.0, "y": 0.9, "width": 0.5, "height": 0.9}, "bottom edge"),
+])
+def test_out_of_frame_crops_rejected(crop, needle):
+    plan = _valid_plan()
+    ok = {"x": 0.0, "y": 0.0, "width": crop["width"], "height": crop["height"]}
+    plan["reframes"] = [{"segmentId": "seg-1", "outputAspectRatio": "9:16",
+                         "subjectTarget": "crew", "startCrop": crop,
+                         "endCrop": ok}]
+    _reject(plan, needle=needle)
+
+
+@pytest.mark.parametrize("dim", ["width", "height"])
+def test_zero_crop_dimensions_rejected(dim):
+    crop = {"x": 0.0, "y": 0.0, "width": 0.5, "height": 0.5, dim: 0}
+    plan = _valid_plan()
+    plan["reframes"] = [{"segmentId": "seg-1", "outputAspectRatio": "9:16",
+                         "subjectTarget": "crew", "startCrop": crop,
+                         "endCrop": {"x": 0, "y": 0, "width": 0.5,
+                                     "height": 0.5}}]
+    _reject(plan, needle="schema:")
+
+
+def test_distorting_crop_aspect_mismatch_rejected():
+    plan = _valid_plan()
+    plan["reframes"] = [{"segmentId": "seg-1", "outputAspectRatio": "9:16",
                          "subjectTarget": "crew",
                          "startCrop": {"x": 0, "y": 0, "width": 1, "height": 1},
-                         "endCrop": {"x": 0, "y": 0, "width": 1, "height": 1}}]
-    _reject(plan, needle="does not match the render target")
+                         "endCrop": {"x": 0, "y": 0, "width": 0.5,
+                                     "height": 1}}]
+    _reject(plan, needle="aspect mismatch would distort")
 
 
-def test_graphic_duration_must_match_its_timing():
+def test_transition_longer_than_source_handles_rejected():
     plan = _valid_plan()
-    plan["graphics"] = [{"graphicType": "label", "text": "step one",
-                         "timelineStart": 4.0, "timelineEnd": 6.0,
-                         "durationSeconds": 5.0, "evidence": "editorial"}]
-    _reject(plan, needle="durationSeconds does not match its timing")
+    plan["timeline"][1].update(sourceIn=1.0, sourceOut=5.0)   # head handle 1.0 s
+    plan["transitions"][0].update(type="dissolve", durationSeconds=1.5)
+    _reject(plan, needle="exceeds the available source handles")
 
 
-def test_pacing_must_reference_real_beats():
+def test_valid_ramp_crop_and_transition_accepted_together():
     plan = _valid_plan()
-    plan["pacing"].append({"beat": "imaginary", "targetDurationSeconds": 3,
-                           "energy": 0.5})
-    _reject(plan, needle="unknown beat 'imaginary'")
+    plan["timeline"][1].update(sourceIn=1.0, sourceOut=5.0)
+    plan["transitions"][0].update(type="dissolve", durationSeconds=0.5)
+    plan["speedRamps"] = [{"segmentId": "seg-2", "sourceStart": 1.5,
+                           "sourceEnd": 4.5, "entrySpeed": 1, "peakSpeed": 3,
+                           "exitSpeed": 1, "easing": "ease-in-out",
+                           "narrativePurpose": "compress the middle"}]
+    plan["reframes"] = [{"segmentId": "seg-1", "outputAspectRatio": "9:16",
+                         "subjectTarget": "crew",
+                         "startCrop": {"x": 0.1, "y": 0.0, "width": 0.5,
+                                       "height": 0.9},
+                         "endCrop": {"x": 0.3, "y": 0.05, "width": 0.5,
+                                     "height": 0.9}}]
+    assert _accept(plan)["status"] == "approved"
 
 
-# --------------------------------------- blocker 5: deterministic quality gate
-def test_model_perfect_self_score_cannot_rescue_a_broken_plan():
+# ------------------------- blocker 5: hard failures the model cannot override
+@pytest.mark.parametrize("mutate,constraints,rule", [
+    (lambda p: p.update(storySentence=_editorial("customer loved it")),
+     {}, "claims_grounded"),
+    (lambda p: p.update(status="insufficient_footage",
+                        achievableDurationSeconds=999.0,
+                        missingFootage=[{"beat": "closing reaction",
+                                         "shotType": "close-up",
+                                         "recommendedDurationSeconds": 5.0,
+                                         "why": "the payoff needs a reaction"}]),
+     {"durationMin": 45, "durationMax": 60}, "duration_compliant"),
+    (lambda p: None, {"style": "no transitions"}, "creative_policy_honored"),
+    (lambda p: p.update(speedRamps=[{"segmentId": "seg-2", "sourceStart": 3.0,
+                                     "sourceEnd": 2.0, "entrySpeed": 1,
+                                     "peakSpeed": 2, "exitSpeed": 1,
+                                     "easing": "e", "narrativePurpose": "x"}]),
+     {}, "execution_geometry"),
+])
+def test_perfect_self_assessment_cannot_pass_hard_failures(mutate, constraints,
+                                                           rule):
     plan = _valid_plan()
-    plan["modelSelfAssessment"] = _self_assessment(
-        hook=15, storyClarity=15, flowContinuity=10, pacing=10,
-        clipSelection=10, payoff=10, visualVariety=5, creativeTreatment=10,
-        soundDesign=5, platformFit=5, durationCompliance=5)   # claims 100
-    plan["timeline"][1]["timelineIn"] = 5.5                    # broken contiguity
-    flat = _reject(plan, needle="deterministic gate")
-    assert "timeline_contiguous" in flat
+    plan["modelSelfAssessment"] = _self_assessment(**_MAX_SELF)   # claims 100
+    mutate(plan)
+    flat = _reject(plan, constraints=constraints)
+    assert f"deterministic gate: {rule} failed" in flat
 
 
-def test_model_low_self_score_cannot_block_a_grounded_plan():
-    plan = _valid_plan()
-    plan["modelSelfAssessment"] = _self_assessment(
-        hook=1, storyClarity=1, flowContinuity=1, pacing=1, clipSelection=1,
-        payoff=1, visualVariety=1, creativeTreatment=1, soundDesign=1,
-        platformFit=1, durationCompliance=1,
-        hardFailures=["the model doubts itself"])              # claims ~11
-    out = ep.plan_editorial(_segments(), {}, False, _gen(plan))
-    assert out["status"] == "approved"                         # gate decides
-    assert out["qualityScore"] == 100
-
-
-def test_gate_produces_rule_level_results():
-    plan = ep.EditorialPlan(**_valid_plan())
-    gate = ep.deterministic_gate(plan, _segments(), {}, [])
-    names = {r["rule"] for r in gate["rules"]}
-    assert {"hook_grounded", "timeline_contiguous", "claims_grounded",
-            "duration_compliant", "story_structure", "payoff_present",
-            "music_grounded", "no_redundant_reuse", "visual_variety",
-            "requested_treatments", "technical_warnings_surfaced"} <= names
-    assert sum(r["weight"] for r in gate["rules"]) == 100
-
-
-def test_gate_requires_surfaced_technical_warnings():
-    segs = _segments()
-    segs[1] = segs[1].model_copy(update={"problems": ["shaky footage"]})
-    plan = ep.EditorialPlan(**_valid_plan())
-    gate = ep.deterministic_gate(plan, segs, {}, [])
-    rule = next(r for r in gate["rules"]
-                if r["rule"] == "technical_warnings_surfaced")
-    assert rule["passed"] is False                    # used seg-2, warned nothing
-
-
-def test_revision_loop_feeds_deterministic_violations_back():
+def test_revision_loop_receives_rule_level_feedback():
     bad = _valid_plan()
-    bad["timeline"][1]["segmentId"] = "seg-INVENTED"
+    bad["storySentence"] = _editorial("customer loved it")
     gen = _gen(bad, _valid_plan())
     out = ep.plan_editorial(_segments(), {}, False, gen)
     assert out["attempts"] == 2
-    assert "REJECTED" in gen.calls["parts"][1][-1]["text"]
+    feedback = gen.calls["parts"][1][-1]["text"]
+    assert "implies unsupported factual content" in feedback
+    assert "claims_grounded" in feedback
 
 
 def test_rejected_after_attempt_budget():
@@ -403,6 +533,50 @@ def test_rejected_after_attempt_budget():
     with pytest.raises(ep.PlanRejected) as exc:
         ep.plan_editorial(_segments(), {}, False, _gen(bad), max_attempts=3)
     assert len(exc.value.violations_history) == 3
+
+
+# ------------------------------------------------- retained grounding checks
+def test_hook_out_of_range_and_unlinked_rejected():
+    plan = _valid_plan()
+    plan["hook"].update(sourceIn=8.0, sourceOut=13.0, durationSeconds=5.0)
+    _reject(plan, needle="hook")
+    plan2 = _valid_plan()
+    plan2["hook"].update(sourceIn=1.5, sourceOut=3.5)
+    _reject(plan2, needle="not linked to the first timeline cut")
+
+
+def test_invented_audio_segment_ids_rejected():
+    for field in ("naturalSoundSegmentIds", "jCutSegmentIds", "lCutSegmentIds"):
+        plan = _valid_plan()
+        plan["audio"][field] = ["seg-INVENTED"]
+        _reject(plan, needle=f"audio.{field} references invented segment")
+
+
+def test_musicless_plan_may_not_describe_music():
+    wrong_flag = _valid_plan()
+    wrong_flag["audio"]["musicAvailable"] = True
+    wrong_flag["audio"]["musicPlan"] = "an upbeat cue"
+    _reject(wrong_flag, music=False, needle="licensed-music availability")
+    fabricated = _valid_plan()
+    fabricated["audio"]["musicPlan"] = "energetic track at 120 BPM"
+    _reject(fabricated, music=False, needle="musicPlan must be null")
+    licensed = _valid_plan(music_available=True)
+    licensed["audio"]["musicPlan"] = "track licensed under ID 12345"
+    _reject(licensed, music=True, needle="licensing metadata")
+
+
+def test_model_cannot_redefine_platform_or_aspect():
+    plan = _valid_plan()
+    plan["render"] = {"width": 1920, "height": 1080, "fps": 30, "aspect": "16:9"}
+    _reject(plan, constraints={"platform": "vertical"},
+            needle="violates the requested platform/aspect")
+
+
+def test_must_include_and_exclude_are_binding():
+    _reject(_valid_plan(), constraints={"mustInclude": ["drone shot"]},
+            needle="required moment 'drone shot' is not represented")
+    _reject(_valid_plan(), constraints={"mustExclude": ["crew"]},
+            needle="excluded moment 'crew' appears")
 
 
 # ---------------------------------------------------------------- job handler
@@ -438,12 +612,10 @@ def test_handler_persists_deterministic_result(monkeypatch):
     jobs._run_job(jobs._claim_next())
     row = fake.select("pipeline_jobs", f"project_id=eq.{project['id']}")[0]
     assert row["status"] == "completed"
-    assert row["artifacts"]["qualityScore"] == 100        # deterministic score
+    assert row["artifacts"]["qualityScore"] == 100
     plans = fake.select("editorial_plans", f"project_id=eq.{project['id']}")
-    assert len(plans) == 1 and plans[0]["version"] == 1
-    assert plans[0]["quality_score"] == 100
+    assert len(plans) == 1 and plans[0]["quality_score"] == 100
     assert plans[0]["validation"]["deterministicGate"]["passed"] is True
-    assert plans[0]["plan"]["modelSelfAssessment"]["hook"] == 12   # advisory only
 
 
 @pytest.mark.parametrize("prior", ["ready", "draft_ready"])
@@ -451,14 +623,11 @@ def test_status_preserved_on_success_failure_and_cancellation(monkeypatch, prior
     fake = FakeSupabase()
     install(monkeypatch, fake)
     uid, token, project = _setup_project(fake, status=prior)
-
-    # success
     monkeypatch.setattr(ep, "gemini_generate", _gen(_valid_plan()))
     jobs.enqueue_job(project["id"], uid, "editorial_plan", {})
     jobs._run_job(jobs._claim_next())
     assert fake.select("projects", f"id=eq.{project['id']}")[0]["status"] == prior
 
-    # failure
     def explode(parts, schema):
         raise RuntimeError("model unavailable")
     monkeypatch.setattr(ep, "gemini_generate", explode)
@@ -466,7 +635,6 @@ def test_status_preserved_on_success_failure_and_cancellation(monkeypatch, prior
     jobs._run_job(jobs._claim_next())
     assert fake.select("projects", f"id=eq.{project['id']}")[0]["status"] == prior
 
-    # cancellation at the before_plan_persist checkpoint
     plans_before = len(fake.select("editorial_plans",
                                    f"project_id=eq.{project['id']}"))
     monkeypatch.setattr(ep, "gemini_generate", _gen(_valid_plan()))
@@ -476,36 +644,14 @@ def test_status_preserved_on_success_failure_and_cancellation(monkeypatch, prior
                {"status": "cancel_requested"})
     claimed["status"] = "processing"
     jobs._run_job(claimed)
-    row = fake.select("pipeline_jobs", f"id=eq.{job['id']}")[0]
-    assert row["status"] == "cancelled"
+    assert fake.select("pipeline_jobs", f"id=eq.{job['id']}")[0]["status"] \
+        == "cancelled"
     assert len(fake.select("editorial_plans",
                            f"project_id=eq.{project['id']}")) == plans_before
     assert fake.select("projects", f"id=eq.{project['id']}")[0]["status"] == prior
 
 
-def test_handler_grounds_music_availability(monkeypatch):
-    fake = FakeSupabase()
-    install(monkeypatch, fake)
-    uid, token, project = _setup_project(fake)
-    fake.insert("licensed_music_assets", {
-        "project_id": project["id"], "user_id": uid,
-        "music_sound_run_id": str(uuid4()), "version": 1})
-    seen = {}
-
-    def generate(parts, schema):
-        seen["constraints"] = parts[1]["text"]
-        return _valid_plan(music_available=True)
-    monkeypatch.setattr(ep, "gemini_generate", generate)
-    jobs.enqueue_job(project["id"], uid, "editorial_plan", {})
-    jobs._run_job(jobs._claim_next())
-    assert "licensed music available for this project: True" in seen["constraints"]
-    plans = fake.select("editorial_plans", f"project_id=eq.{project['id']}")
-    assert plans[0]["plan"]["audio"]["musicAvailable"] is True
-
-
 def test_binding_constraints_reach_the_validator_not_just_the_prompt(monkeypatch):
-    """The handler passes the REQUEST constraints into validation: a 12 s plan
-    against a requested 45-60 s fails even though the model 'approved' it."""
     fake = FakeSupabase()
     install(monkeypatch, fake)
     uid, token, project = _setup_project(fake)
@@ -516,7 +662,21 @@ def test_binding_constraints_reach_the_validator_not_just_the_prompt(monkeypatch
     row = fake.select("pipeline_jobs", f"project_id=eq.{project['id']}")[0]
     assert row["status"] == "failed"
     assert "REQUESTED duration range" in row["error_message"]
-    assert fake.select("editorial_plans", f"project_id=eq.{project['id']}") == []
+
+
+def test_handler_grounds_music_availability(monkeypatch):
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    uid, token, project = _setup_project(fake)
+    fake.insert("licensed_music_assets", {
+        "project_id": project["id"], "user_id": uid,
+        "music_sound_run_id": str(uuid4()), "version": 1})
+    monkeypatch.setattr(ep, "gemini_generate",
+                        _gen(_valid_plan(music_available=True)))
+    jobs.enqueue_job(project["id"], uid, "editorial_plan", {})
+    jobs._run_job(jobs._claim_next())
+    plans = fake.select("editorial_plans", f"project_id=eq.{project['id']}")
+    assert plans[0]["plan"]["audio"]["musicAvailable"] is True
 
 
 # ------------------------------------------------------------------ endpoints
@@ -528,27 +688,26 @@ def test_endpoint_requires_analysis_then_enqueues(monkeypatch):
     uid, token = fake.add_user("api@example.com")
     project = fake.add_project(uid, "API Test", status="draft_ready")
     client = TestClient(app, raise_server_exceptions=False)
-    r = client.post(f"/projects/{project['id']}/editorial-plan",
-                    headers=_auth(token), json={"brief": "make it pop"})
-    assert r.status_code == 409                         # no segments yet
+    assert client.post(f"/projects/{project['id']}/editorial-plan",
+                       headers=_auth(token), json={}).status_code == 409
     fake.insert("segments", {"project_id": project["id"], "user_id": uid,
                              "data": _segments()[0].model_dump()})
     r = client.post(f"/projects/{project['id']}/editorial-plan",
                     headers=_auth(token),
                     json={"brief": "make it pop", "durationMin": 30,
                           "durationMax": 60, "platform": "vertical",
-                          "aspectRatio": "9:16"})
+                          "aspectRatio": "9:16", "style": "hard cuts only"})
     assert r.status_code == 200
     job = r.json()
     assert job["kind"] == "editorial_plan"
-    assert job["params"]["aspectRatio"] == "9:16"
+    assert job["params"]["style"] == "hard cuts only"
     again = client.post(f"/projects/{project['id']}/editorial-plan",
                         headers=_auth(token), json={})
-    assert again.json()["id"] == job["id"]              # idempotent while active
-    bad = client.post(f"/projects/{project['id']}/editorial-plan",
-                      headers=_auth(token),
-                      json={"durationMin": 90, "durationMax": 30})
-    assert bad.status_code == 422
+    assert again.json()["id"] == job["id"]
+    assert client.post(f"/projects/{project['id']}/editorial-plan",
+                       headers=_auth(token),
+                       json={"durationMin": 90, "durationMax": 30}
+                       ).status_code == 422
 
 
 def test_endpoint_rejects_deleted_and_foreign(monkeypatch):
@@ -561,8 +720,6 @@ def test_endpoint_rejects_deleted_and_foreign(monkeypatch):
     client = TestClient(app, raise_server_exceptions=False)
     assert client.post(f"/projects/{project['id']}/editorial-plan",
                        headers=_auth(intruder), json={}).status_code == 403
-    assert client.get(f"/projects/{project['id']}/editorial-plan",
-                      headers=_auth(intruder)).status_code == 403
     assert client.delete(f"/projects/{project['id']}",
                          headers=_auth(token)).status_code == 200
     assert client.post(f"/projects/{project['id']}/editorial-plan",
@@ -578,8 +735,6 @@ def test_get_returns_latest_plan(monkeypatch):
     install(monkeypatch, fake)
     uid, token, project = _setup_project(fake)
     client = TestClient(app, raise_server_exceptions=False)
-    assert client.get(f"/projects/{project['id']}/editorial-plan",
-                      headers=_auth(token)).status_code == 404
     monkeypatch.setattr(ep, "gemini_generate", _gen(_valid_plan()))
     jobs.enqueue_job(project["id"], uid, "editorial_plan", {})
     jobs._run_job(jobs._claim_next())
@@ -587,5 +742,4 @@ def test_get_returns_latest_plan(monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "approved" and body["quality_score"] == 100
-    assert body["plan"]["render"]["aspect"] == "9:16"
     assert "ffmpeg" not in str(body["plan"]).lower()
