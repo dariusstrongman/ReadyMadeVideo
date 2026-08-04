@@ -44,7 +44,7 @@ def _option():
                               "footageSupport", "emotionalInterest",
                               "visualVariety", "platformFit", "durationFit",
                               "originality")}
-    return {"premise": _editorial("a real repair"),
+    return {"premise": _editorial("the crew at work"),
             "viewerPromise": "see the finished work", "hook": "reveal first",
             "structure": "results_first",
             "payoff": _editorial("the finished work"),
@@ -80,8 +80,8 @@ def _valid_plan(music_available=False):
                    "expectedViewerEffect": "curiosity"})
     return {
         "schemaVersion": 1,
-        "storySentence": _editorial("This is a story about a repair, where the "
-                                    "crew works, leading to a finished deck."),
+        "storySentence": _editorial("This is a story about the crew at work, "
+                                    "leading to the finished job."),
         "footageSummary": "three usable segments", "intendedAudience": "local",
         "viewerPromise": _editorial("see the finished work"),
         "options": [_option(), _option(), _option()], "chosenOption": 0,
@@ -99,10 +99,10 @@ def _valid_plan(music_available=False):
                    {"beat": "payoff", "targetDurationSeconds": 4, "energy": 0.8}],
         "pacingRationale": "fast hook, steady middle, held payoff",
         "transitions": [{"fromSegmentId": "seg-1", "toSegmentId": "seg-2",
-                         "type": "cut", "durationSeconds": 0,
+                         "type": "hard_cut", "durationSeconds": 0,
                          "purpose": "action match"},
                         {"fromSegmentId": "seg-2", "toSegmentId": "seg-3",
-                         "type": "cut", "durationSeconds": 0,
+                         "type": "hard_cut", "durationSeconds": 0,
                          "purpose": "into the payoff"}],
         "transitionsRationale": "hard cuts on action",
         "speedRamps": [], "reframes": [], "captions": [], "graphics": [],
@@ -258,7 +258,7 @@ def test_supported_claims_from_transcript_and_user_input_accepted():
 
 def test_editorial_labels_safe_and_unsafe():
     safe = _valid_plan()
-    safe["captions"] = [{"claimType": "cta", "text": "follow for the next build",
+    safe["captions"] = [{"claimType": "cta", "text": "follow for more",
                          "evidence": [], "timelineStart": 10.0,
                          "timelineEnd": 12.0}]
     assert _accept(safe)["status"] == "approved"
@@ -273,10 +273,156 @@ def test_editorial_labels_safe_and_unsafe():
 
 def test_supported_catalog_claims_pass():
     plan = _valid_plan()   # "Dallas" is real catalog metadata (seg-1 location)
-    plan["storySentence"] = _editorial("This is a story about a repair in "
-                                       "Dallas, where the crew works, leading "
-                                       "to a finished deck.")
+    plan["storySentence"] = _editorial("This is a story about the crew at "
+                                       "work in Dallas, leading to the "
+                                       "finished job.")
     assert _accept(plan)["status"] == "approved"
+
+
+# ----------------------- gap 1: closed neutral-label boundary (no finite lexicon)
+@pytest.mark.parametrize("text", [
+    "audience cheered",          # reaction outside any lexicon
+    "crew celebrated",           # group + reaction
+    "viewers were stunned",      # group + emotion
+    "customer approved",         # subject + outcome
+])
+def test_unlisted_reactions_fail_closed_without_evidence(text):
+    plan = _valid_plan()
+    plan["captions"] = [{"claimType": "editorial_label", "text": text,
+                         "evidence": [], "timelineStart": 1.0,
+                         "timelineEnd": 3.0}]
+    _reject(plan, needle="must be a factual claim with evidence")
+
+
+@pytest.mark.parametrize("text", [
+    "The Final Push", "Step 2", "Part 1", "Watch Until the End",
+    "See the Result", "Behind the Scenes",
+])
+def test_neutral_structural_labels_accepted(text):
+    plan = _valid_plan()
+    plan["captions"] = [{"claimType": "editorial_label", "text": text,
+                         "evidence": [], "timelineStart": 1.0,
+                         "timelineEnd": 3.0}]
+    assert _accept(plan)["status"] == "approved"
+
+
+def test_supported_reaction_from_transcript_accepted_as_fact():
+    segs = _segments()
+    segs[2] = segs[2].model_copy(
+        update={"transcript": "we finished the job and the audience cheered"})
+    plan = _valid_plan()
+    plan["captions"] = [{"claimType": "fact", "text": "the audience cheered",
+                         "evidence": [{"sourceType": "transcript",
+                                       "segmentId": "seg-3",
+                                       "quoteOrValue": "the audience cheered"}],
+                         "timelineStart": 8.0, "timelineEnd": 11.0}]
+    out = ep.plan_editorial(segs, {}, False, _gen(plan))
+    assert out["status"] == "approved"
+
+
+def test_supported_reaction_from_user_input_accepted_as_fact():
+    constraints = {"brief": "the crew celebrated at the end of this job"}
+    plan = _valid_plan()
+    plan["captions"] = [{"claimType": "fact", "text": "the crew celebrated",
+                         "evidence": [{"sourceType": "user_input",
+                                       "quoteOrValue": "the crew celebrated"}],
+                         "timelineStart": 8.0, "timelineEnd": 11.0}]
+    out = ep.plan_editorial(_segments(), constraints, False, _gen(plan))
+    assert out["status"] == "approved"
+
+
+# ------------------------------ gap 2: tone/style never silently ignored
+def test_quiet_somber_rejects_high_energy_plan():
+    # default plan paces hook at 0.9 energy — too hot for a low-energy tone
+    flat = _reject(_valid_plan(), constraints={"tone": "quiet and somber"})
+    assert "restrained pacing" in flat
+
+
+def test_quiet_somber_rejects_aggressive_transition():
+    plan = _valid_plan()
+    plan["timeline"][1].update(sourceIn=1.0, sourceOut=5.0)
+    plan["transitions"][0].update(type="whip", durationSeconds=0.5)
+    for pb in plan["pacing"]:
+        pb["energy"] = 0.5
+    _reject(plan, constraints={"tone": "quiet and somber"},
+            needle="forbids aggressive transitions")
+
+
+def test_quiet_somber_accepts_restrained_plan():
+    plan = _valid_plan()
+    for pb in plan["pacing"]:
+        pb["energy"] = 0.5
+    out = ep.plan_editorial(_segments(), {"tone": "quiet and somber"}, False,
+                            _gen(plan))
+    assert out["status"] == "approved"
+    assert out["qualityScore"] == 100        # fully resolved + fully honored
+
+
+def test_conflicting_tone_directives_rejected():
+    _reject(_valid_plan(), constraints={"tone": "playful and somber"},
+            needle="conflicting tone directives")
+
+
+def test_unknown_tone_phrase_is_a_hard_failure():
+    flat = _reject(_valid_plan(), constraints={"tone": "glorpy zebra energy"})
+    assert "could not be converted into enforceable policy" in flat
+    assert "deterministic gate: creative_policy_honored failed" in flat
+
+
+def test_advisory_unknown_tone_needs_warning_and_reduces_score():
+    constraints = {"tone": "glorpy", "toneAdvisoryOnly": True}
+    _reject(_valid_plan(), constraints=constraints,
+            needle="must surface an explicit warning")
+    warned = _valid_plan()
+    warned["technicalWarnings"] = [
+        _editorial("tone directive glorpy could not be enforced")]
+    out = ep.plan_editorial(_segments(), constraints, False, _gen(warned))
+    assert out["status"] == "approved"
+    assert out["qualityScore"] == 97          # tone_fully_resolved (3) withheld
+    rule = next(r for r in out["deterministicGate"]["rules"]
+                if r["rule"] == "tone_fully_resolved")
+    assert rule["passed"] is False and rule["hard"] is False
+
+
+def test_no_tone_supplied_is_not_a_failure():
+    assert _accept(_valid_plan())["qualityScore"] == 100
+
+
+# ------------------------------ gap 3: closed transition-type enum
+@pytest.mark.parametrize("bad_type", ["teleport", "unknown_transition"])
+def test_unknown_transition_types_fail_schema(bad_type):
+    plan = _valid_plan()
+    plan["transitions"][0]["type"] = bad_type
+    _reject(plan, needle="schema:")
+
+
+def test_whip_allowed_only_when_policy_permits():
+    plan = _valid_plan()
+    plan["timeline"][1].update(sourceIn=1.0, sourceOut=5.0)
+    plan["transitions"][0].update(type="whip", durationSeconds=0.5)
+    assert _accept(plan)["status"] == "approved"     # default policy: expressive
+    _reject(copy.deepcopy(plan),
+            constraints={"forbiddenTransitionTypes": ["whip"]},
+            needle="policy: transition type 'whip' is forbidden")
+
+
+# ------------------------------ gap 4: one transition per boundary
+@pytest.mark.parametrize("second_type", ["dissolve", "whip"])
+def test_multiple_transitions_on_one_boundary_rejected(second_type):
+    plan = _valid_plan()
+    plan["timeline"][1].update(sourceIn=1.0, sourceOut=5.0)
+    plan["transitions"][0].update(type="dissolve", durationSeconds=0.5)
+    plan["transitions"].append({"fromSegmentId": "seg-1", "toSegmentId": "seg-2",
+                                "type": second_type, "durationSeconds": 0.5,
+                                "purpose": "duplicate"})
+    _reject(plan, needle="target the same boundary")
+
+
+def test_one_transition_per_boundary_accepted():
+    # the valid plan carries exactly one transition on each of its two
+    # boundaries — different boundaries are fine
+    out = _accept(_valid_plan())
+    assert out["status"] == "approved"
 
 
 # ------------------------------- blocker 2: honest insufficient-footage report
@@ -505,6 +651,13 @@ def test_valid_ramp_crop_and_transition_accepted_together():
                                      "sourceEnd": 2.0, "entrySpeed": 1,
                                      "peakSpeed": 2, "exitSpeed": 1,
                                      "easing": "e", "narrativePurpose": "x"}]),
+     {}, "execution_geometry"),
+    # unresolved tone directive (not advisory) — hard policy failure
+    (lambda p: None, {"tone": "glorpy zebra energy"}, "creative_policy_honored"),
+    # duplicate transition boundary — hard execution failure
+    (lambda p: p["transitions"].append(
+        {"fromSegmentId": "seg-1", "toSegmentId": "seg-2", "type": "hard_cut",
+         "durationSeconds": 0, "purpose": "duplicate"}),
      {}, "execution_geometry"),
 ])
 def test_perfect_self_assessment_cannot_pass_hard_failures(mutate, constraints,

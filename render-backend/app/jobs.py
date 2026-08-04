@@ -499,7 +499,8 @@ def handle_editorial_plan(job: dict, project: dict, tmp: str, ctx: JobContext) -
         segments,
         constraints={k: params.get(k) for k in (
             "brief", "platform", "aspectRatio", "tone", "style",
-            "durationMin", "durationMax", "mustInclude", "mustExclude")},
+            "toneAdvisoryOnly", "durationMin", "durationMax",
+            "mustInclude", "mustExclude")},
         music_available=music_available,
         generate=editorial_planner.gemini_generate)
     ctx.checkpoint("before_plan_persist")

@@ -55,32 +55,41 @@ _ASPECTS = {"9:16": ("vertical", "tiktok", "reels", "shorts", "portrait"),
             "1:1": ("square",)}
 _WORD = re.compile(r"[A-Za-z0-9''-]+")
 
-# Deterministic fact-signal lexicons: these words ALWAYS make a statement
-# factual (reactions, outcomes, attributions, subject references, quantities),
-# regardless of capitalization. "Do not rely on capitalization to pass."
-_REACTION_WORDS = {"loved", "love", "cried", "laughed", "thrilled", "amazed",
-                   "shocked", "happy", "happier", "joy", "excited", "impressed",
-                   "satisfied", "delighted", "praised", "raved", "grateful",
-                   "emotional", "tears", "speechless"}
-_OUTCOME_WORDS = {"booked", "hired", "paid", "bought", "purchased", "signed",
-                  "referred", "returned", "recommended", "recommends", "rated",
-                  "review", "reviews", "stars", "sold", "guaranteed", "changed",
-                  "transformed", "doubled", "tripled", "saved", "earned"}
-_ATTRIBUTION_WORDS = {"says", "said", "told", "quoted", "testimonial",
-                      "according"}
-_SUBJECT_WORDS = {"customer", "customers", "client", "clients", "homeowner",
-                  "homeowners", "buyer", "owner", "neighbor", "family"}
-_NUMBER_WORDS = {"one", "two", "three", "four", "five", "six", "seven", "eight",
-                 "nine", "ten", "eleven", "twelve", "twenty", "thirty", "fifty",
-                 "hundred", "thousand", "million", "dozen", "half"}
 _STOPWORDS = {"the", "a", "an", "and", "or", "but", "with", "for", "was",
               "were", "are", "is", "be", "been", "to", "of", "in", "on", "at",
               "by", "it", "its", "this", "that", "these", "those", "we", "our",
               "you", "your", "they", "their", "he", "she", "his", "her", "as",
-              "from", "into", "about", "where", "leading", "story", "watch",
-              "see", "how", "why", "what", "when", "who", "so", "not", "no",
-              "more", "most", "very", "then", "than", "there", "here", "up",
-              "out", "off", "over", "under", "all", "any", "each"}
+              "from", "into", "about", "where", "leading", "how", "why",
+              "what", "when", "who", "so", "not", "no", "more", "most", "very",
+              "then", "than", "there", "here", "up", "out", "off", "over",
+              "under", "all", "any", "each"}
+
+# CLOSED allowlist of STRUCTURAL words a neutral editorial label / CTA may use
+# without evidence. This is the safety boundary: it describes video STRUCTURE
+# only (titles, steps, parts, viewing prompts). Anything outside it — any
+# person, group, location, action, reaction, emotion, result, quantity,
+# comparison, outcome or attribution — is a FACTUAL claim requiring evidence.
+# (Deliberately NOT a synonym list of forbidden words: unknown words fail
+# closed, so "cheered"/"celebrated"/"stunned" are factual by default.)
+_NEUTRAL_LABEL_WORDS = {
+    "setup", "step", "part", "chapter", "episode", "day", "take", "phase",
+    "stage", "intro", "final", "push", "watch", "see", "look", "wait",
+    "until", "end", "ending", "begin", "beginning", "start", "process",
+    "reveal", "result", "story", "next", "coming", "soon", "stay", "tuned",
+    "follow", "subscribe", "like", "share", "comment", "behind", "scenes",
+    "before", "after", "during", "work", "title", "opening", "closing",
+}
+# digit tokens are allowed in a neutral label ONLY next to a counter word
+_COUNTER_WORDS = {"step", "part", "chapter", "episode", "day", "take",
+                  "phase", "stage"}
+
+# words that operational technical warnings may additionally use (warnings are
+# system-surfaced honesty about constraints/quality, not viewer-facing text)
+_WARNING_VOCAB = ("music licensed unavailable available requested required "
+                  "missing footage quality shaky unstable blurry noise audio "
+                  "resolution low cannot could unsupported tone style "
+                  "directive policy phrase warning enforce enforced advisory "
+                  "duration shorter longer range")
 
 
 # ---------------------------------------------------------------- output schema
@@ -157,10 +166,20 @@ class GraphicItem(BaseModel):
     durationSeconds: float = Field(gt=0)
 
 
+# Closed, execution-safe transition vocabulary. Hard cuts are represented as
+# EXPLICIT objects with type "hard_cut" and duration 0 (not by omitting the
+# object), so downstream consumers see every boundary decision. Unknown types
+# ("teleport", ...) fail schema validation.
+TransitionType = Literal["hard_cut", "dissolve", "dip_to_black", "dip_to_white",
+                         "whip", "push", "slide", "zoom", "match_cut",
+                         "masked_reveal", "audio_led_cut"]
+AGGRESSIVE_TRANSITIONS = ("whip", "push", "slide", "zoom")
+
+
 class TransitionPlan(BaseModel):
     fromSegmentId: str
     toSegmentId: str
-    type: str = "cut"
+    type: TransitionType = "hard_cut"
     durationSeconds: float = Field(ge=0, le=2)
     purpose: str
 
@@ -356,17 +375,73 @@ _POLICY_PHRASES = [
 ]
 
 
+# Deterministic tone lexicon: every recognized term maps to an enforceable
+# energy bucket; anything else becomes an UNRESOLVED directive that fails
+# approval (or, when the request marks tone advisory-only, a warned advisory).
+_TONE_LOW = {"quiet", "somber", "calm", "soft", "gentle", "subdued", "mellow",
+             "slow", "restrained", "serene", "minimal", "peaceful"}
+_TONE_HIGH = {"playful", "energetic", "urgent", "hype", "aggressive", "intense",
+              "dynamic", "fast", "exciting", "punchy", "bold", "upbeat"}
+_TONE_NEUTRAL = {"warm", "professional", "cinematic", "uplifting", "tense",
+                 "authentic", "honest", "clean", "modern", "simple",
+                 "documentary", "raw"}
+_TONE_FILLER = {"and", "or", "but", "with", "a", "an", "the", "very", "feel",
+                "feeling", "vibe", "vibes", "mood", "tone", "style", "look",
+                "pacing", "edit", "video", "make", "keep", "it", "of", "to",
+                "in", "no", "only", "some", "more"}
+
+
 def parse_creative_policies(constraints: dict) -> dict:
     """Deterministically parse the ORIGINAL request into binding structured
-    policies. Explicit structured keys in the request win over parsed prose;
+    policies + a tone profile. Every tone/style token ends in exactly one
+    state: structured-and-enforced, advisory-with-warning, or unresolved
+    (which fails approval). Explicit structured keys win over parsed prose;
     the model never defines these."""
     policies = dict(_POLICY_DEFAULTS)
     prose = " ".join(str(constraints.get(k) or "")
                      for k in ("style", "tone")).lower()
+    consumed = prose
     for phrase, (key, value) in _POLICY_PHRASES:
-        if phrase in prose and policies[key] == _POLICY_DEFAULTS[key]:
-            policies[key] = value
-    for key in policies:                    # explicit request keys are authoritative
+        if phrase in prose:
+            if policies[key] == _POLICY_DEFAULTS[key]:
+                policies[key] = value
+            consumed = consumed.replace(phrase, " ")
+    low_hits, high_hits, tone_tags, unresolved = [], [], [], []
+    for match in _WORD.finditer(consumed):
+        token = match.group(0).lower()
+        if token in _TONE_FILLER or token in _STOPWORDS or token.isdigit():
+            continue
+        if token in _TONE_LOW:
+            low_hits.append(token)
+            tone_tags.append(token)
+        elif token in _TONE_HIGH:
+            high_hits.append(token)
+            tone_tags.append(token)
+        elif token in _TONE_NEUTRAL:
+            tone_tags.append(token)
+        else:
+            unresolved.append(token)
+    energy = "medium"
+    if low_hits and not high_hits:
+        energy = "low"
+    elif high_hits and not low_hits:
+        energy = "high"
+    policies["toneProfile"] = {
+        "energy": energy,
+        "emotionalTone": sorted(set(tone_tags)),
+        "cutDensity": "low" if energy == "low"
+                      else "high" if energy == "high" else "medium",
+        "motionIntensity": "subtle" if energy == "low" else "moderate",
+        "musicEnergy": "restrained" if energy == "low" else "moderate",
+        "graphicsIntensity": "minimal" if energy == "low" else "standard",
+    }
+    policies["toneConflicts"] = ({"low": sorted(set(low_hits)),
+                                  "high": sorted(set(high_hits))}
+                                 if (low_hits and high_hits) else {})
+    policies["unresolvedToneDirectives"] = sorted(set(unresolved))
+    policies["toneAdvisoryOnly"] = bool(constraints.get("toneAdvisoryOnly"))
+    policies["toneTags"] = policies["toneProfile"]["emotionalTone"]
+    for key in _POLICY_DEFAULTS:            # explicit request keys are authoritative
         if constraints.get(key) not in (None, "", []):
             policies[key] = constraints[key]
     return policies
@@ -408,33 +483,31 @@ def _user_text(constraints: dict) -> str:
                     ).lower()
 
 
-_PLACE_PATTERN = re.compile(r"\b(?:in|at|near|from)\s+([A-Za-z][A-Za-z''-]{2,})")
+def _non_neutral_tokens(text: str, pool: str) -> list[str]:
+    """Tokens that make a label FACTUAL rather than neutral-structural.
 
-
-def _fact_signals(text: str, pool: str) -> list[str]:
-    """UNSUPPORTED fact signals in a text: reaction/outcome/attribution/subject
-    lexemes, quantities (digits or number words), capitalized tokens AND
-    lowercase place references ("in paris") — none may lack a source in the
-    catalog/user pool. Capitalization is never required to flag a claim."""
-    signals: list[str] = []
-    for match in _WORD.finditer(text):
-        token = match.group(0)
-        lowered = token.lower()
-        if lowered in pool:
+    Fail-closed boundary: a neutral editorial label / CTA may only use the
+    closed structural allowlist (plus stopwords, plus words the input data
+    itself contains). EVERYTHING else — people, groups, locations, actions,
+    reactions, emotions, results, quantities, comparisons, outcomes,
+    attributions, known or unknown, capitalized or lowercase — is factual and
+    requires evidence. No synonym list is the safety boundary."""
+    tokens = [m.group(0) for m in _WORD.finditer(text)]
+    lowered = [t.lower() for t in tokens]
+    has_counter = any(t in _COUNTER_WORDS for t in lowered)
+    bad: list[str] = []
+    for token, low in zip(tokens, lowered, strict=True):
+        if low in _STOPWORDS or low in _NEUTRAL_LABEL_WORDS:
+            continue
+        if low in pool:
             continue                     # the input data itself says this
-        if lowered in _REACTION_WORDS or lowered in _OUTCOME_WORDS \
-                or lowered in _ATTRIBUTION_WORDS or lowered in _SUBJECT_WORDS \
-                or lowered in _NUMBER_WORDS or any(c.isdigit() for c in token):
-            signals.append(token)
-        elif token[0].isupper() and len(token) >= 3 \
-                and lowered not in _STOPWORDS and match.start() != 0:
-            signals.append(token)
-    for match in _PLACE_PATTERN.finditer(text):   # lowercase locations too
-        place = match.group(1).lower()
-        if place not in pool and place not in _STOPWORDS \
-                and match.group(1) not in signals:
-            signals.append(match.group(1))
-    return signals
+        if any(c.isdigit() for c in token):
+            if has_counter and token.isdigit():
+                continue                 # "Step 2" / "Part 1"
+            bad.append(token)
+            continue
+        bad.append(token)
+    return bad
 
 
 def _content_tokens(text: str) -> list[str]:
@@ -444,11 +517,13 @@ def _content_tokens(text: str) -> list[str]:
 
 def _grounded_text_violations(item: GroundedText | Caption | GraphicItem,
                               segments_by_id: dict, pool: str,
-                              constraints: dict, where: str) -> list[str]:
+                              constraints: dict, where: str,
+                              extra_vocab: str = "") -> list[str]:
     """Structured-evidence validation for one grounded text item."""
     out: list[str] = []
     text, claim, evidence = item.text, item.claimType, item.evidence
     user_text = _user_text(constraints)
+    pool = pool + " " + extra_vocab if extra_vocab else pool
 
     if claim == "fact":
         if not evidence:
@@ -488,11 +563,12 @@ def _grounded_text_violations(item: GroundedText | Caption | GraphicItem,
         unsupported = [t for t in _content_tokens(text) if t not in allowed]
         if unsupported:
             out.append(f"{where} unsupported factual content: {unsupported}")
-    else:  # editorial_label / cta: creative, but may not IMPLY facts
-        signals = _fact_signals(text, pool)
-        if signals:
+    else:  # editorial_label / cta: STRUCTURAL words only — fail closed
+        bad = _non_neutral_tokens(text, pool)
+        if bad:
             out.append(f"{where} ({claim}) implies unsupported factual "
-                       f"content: {signals}")
+                       f"content — {bad} is outside the neutral structural "
+                       "vocabulary, so it must be a factual claim with evidence")
     return out
 
 
@@ -654,7 +730,7 @@ def validate_plan(plan: EditorialPlan, segments: list[Segment],
 
     # -- BINDING structured creative policies (parsed from the REQUEST)
     tp = policies["transitionPolicy"]
-    non_cut = [t for t in plan.transitions if t.type != "cut"]
+    non_cut = [t for t in plan.transitions if t.type != "hard_cut"]
     if tp == "none" and plan.transitions:
         v.append("policy: the request forbids transitions but the plan "
                  f"contains {len(plan.transitions)}")
@@ -664,6 +740,44 @@ def validate_plan(plan: EditorialPlan, segments: list[Segment],
     if tp == "minimal" and len(non_cut) > 2:
         v.append("policy: the request allows minimal transitions but the plan "
                  f"contains {len(non_cut)} non-cut transitions")
+
+    # -- BINDING tone profile: every directive is enforced, warned or rejected
+    if policies["toneConflicts"]:
+        v.append(f"policy: conflicting tone directives in the request — "
+                 f"{policies['toneConflicts']} cannot both be honored; ask "
+                 "the user to choose")
+    if policies["unresolvedToneDirectives"]:
+        phrases = policies["unresolvedToneDirectives"]
+        if policies["toneAdvisoryOnly"]:
+            if not any(any(p in w.text.lower() for p in phrases)
+                       for w in plan.technicalWarnings):
+                v.append("policy: advisory tone directives "
+                         f"{phrases} were not converted into enforceable "
+                         "policy — the plan must surface an explicit warning "
+                         "naming them")
+        else:
+            v.append(f"policy: tone/style directives {phrases} could not be "
+                     "converted into enforceable policy and were NOT marked "
+                     "advisory-only — they cannot be silently ignored")
+    if policies["toneProfile"]["energy"] == "low":
+        loud = sorted({t.type for t in plan.transitions
+                       if t.type in AGGRESSIVE_TRANSITIONS})
+        if loud:
+            v.append(f"policy: the requested low-energy tone forbids "
+                     f"aggressive transitions but the plan contains {loud}")
+        hot_ramps = [i for i, r in enumerate(plan.speedRamps)
+                     if r.peakSpeed > 2.0]
+        if hot_ramps:
+            v.append("policy: the requested low-energy tone forbids "
+                     f"aggressive speed ramps (peak > 2x) at {hot_ramps}")
+        if len(plan.graphics) > 1:
+            v.append("policy: the requested low-energy tone allows minimal "
+                     f"graphics but the plan contains {len(plan.graphics)}")
+        hot_beats = [pb.beat for pb in plan.pacing if pb.energy > 0.6]
+        if hot_beats:
+            v.append("policy: the requested low-energy tone requires "
+                     f"restrained pacing but beats {hot_beats} exceed 0.6 "
+                     "energy")
     allowed_types = policies["allowedTransitionTypes"]
     if allowed_types:
         for t in plan.transitions:
@@ -744,8 +858,17 @@ def validate_plan(plan: EditorialPlan, segments: list[Segment],
             v.append("musicPlan restates licensing metadata — license data lives "
                      "only in the licensed music records, never in the plan")
 
-    # -- EXECUTION geometry: transitions
+    # -- EXECUTION geometry: transitions (one instruction per boundary)
     tl_order = [seg.segmentId for seg in plan.timeline]
+    boundary_counts: dict[tuple[str, str], int] = {}
+    for tr in plan.transitions:
+        key = (tr.fromSegmentId, tr.toSegmentId)
+        boundary_counts[key] = boundary_counts.get(key, 0) + 1
+    for (frm, to), count in sorted(boundary_counts.items()):
+        if count > 1:
+            v.append(f"execution: {count} transition instructions target the "
+                     f"same boundary {frm}->{to} — exactly one is allowed "
+                     "(duplicates and conflicts are rejected, never merged)")
     for i, tr in enumerate(plan.transitions):
         join = None
         for j in range(len(tl_order) - 1):
@@ -757,9 +880,9 @@ def validate_plan(plan: EditorialPlan, segments: list[Segment],
                      f"{tr.toSegmentId} does not join two adjacent timeline "
                      "segments")
             continue
-        if tr.type == "cut":
+        if tr.type == "hard_cut":
             if tr.durationSeconds > TIME_EPSILON:
-                v.append(f"execution: transitions[{i}] is a cut but has a "
+                v.append(f"execution: transitions[{i}] is a hard cut but has a "
                          "duration")
         else:
             if tr.durationSeconds <= 0:
@@ -852,10 +975,14 @@ def validate_plan(plan: EditorialPlan, segments: list[Segment],
     if chosen:
         grounded_fields += [("chosen premise", chosen.premise),
                             ("chosen payoff", chosen.payoff)]
-    grounded_fields += [(f"technicalWarnings[{i}]", w)
-                        for i, w in enumerate(plan.technicalWarnings)]
     for label, item in grounded_fields:
         v.extend(_grounded_text_violations(item, by_id, pool, constraints, label))
+    # warnings are system-surfaced honesty (not viewer-facing) — they may use
+    # the operational vocabulary, but names/numbers still require evidence
+    for i, w in enumerate(plan.technicalWarnings):
+        v.extend(_grounded_text_violations(w, by_id, pool, constraints,
+                                           f"technicalWarnings[{i}]",
+                                           extra_vocab=_WARNING_VOCAB))
     return v
 
 
@@ -916,19 +1043,25 @@ def deterministic_gate(plan: EditorialPlan, segments: list[Segment],
          no_violation("audio.", "soundEffects", "audioTreatments"),
          "every audio reference points at a planned segment")
     reuse_ok = (not used) or max(used.count(u) for u in set(used)) <= MAX_SEGMENT_REUSE
-    rule("no_redundant_reuse", 3, False,
+    rule("no_redundant_reuse", 2, False,
          reuse_ok and no_violation("repeats an identical range"),
          f"no segment used more than {MAX_SEGMENT_REUSE}x, no duplicate ranges")
     shot_types = {by_id[u].shotType for u in set(used)
                   if u in by_id and by_id[u].shotType}
     variety_ok = len(set(used)) >= min(2, len(segments)) \
         and (len(shot_types) >= 2 if len(shot_types) else True)
-    rule("visual_variety", 3, False, variety_ok,
+    rule("visual_variety", 2, False, variety_ok,
          "multiple distinct segments / shot types where the catalog offers them")
     flagged = [u for u in set(used) if u in by_id and by_id[u].problems]
-    rule("technical_warnings_surfaced", 4, False,
+    rule("technical_warnings_surfaced", 3, False,
          (not flagged) or bool(plan.technicalWarnings),
          "known segment problems surface as technical warnings")
+    # advisory-only unresolved tone directives never score full compliance,
+    # even when warned (soft: the plan can still pass, visibly reduced)
+    policies = parse_creative_policies(constraints)
+    rule("tone_fully_resolved", 3, False,
+         not policies["unresolvedToneDirectives"],
+         "every tone/style directive maps to enforceable structured policy")
 
     score = sum(r["weight"] for r in rules if r["passed"])
     hard_failures = [r["rule"] for r in rules if r["hard"] and not r["passed"]]
@@ -955,22 +1088,32 @@ Think before you cut:
    timeline's actual computed length and be below the requested minimum; give
    SPECIFIC missing shots {beat, shotType, recommendedDurationSeconds, why}.
    Never report a shortfall while usable catalog footage remains unused.
-5. EVERY factual statement — names, places, numbers, quantities, reactions,
-   results, bookings, outcomes, customer sentiment, in ANY capitalization —
-   must be a claimType "fact" with structured evidence:
+5. EVERY factual statement — anything describing a person, group, location,
+   action, reaction, emotion, result, quantity, comparison, outcome or
+   attribution, in ANY capitalization — must be claimType "fact" with
+   structured evidence:
    {sourceType: transcript|segment_metadata|user_input, segmentId, quoteOrValue}
-   where the quote is literally present in that source. Every content word of
-   a factual text must trace to its evidence or the catalog/user input.
-   editorial_label and cta text may be creative but must contain NO unsupported
-   factual signals. storySentence, viewerPromise, premise, payoff, hook.text,
-   captions, graphics and technicalWarnings all use this grounded structure.
+   where the quote is literally present in that source and every content word
+   of the text traces to it. editorial_label / cta text is limited to NEUTRAL
+   STRUCTURAL wording only (e.g. "The Setup", "Step 2", "The Final Push",
+   "Watch Until the End") — any other word makes it a factual claim.
+   storySentence, viewerPromise, premise, payoff, hook.text, captions,
+   graphics and technicalWarnings all use this grounded structure.
+5b. The STRUCTURED CREATIVE POLICIES include a binding tone profile parsed
+   from the user's tone/style. A low-energy tone forbids aggressive
+   transitions (whip/push/slide/zoom), speed ramps above 2x, more than one
+   graphic, and pacing beats above 0.6 energy. Tone words that could not be
+   parsed appear in unresolvedToneDirectives — you must NOT ignore them.
 6. EXECUTION-VALID geometry only:
    - speed ramps: sourceStart < sourceEnd, inside the planned cut, speeds in
      (0, 8], no overlapping ramps on one segment
    - crops: normalized, x+width <= 1, y+height <= 1, startCrop/endCrop keep
      the same shape (no distortion)
-   - transitions: join ADJACENT cuts; cuts have duration 0; other types need a
-     positive duration that fits inside both segments' unused source handles
+   - transitions: type is EXACTLY one of hard_cut, dissolve, dip_to_black,
+     dip_to_white, whip, push, slide, zoom, match_cut, masked_reveal,
+     audio_led_cut; they join ADJACENT cuts with AT MOST ONE transition per
+     boundary; hard_cut has duration 0; other types need a positive duration
+     that fits inside both segments' unused source handles
 7. SOUND: J/L cuts by planned segment id; audio.musicAvailable EXACTLY as
    given; with no licensed music, musicPlan MUST be null and nothing
    music-related may be described (no tracks, BPM, beat grids, licenses).

@@ -440,6 +440,9 @@ class EditorialPlanRequest(BaseModel):
     aspectRatio: str | None = Field(default=None, max_length=10)
     tone: str | None = Field(default=None, max_length=200)
     style: str | None = Field(default=None, max_length=200)
+    # When true, tone/style words that cannot be parsed into enforceable
+    # policy become warned advisories instead of hard rejections.
+    toneAdvisoryOnly: bool = False
     durationMin: float | None = Field(default=None, gt=0, le=3600)
     durationMax: float | None = Field(default=None, gt=0, le=3600)
     mustInclude: list[str] = Field(default_factory=list, max_length=20)
