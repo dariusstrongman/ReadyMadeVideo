@@ -3,6 +3,12 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
 import { RENDER_API } from '../lib/config'
+import { probeDuration } from '../lib/media'
+import { editorApi } from '../lib/editor'
+
+// A customer export is a Product Editor render: pipeline_jobs.kind === 'final_render'
+// carrying an editor_document_id. Analysis/autoedit jobs are never exports.
+export const isExportJob = (j) => j.kind === 'final_render' && !!(j.params?.editor_document_id)
 
 const STATUS_LABEL = {
   draft:           'Ready for footage',
@@ -106,6 +112,8 @@ export default function Project() {
   const [assets, setAssets] = useState([])
   const [candidates, setCandidates] = useState([])
   const [candidateIdx, setCandidateIdx] = useState(0)
+  const [previewUrls, setPreviewUrls] = useState({})   // candidateId -> signed URL
+  const [opening, setOpening] = useState(false)
   const [jobs, setJobs] = useState([])
   const [analysis, setAnalysis] = useState([])
   const [networkError, setNetworkError] = useState(null)
@@ -120,37 +128,47 @@ export default function Project() {
 
   const load = useCallback(async () => {
     try {
-    const [{ data: proj }, { data: ast }, { data: cands }, { data: js }, { data: analysisRows }] = await Promise.all([
+    const [{ data: proj }, { data: ast }, { data: js }, { data: analysisRows }] = await Promise.all([
       supabase.from('projects').select('*').eq('id', projectId).single(),
       supabase.from('media_assets').select('*').eq('project_id', projectId).order('created_at'),
-      supabase.from('edit_candidates').select('*').eq('project_id', projectId).order('overall_score', { ascending: false }),
       supabase.from('pipeline_jobs').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
       supabase.from('asset_analysis').select('kind,status,asset_id,created_at').eq('project_id', projectId).order('created_at', { ascending: false }),
     ])
     if (proj) setProject(proj)
     if (ast) setAssets(ast)
-    if (cands) setCandidates(cands)
     if (js) setJobs(js)
     if (analysisRows) setAnalysis(analysisRows)
+    // Candidates come from the immutable Product Editor workspace API (candidate_runs).
+    // One contract for bridged / initial / revised candidates.
+    try {
+      const ws = await editorApi(`/projects/${projectId}/workspace`, session)
+      setCandidates(ws.candidates || [])
+    } catch {
+      // Candidate query failed — leave candidates empty; the project view stays on
+      // its processing/empty state and the poller retries. Never crashes the page.
+    }
       setNetworkError(null)
     } catch (err) {
       setNetworkError(err?.message || 'Network error — check your connection.')
     }
-  }, [projectId])
+  }, [projectId, session])
 
   useEffect(() => { load() }, [load])
 
-  // Poll while analyzing
+  // Poll only while an analysis OR export job is active; stop on terminal states.
+  const anyActiveJob = jobs.some(
+    (j) => ['queued', 'processing', 'cancel_requested'].includes(j.status))
   useEffect(() => {
-    if (!project) return
-    const active = ['analyzing', 'uploading', 'ready', 'analysis_failed'].includes(project.status)
+    if (!project) return undefined
+    const active = ['analyzing', 'uploading', 'ready', 'analysis_failed', 'rendering']
+      .includes(project.status) || anyActiveJob
     if (active) {
       pollRef.current = setInterval(load, 3000)
     } else {
       clearInterval(pollRef.current)
     }
-    return () => clearInterval(pollRef.current)
-  }, [project?.status, load])
+    return () => clearInterval(pollRef.current)   // clears on unmount + status change
+  }, [project?.status, anyActiveJob, load])
 
   // Autoplay candidate video
   useEffect(() => {
@@ -159,6 +177,32 @@ export default function Project() {
       videoRef.current.play().catch(() => {})
     }
   }, [candidateIdx])
+
+  // Fetch a short-lived signed preview URL for the visible candidate through the
+  // authorized backend endpoint. Never uses the raw storage path as a URL.
+  useEffect(() => {
+    const c = candidates[candidateIdx]
+    if (!c || previewUrls[c.id] !== undefined) return
+    let cancelled = false
+    editorApi(`/projects/${projectId}/candidates/${c.id}/preview-url`, session,
+      { method: 'POST', body: JSON.stringify({}) })
+      .then(({ url }) => { if (!cancelled) setPreviewUrls(p => ({ ...p, [c.id]: url })) })
+      .catch(() => { if (!cancelled) setPreviewUrls(p => ({ ...p, [c.id]: null })) })
+    return () => { cancelled = true }
+  }, [candidateIdx, candidates, projectId, session, previewUrls])
+
+  // Open a candidate through the Product Editor start endpoint, then navigate to
+  // the returned editor_document route. Same path for bridged / initial / revised.
+  async function openCandidate(c) {
+    setOpening(true); setError('')
+    try {
+      const doc = await editorApi(`/projects/${projectId}/editor/start`, session,
+        { method: 'POST', body: JSON.stringify({ candidateRunId: c.id }) })
+      navigate(`/project/${projectId}/editor/${doc.id}`)
+    } catch (e) {
+      setError(e.message || 'Could not open the editor.')
+    } finally { setOpening(false) }
+  }
 
   async function handleFiles(files) {
     if (!files?.length) return
@@ -202,6 +246,9 @@ export default function Project() {
         },
       })
       if (upErr) { setError(upErr.message); setUploading(false); return }
+      // Probe duration so the Product Editor has real per-asset bounds. Best
+      // effort: null if it can't be read (never blocks the upload).
+      const duration = await probeDuration(file)
       // Step 2: Insert media_assets row using the correct schema column names:
       //   filename (NOT original_filename) — required NOT NULL
       //   size_bytes (NOT file_size_bytes)
@@ -212,6 +259,7 @@ export default function Project() {
         filename: file.name,
         size_bytes: file.size,
         mime_type: file.type,
+        duration_seconds: duration,
       })
       if (dbErr) {
         // DB insert failed — clean up the orphaned storage object to avoid
@@ -255,13 +303,25 @@ export default function Project() {
     : ['rendering', 'render_failed'].includes(status) ? 4
     : (status === 'completed' || status === 'complete') ? 5 : 1
 
-  // ── Export success ──────────────────────────────────────────────────
+  // ── Export (Product Editor render — pipeline_jobs kind=final_render only) ──
+  const exportJobs = jobs.filter(isExportJob)   // never analysis/autoedit
+  const latestExport = exportJobs[0] ?? null
   if (status === 'completed' || status === 'complete') {
-    const latestJob = jobs.find(j => j.status === 'completed')
+    const done = exportJobs.find(j => j.status === 'completed') ?? latestExport
     return (
       <>
         <Breadcrumb projectName={project.name} projectId={projectId} />
-        <ExportSuccess project={project} job={latestJob} session={session} />
+        <ExportView job={done} project={project} projectId={projectId}
+          session={session} onRetry={load} />
+      </>
+    )
+  }
+  if (latestExport && ['queued', 'processing', 'failed'].includes(latestExport.status)) {
+    return (
+      <>
+        <Breadcrumb projectName={project.name} projectId={projectId} />
+        <ExportView job={latestExport} project={project} projectId={projectId}
+          session={session} onRetry={load} />
       </>
     )
   }
@@ -269,6 +329,10 @@ export default function Project() {
   // ── Candidate reveal ────────────────────────────────────────────────
   if (status === 'draft_ready' && candidates.length > 0) {
     const c = candidates[candidateIdx]
+    const preview = previewUrls[c.id]            // undefined = loading, null = unavailable
+    const report = c.publishability
+    const label = report?.publishable ? 'Publish-ready edit' : 'AI-assembled edit'
+    const score = report?.overall_publishability_score
     return (
       <>
         <Breadcrumb projectName={project.name} projectId={projectId} />
@@ -278,24 +342,23 @@ export default function Project() {
             {candidates.length > 1 && <span>{candidateIdx + 1} of {candidates.length} edits</span>}
           </div>
           <div className="candidate-video-wrap">
-            {c.preview_url
-              ? <video ref={videoRef} src={c.preview_url} autoPlay muted loop playsInline />
-              : <div className="candidate-video-placeholder">Preview not available</div>
+            {preview
+              ? <video ref={videoRef} src={preview} autoPlay muted loop playsInline />
+              : <div className="candidate-video-placeholder">
+                  {preview === undefined ? 'Loading preview…' : 'Preview not available'}
+                </div>
             }
           </div>
           <div className="candidate-info">
             <p className="candidate-title">{c.candidate_key || `Edit ${candidateIdx + 1}`}</p>
             <p className="candidate-highlights">
-              {c.publishability_label || 'AI-assembled edit'}{c.overall_score ? ` · Score: ${Math.round(c.overall_score)}` : ''}
+              {label}{Number.isFinite(score) ? ` · Score: ${Math.round(score)}` : ''}
             </p>
+            {error && <div className="err" role="alert">{error}</div>}
             <div className="candidate-actions">
-              <button className="btn btn-primary btn-lg"
-                onClick={() => navigate(`/project/${projectId}/editor/${c.id}`)}>
-                Watch this edit
-              </button>
-              <button className="btn btn-ghost"
-                onClick={() => navigate(`/project/${projectId}/editor/${c.id}`)}>
-                Open in editor
+              <button className="btn btn-primary btn-lg" disabled={opening}
+                onClick={() => openCandidate(c)}>
+                {opening ? 'Opening…' : 'Open in editor'}
               </button>
             </div>
           </div>
@@ -406,12 +469,12 @@ export default function Project() {
           </div>
         )}
 
-        {/* Render jobs */}
-        {jobs.length > 0 && (
+        {/* Export history — only real export jobs (final_render), never analysis/autoedit */}
+        {exportJobs.length > 0 && (
           <div style={{ marginTop: 32 }}>
             <span className="section-label">Export history</span>
             <div className="grid">
-              {jobs.map(j => <JobRow key={j.id} job={j} session={session} projectId={projectId} onRetry={load} />)}
+              {exportJobs.map(j => <JobRow key={j.id} job={j} session={session} projectId={projectId} onRetry={load} />)}
             </div>
           </div>
         )}
@@ -828,63 +891,120 @@ function FootageGrid({ assets, fmtSize, fmtDur }) {
   )
 }
 
-function ExportSuccess({ project, job, session }) {
-  const [signedUrl, setSignedUrl] = useState(null)
-  const [copied, setCopied] = useState(false)
+// Output metadata comes ONLY from real pipeline_jobs.artifacts.output values;
+// anything missing is omitted (never fabricated).
+export function exportMeta(art = {}) {
+  return [
+    (art.width && art.height) ? `${art.width}×${art.height}` : null,
+    Number.isFinite(art.duration) ? `${art.duration.toFixed(1)}s` : null,
+    Number.isFinite(art.size_bytes) ? `${(art.size_bytes / 1048576).toFixed(2)} MB` : null,
+  ].filter(Boolean).join(' · ')
+}
 
-  useEffect(() => {
-    if (job?.output_storage_path) {
-      supabase.storage.from('exports').createSignedUrl(job.output_storage_path, 3600)
-        .then(({ data }) => { if (data) setSignedUrl(data.signedUrl) })
-    }
-  }, [job])
+// Sign on demand through the authorized backend (fresh short-lived URL each click,
+// so an expired URL is never reused) and trigger the download. Never exposes the
+// raw storage path.
+async function downloadExport(projectId, job, session, projectName) {
+  const { url } = await editorApi(
+    `/projects/${projectId}/editor/renders/${job.id}/sign`, session,
+    { method: 'POST', body: JSON.stringify({}) })
+  const a = window.document.createElement('a')
+  a.href = url
+  a.download = `stromation-${(projectName || 'edit').replace(/[^\w.-]+/g, '_')}.mp4`
+  a.rel = 'noopener'
+  window.document.body.appendChild(a); a.click(); a.remove()
+}
 
-  function copyShare() {
-    navigator.clipboard.writeText(`Just finished my first edit with Stromation — raw footage in, finished video out. https://www.stromation.com`)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+function ExportView({ job, project, projectId, session, onRetry }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const status = job?.status
+  const meta = exportMeta(job?.artifacts)
+
+  async function onDownload() {
+    setBusy(true); setError('')
+    try { await downloadExport(projectId, job, session, project.name) }
+    catch (e) { setError(e.message || 'Could not prepare the download.') }
+    finally { setBusy(false) }
+  }
+  async function onRetryExport() {
+    setBusy(true); setError('')
+    try {
+      await editorApi(`/projects/${projectId}/editor/renders/${job.id}/retry`, session,
+        { method: 'POST', body: JSON.stringify({}) })
+      onRetry?.()
+    } catch (e) { setError(e.message || 'Could not retry the export.') }
+    finally { setBusy(false) }
   }
 
+  if (status === 'completed') {
+    return (
+      <div className="export-success">
+        <svg className="export-check" viewBox="0 0 52 52" fill="none">
+          <circle cx="26" cy="26" r="25" stroke="currentColor" strokeWidth="2" opacity="0.2" />
+          <path className="export-check-path" d="M14 27l8 8 16-16" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <h1 className="export-title">Your video is ready.</h1>
+        {meta && <p className="export-meta">{meta}</p>}
+        <div className="export-actions">
+          <button className="btn btn-primary btn-lg" onClick={onDownload} disabled={busy}>
+            {busy ? 'Preparing…' : '↓ Download MP4'}
+          </button>
+          <Link to="/" className="btn btn-ghost">← Back to studio</Link>
+        </div>
+        {error && <div className="err" role="alert">{error}</div>}
+        <p className="export-feedback">
+          <a href="mailto:hello@stromation.com">Send feedback on this edit</a>
+        </p>
+      </div>
+    )
+  }
+  if (status === 'failed') {
+    return (
+      <div className="export-success">
+        <h1 className="export-title">Export didn't finish.</h1>
+        {job.error_message && <p className="export-meta">{job.error_message}</p>}
+        <div className="export-actions">
+          <button className="btn btn-primary btn-lg" onClick={onRetryExport} disabled={busy}>
+            {busy ? 'Retrying…' : 'Retry export'}
+          </button>
+          <Link to={`/project/${projectId}`} className="btn btn-ghost">Back to project</Link>
+        </div>
+        {error && <div className="err" role="alert">{error}</div>}
+      </div>
+    )
+  }
+  // queued / processing
   return (
     <div className="export-success">
-      <svg className="export-check" viewBox="0 0 52 52" fill="none">
-        <circle cx="26" cy="26" r="25" stroke="currentColor" strokeWidth="2" opacity="0.2" />
-        <path className="export-check-path" d="M14 27l8 8 16-16" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-      <h1 className="export-title">Your video is ready.</h1>
-      <p className="export-meta">
-        {job ? `${job.output_width || ''}×${job.output_height || ''} · ${job.output_duration_seconds?.toFixed(1) || '?'}s · ${job.output_size_bytes ? ((job.output_size_bytes/1048576).toFixed(2) + ' MB') : ''}` : project.name}
-      </p>
-      <div className="export-actions">
-        {signedUrl
-          ? <a className="btn btn-primary btn-lg" href={signedUrl} download={`stromation-${project.name}.mp4`}>↓ Download MP4</a>
-          : <button className="btn btn-primary btn-lg" disabled>Preparing download…</button>
-        }
-        <Link to="/" className="btn btn-ghost">← Back to studio</Link>
+      <h1 className="export-title">Rendering your video…</h1>
+      <p className="export-meta">{status === 'queued' ? 'Queued' : 'Rendering'}{job?.progress ? ` · ${job.progress}%` : ''}</p>
+      <div className="progress" style={{ maxWidth: 280, margin: '16px auto' }}>
+        <div style={{ width: `${job?.progress || 0}%` }} />
       </div>
-      <div className="export-share">
-        <p className="export-share-label">Made with Stromation. Share it →</p>
-        <div className="export-share-btns">
-          <button className="btn btn-ghost btn-sm" onClick={copyShare}>
-            {copied ? '✓ Copied!' : 'Copy tweet'}
-          </button>
-        </div>
-      </div>
-      <p className="export-feedback">
-        <a href="mailto:hello@stromation.com">Send feedback on this edit</a>
-      </p>
+      <p className="small">This updates automatically.</p>
     </div>
   )
 }
 
 function JobRow({ job, session, projectId, onRetry }) {
-  const [signedUrl, setSignedUrl] = useState(null)
-  const [urlError, setUrlError] = useState('')
-  async function getUrl() {
-    setUrlError('')
-    const { data, error } = await supabase.storage.from('exports').createSignedUrl(job.output_storage_path, 3600)
-    if (error) setUrlError(error.message)
-    else setSignedUrl(data.signedUrl)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const meta = exportMeta(job.artifacts)
+  async function onDownload() {
+    setBusy(true); setError('')
+    try { await downloadExport(projectId, job, session, `${job.id.slice(0, 8)}`) }
+    catch (e) { setError(e.message || 'Could not prepare the download.') }
+    finally { setBusy(false) }
+  }
+  async function onRetryExport() {
+    setBusy(true); setError('')
+    try {
+      await editorApi(`/projects/${projectId}/editor/renders/${job.id}/retry`, session,
+        { method: 'POST', body: JSON.stringify({}) })
+      onRetry?.()
+    } catch (e) { setError(e.message || 'Could not retry the export.') }
+    finally { setBusy(false) }
   }
   return (
     <div className="list-item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
@@ -892,28 +1012,25 @@ function JobRow({ job, session, projectId, onRetry }) {
         <span className="mono small">{job.id.slice(0, 8)}</span>
         <span className={`badge ${job.status}`}>{job.status}</span>
         {['queued', 'processing'].includes(job.status) && (
-          <div className="progress" style={{ flex: 1 }}><div style={{ width: `${job.progress}%` }} /></div>
+          <div className="progress" style={{ flex: 1 }}><div style={{ width: `${job.progress || 0}%` }} /></div>
         )}
         <span className="spacer" />
-        {job.status === 'completed' && !signedUrl && (
-          <button className="btn btn-primary btn-sm" onClick={getUrl}>Download video</button>
+        {job.status === 'completed' && (
+          <button className="btn btn-primary btn-sm" onClick={onDownload} disabled={busy}>
+            {busy ? 'Preparing…' : 'Download MP4'}
+          </button>
+        )}
+        {job.status === 'failed' && (
+          <button className="btn btn-ghost btn-sm" onClick={onRetryExport} disabled={busy}>Retry</button>
         )}
       </div>
+      {job.status === 'completed' && meta && (
+        <p className="small" style={{ marginTop: 6 }}>{meta}</p>
+      )}
       {job.status === 'failed' && job.error_message && (
         <p className="small" style={{ color: '#fca5a5', marginTop: 8 }}>{job.error_message}</p>
       )}
-      {urlError && <div className="err">{urlError}</div>}
-      {signedUrl && (
-        <div style={{ marginTop: 12 }}>
-          <video className="preview" src={signedUrl} controls />
-          <p style={{ marginTop: 8 }}>
-            <a className="btn btn-primary btn-sm" href={signedUrl} download={`stromation-${job.id.slice(0, 8)}.mp4`}>
-              Download MP4
-            </a>
-            <span className="small" style={{ marginLeft: 10 }}>link valid for 1 hour</span>
-          </p>
-        </div>
-      )}
+      {error && <div className="err">{error}</div>}
     </div>
   )
 }

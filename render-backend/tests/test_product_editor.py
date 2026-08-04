@@ -27,8 +27,12 @@ from tests.fake_supa import FakeSupabase, install  # noqa: E402
 
 
 def candidate(project_id, user_id, asset_id):
+    # A faithful Milestone-6 candidate carries a completed audio mix; the Product
+    # Editor derives the music-main track from that ancestry (bridged candidates
+    # omit it and get an honest empty music track).
     return {
         "id": str(uuid4()), "project_id": project_id, "user_id": user_id,
+        "audio_mix_run_id": "audio-mix-seed", "music_sound_run_id": "music-seed",
         "candidate_key": "winner", "manifest": {
             "schemaVersion": 1, "sourceAssetIds": [asset_id],
             "pictureTimeline": {

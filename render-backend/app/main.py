@@ -27,7 +27,7 @@ from pathlib import PurePosixPath
 from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError
 
@@ -37,7 +37,6 @@ config.validate()          # fail fast with clear errors before anything imports
 
 from . import supa
 from .renderer import RenderError, render
-from .timeline import Timeline, plan_render
 
 app = FastAPI(title="Stromation Render Backend", version="0.1.0")
 
@@ -417,10 +416,9 @@ def op_request_analysis(project_id: str,
     Called by the frontend immediately after upload completes.
     """
     from . import jobs
-    user = _auth_user(authorization)
-    project = _get_project(project_id)
-    if project["user_id"] != user["id"]:
-        raise HTTPException(403, "you do not own this project")
+    # _owned_project also rejects soft-deleted projects (404) — a deleted project
+    # can never restart analysis.
+    user, _ = _owned_project(project_id, authorization)
     # Idempotency: return existing active analysis job if present
     active = supa.db_select(
         "pipeline_jobs",
@@ -460,8 +458,16 @@ def op_get_job(job_id: str, authorization: str = Header(default="")):
     if not rows:
         raise HTTPException(404, "job not found")
     job = rows[0]
+    is_operator = bool(supa.db_select("operators", f"user_id=eq.{user['id']}"))
     if job["user_id"] != user["id"]:
-        _require_operator(authorization)   # owners or operators only
+        if not is_operator:                # owners or operators only
+            raise HTTPException(403, "operator access required")
+        return job
+    # Owner path: a job whose parent project has been soft-deleted is hidden, matching
+    # the child-table RLS (operators retain access for support/forensics).
+    parent = supa.db_select("projects", f"id=eq.{job['project_id']}&limit=1")
+    if parent and parent[0].get("deleted_at") and not is_operator:
+        raise HTTPException(404, "job not found")
     return job
 
 
@@ -2074,11 +2080,16 @@ def op_editorial_intelligence(
 # ==================== customer Product Editor API ====================
 
 
-def _owned_project(project_id: str, authorization: str) -> tuple[dict, dict]:
+def _owned_project(project_id: str, authorization: str,
+                   allow_deleted: bool = False) -> tuple[dict, dict]:
     user = _auth_user(authorization)
     project = _get_project(project_id)
     if project["user_id"] != user["id"]:
         raise HTTPException(403, "project ownership check failed")
+    # Soft-deleted projects are rejected from every customer API (only the delete
+    # endpoint opts in via allow_deleted to finish/retry cleanup).
+    if not allow_deleted and project.get("deleted_at"):
+        raise HTTPException(404, "project not found")
     return user, project
 
 
@@ -2119,6 +2130,24 @@ class EditorRenderBody(BaseModel):
     documentId: UUID
 
 
+def _public_candidate(row: dict) -> dict:
+    """Drop raw storage internals from a customer-facing candidate. The preview is fetched
+    via /candidates/{id}/preview-url (server-signed), so the raw path/bucket are never
+    needed client-side and are not exposed."""
+    return {k: v for k, v in row.items()
+            if k not in ("preview_storage_path", "preview_storage_bucket")}
+
+
+def _public_render_job(row: dict) -> dict:
+    """Drop the raw export storage path from a customer-facing render job. Downloads go
+    through /editor/renders/{job}/sign (server-signed); artifacts keep only the display
+    metadata (dimensions/size/telemetry), never the raw object key."""
+    art = row.get("artifacts")
+    if isinstance(art, dict) and "output" in art:
+        return {**row, "artifacts": {k: v for k, v in art.items() if k != "output"}}
+    return row
+
+
 @app.get("/projects/{project_id}/workspace")
 def customer_workspace(project_id: str, authorization: str = Header(default="")):
     user, project = _owned_project(project_id, authorization)
@@ -2138,12 +2167,94 @@ def customer_workspace(project_id: str, authorization: str = Header(default=""))
     )
     return {
         "project": project,
-        "candidates": [{**row, "publishability": report_by_candidate.get(row["id"])}
+        "candidates": [{**_public_candidate(row),
+                        "publishability": report_by_candidate.get(row["id"])}
                        for row in candidates],
         "editorDocuments": documents,
-        "renderJobs": jobs,
+        "renderJobs": [_public_render_job(j) for j in jobs],
         "viewerUserId": user["id"],
     }
+
+
+def _cleanup_project_storage(user_id: str, project_id: str) -> list[str]:
+    """Remove EVERY object under the project's storage prefixes (raw footage +
+    proxies/wav/thumbs + licensed music + exports + autoedit drafts + finishing
+    previews). Failures are NOT swallowed — returns the list of buckets that failed
+    so the caller can record retryable state."""
+    prefix = f"users/{user_id}/projects/{project_id}/"
+    failures = []
+    for bucket in ("raw-footage", "exports"):
+        try:
+            supa.storage_remove_prefix(bucket, prefix)
+        except Exception as exc:  # noqa: BLE001 — surfaced, not swallowed
+            failures.append(f"{bucket} ({type(exc).__name__})")
+    return failures
+
+
+@app.delete("/projects/{project_id}")
+def customer_delete_project(project_id: str, authorization: str = Header(default="")):
+    """Safe, server-authorized project deletion (soft-delete).
+
+    Immutable evidence (candidate_runs/editor_documents/timelines/audio ancestry) is
+    preserved by design — protect_*_evidence triggers make a hard delete impossible.
+    The project is marked deleted (hidden from the customer) FIRST, then all project
+    storage prefixes are cleaned. Cleanup failures are recorded (deleted_cleanup_done
+    = false) and surfaced; a repeated DELETE RETRIES the cleanup rather than no-opping.
+    Idempotent + retry-safe."""
+    user, project = _owned_project(project_id, authorization, allow_deleted=True)
+    if project.get("deleted_at") and project.get("deleted_cleanup_done"):
+        return {"status": "deleted", "cleanup": "complete", "projectId": project_id}
+    if not project.get("deleted_at"):
+        _editor_audit(user["id"], project_id, "delete_project", {})
+        supa.db_update("projects", f"id=eq.{project_id}",
+                       {"deleted_at": _now(), "deleted_cleanup_done": False,
+                        "status_reason": "deleted by owner"})
+    failures = _cleanup_project_storage(user["id"], project_id)
+    if failures:
+        supa.db_update("projects", f"id=eq.{project_id}",
+                       {"deleted_cleanup_done": False,
+                        "status_reason": f"deleted; storage cleanup pending: "
+                                         f"{', '.join(failures)}"[:300]})
+        raise HTTPException(503, {"status": "deleted", "cleanup": "pending",
+                                  "message": "project deleted; storage cleanup "
+                                             "incomplete — retry to finish cleanup"})
+    supa.db_update("projects", f"id=eq.{project_id}", {"deleted_cleanup_done": True})
+    return {"status": "deleted", "cleanup": "complete", "projectId": project_id}
+
+
+@app.post("/projects/{project_id}/candidates/{candidate_id}/preview-url")
+def customer_candidate_preview_url(project_id: str, candidate_id: UUID,
+                                   authorization: str = Header(default="")):
+    """Short-lived signed URL for a candidate's preview, minted server-side.
+
+    Verifies JWT + project ownership + candidate/project/owner ancestry, and that the
+    preview lives in the owner's exports prefix. The browser never sees the storage
+    path or the service-role key."""
+    import httpx as _hx
+    user, _ = _owned_project(project_id, authorization)
+    rows = supa.db_select("candidate_runs", f"id=eq.{candidate_id}&limit=1")
+    if (not rows or rows[0]["project_id"] != project_id
+            or rows[0]["user_id"] != user["id"]):
+        raise HTTPException(404, "candidate not found")
+    candidate = rows[0]
+    bucket = candidate.get("preview_storage_bucket") or "exports"
+    path = candidate.get("preview_storage_path")
+    expected = f"users/{user['id']}/projects/{project_id}/"
+    if bucket != "exports" or not path or not path.startswith(expected):
+        raise HTTPException(409, "candidate preview is not available")
+    _editor_audit(user["id"], project_id, "sign_candidate_preview",
+                  {"candidate": str(candidate_id)})
+    response = _hx.post(
+        f"{supa.SUPABASE_URL}/storage/v1/object/sign/{bucket}/{path}",
+        headers={"apikey": supa.SERVICE_KEY,
+                 "Authorization": f"Bearer {supa.SERVICE_KEY}",
+                 "Content-Type": "application/json"},
+        json={"expiresIn": 3600}, timeout=30,
+    )
+    if response.status_code != 200:
+        raise HTTPException(404, "candidate preview could not be signed")
+    return {"url": f"{supa.SUPABASE_URL}/storage/v1{response.json()['signedURL']}",
+            "expiresIn": 3600}
 
 
 @app.post("/projects/{project_id}/editor/start")
@@ -2333,6 +2444,19 @@ def customer_editor_render(project_id: str, body: EditorRenderBody,
     _editor_audit(user["id"], project_id, "render_editor_document", {
         "document_id": document["id"], "version": document["version"],
     })
+    # Version-bound idempotency: enqueue_job dedupes only on (project, kind), so an
+    # active render for a DIFFERENT editor revision must never be reused for this one.
+    active_renders = supa.db_select(
+        "pipeline_jobs",
+        f"project_id=eq.{project_id}&kind=eq.final_render"
+        "&status=in.(queued,processing,cancel_requested)&order=created_at.desc")
+    for existing in active_renders:
+        params = existing.get("params") or {}
+        if (params.get("editor_document_id") == document["id"]
+                and params.get("editor_document_version") == document["version"]):
+            return existing   # duplicate export of the SAME revision -> same job
+        raise HTTPException(409, "another export is already in progress for this "
+                                 "project; wait for it to finish before exporting again")
     try:
         job = job_service.enqueue_job(
             project_id, user["id"], "final_render",
@@ -2341,12 +2465,28 @@ def customer_editor_render(project_id: str, body: EditorRenderBody,
         )
     except job_service.ConcurrencyLimit as exc:
         raise HTTPException(429, str(exc))
-    _service_insert("editor_render_requests", {
-        "project_id": project_id, "user_id": user["id"],
-        "editor_document_id": document["id"], "editor_document_version": document["version"],
-        "pipeline_job_id": job["id"],
-    })
-    return job
+    # Revalidate the returned job. enqueue_job dedupes only on (project, kind): under a
+    # concurrent race two different-revision requests can both pass the pre-check above,
+    # and the loser's enqueue_job returns the WINNER's active job (a different revision).
+    # If the job it handed back is not for THIS exact revision, reject rather than return
+    # a render that would export the wrong revision.
+    job_params = job.get("params") or {}
+    if (job_params.get("editor_document_id") != document["id"]
+            or job_params.get("editor_document_version") != document["version"]):
+        raise HTTPException(409, "another export is already in progress for a different "
+                                 "revision of this project; wait for it to finish")
+    # Idempotent: enqueue_job dedupes to the existing active job on a duplicate
+    # click, so a render-request row for this job may already exist — that's fine.
+    try:
+        _service_insert("editor_render_requests", {
+            "project_id": project_id, "user_id": user["id"],
+            "editor_document_id": document["id"],
+            "editor_document_version": document["version"],
+            "pipeline_job_id": job["id"],
+        })
+    except Exception:  # noqa: BLE001 — tracking row only; the job is the source of truth
+        pass
+    return _public_render_job(job)
 
 
 @app.post("/projects/{project_id}/editor/renders/{job_id}/retry")
@@ -2368,7 +2508,7 @@ def customer_editor_render_retry(project_id: str, job_id: UUID,
         "status": "queued", "progress": 0, "error_message": None,
         "current_stage": "retry queued", "completed_at": None,
     })
-    return supa.db_select("pipeline_jobs", f"id=eq.{job['id']}")[0]
+    return _public_render_job(supa.db_select("pipeline_jobs", f"id=eq.{job['id']}")[0])
 
 
 @app.post("/projects/{project_id}/editor/renders/{job_id}/sign")
@@ -2465,57 +2605,11 @@ def op_patch_evaluation(project_id: str, body: EvalPatch,
 
 
 @app.post("/render")
-def start_render(req: RenderRequest, background: BackgroundTasks,
-                 authorization: str = Header(default="")):
-    # 1. authenticate
-    token = authorization.removeprefix("Bearer ").strip()
-    try:
-        user = supa.verify_user(token)
-    except supa.AuthError as e:
-        raise HTTPException(401, str(e))
-    uid = user["id"]
+def start_render(authorization: str = Header(default="")):
+    """DEPRECATED legacy render surface — DISABLED.
 
-    # 2. load job + ownership
-    jobs = supa.db_select("render_jobs", f"id=eq.{req.job_id}")
-    if not jobs:
-        raise HTTPException(404, "render job not found")
-    job = jobs[0]
-    if job["user_id"] != uid:
-        raise HTTPException(403, "you do not own this render job")
-    if job["status"] not in ("queued", "failed"):
-        raise HTTPException(409, f"job is {job['status']}, not renderable")
-
-    # 3. ownership chain: project -> timeline -> asset
-    projects = supa.db_select("projects", f"id=eq.{job['project_id']}")
-    if not projects or projects[0]["user_id"] != uid:
-        raise HTTPException(403, "project ownership check failed")
-    timelines = supa.db_select("timelines", f"id=eq.{job['timeline_id']}")
-    if not timelines or timelines[0]["user_id"] != uid \
-            or timelines[0]["project_id"] != job["project_id"]:
-        raise HTTPException(403, "timeline ownership check failed")
-
-    # 4. validate timeline + resolve asset
-    tl_json = timelines[0]["timeline_json"]
-    if isinstance(tl_json, str):
-        tl_json = json.loads(tl_json)
-    try:
-        tl = Timeline(**tl_json)
-        plan = plan_render(tl)
-    except (ValidationError, ValueError) as e:
-        _fail_job(req.job_id, f"invalid timeline: {e}")
-        raise HTTPException(422, f"invalid timeline: {e}")
-
-    assets = supa.db_select("media_assets", f"id=eq.{plan.asset_id}")
-    if not assets or assets[0]["user_id"] != uid \
-            or assets[0]["project_id"] != job["project_id"]:
-        _fail_job(req.job_id, "timeline references an asset you do not own")
-        raise HTTPException(422, "timeline references an invalid or foreign asset")
-
-    # reset for retry case
-    supa.db_update("render_jobs", f"id=eq.{req.job_id}",
-                   {"status": "queued", "progress": 0, "error_message": None})
-
-    # 5. run
-    background.add_task(_run_render_job, req.job_id, plan.model_dump(),
-                        assets[0]["storage_path"])
-    return {"job_id": req.job_id, "status": "queued"}
+    The customer journey exports through /projects/{id}/editor/render (immutable,
+    version-bound, pipeline_jobs); operators use /projects/{id}/render-final. This
+    legacy render_jobs path is retained only to return an explicit 410 (instead of a
+    silent 404) for any stale client, and is no longer reachable by customers."""
+    raise HTTPException(410, "legacy /render is disabled; use the Product Editor export")

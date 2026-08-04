@@ -12,7 +12,8 @@ on:
                codex/audiovisual-milestone-6-editorial-intelligence,
                codex/audio-asset-library-ingestion,
                codex/audio-library-pipeline-integration,
-               codex/product-editor-phase-1]
+               codex/product-editor-phase-1,
+               repair/audit-fixes]
 
 jobs:
   frontend:
@@ -21,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm, cache-dependency-path: app/package-lock.json }
+        with: { node-version: 22, cache: npm, cache-dependency-path: app/package-lock.json }
       - name: Install
         run: npm ci
       - name: Production build
@@ -98,6 +99,12 @@ jobs:
           echo "migration 0013 reapplied cleanly (idempotency check)"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260802_0014_product_editor_phase1.sql
           echo "migration 0014 reapplied cleanly (idempotency check)"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260803_0016_bridged_candidate_origin.sql
+          echo "migration 0016 reapplied cleanly (restores bridge trigger after the 0013 reapply)"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260803_0019_soft_delete_child_rls.sql
+          echo "migration 0019 reapplied cleanly (restores child-table not-deleted RLS after the 0013/0014 reapplies)"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260803_0021_soft_delete_child_rls_complete.sql
+          echo "migration 0021 reapplied cleanly (restores remaining child-table not-deleted RLS after the 0012 reapply)"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/human_ceiling_integrity.sql
           echo "human-ceiling PostgreSQL integrity assertions passed"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/picture_editor_integrity.sql
@@ -110,6 +117,12 @@ jobs:
           echo "visual-finishing PostgreSQL integrity assertions passed"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/editorial_intelligence_integrity.sql
           echo "editorial-intelligence PostgreSQL integrity assertions passed"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/bridged_candidate_integrity.sql
+          echo "bridged-candidate PostgreSQL integrity assertions passed"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/project_deletion_integrity.sql
+          echo "project-deletion-state PostgreSQL integrity assertions passed"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/soft_delete_child_integrity.sql
+          echo "soft-deleted-child RLS + render_jobs insert-denial PostgreSQL integrity assertions passed"
 
   secret-scan:
     runs-on: ubuntu-latest

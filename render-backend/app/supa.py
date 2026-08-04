@@ -61,6 +61,55 @@ def storage_download(bucket: str, path: str, dest_file: str) -> None:
             f.writelines(r.iter_bytes(1024 * 1024))
 
 
+def storage_remove(bucket: str, path: str) -> None:
+    """Delete one storage object. Idempotent: a missing object (404) is fine —
+    used for best-effort project artifact cleanup."""
+    r = httpx.delete(f"{SUPABASE_URL}/storage/v1/object/{bucket}/{path}",
+                     headers=_service_headers, timeout=30)
+    if r.status_code not in (200, 404):
+        r.raise_for_status()
+
+
+def storage_remove_prefix(bucket: str, prefix: str) -> int:
+    """Recursively delete every object under `prefix` in `bucket`. Raises on any API
+    error (callers record retryable state rather than swallowing failures). Returns
+    the number of objects removed. Covers raw footage, proxies/wav/thumbs, autoedit
+    drafts, licensed music, and every export/finishing preview under the prefix."""
+    page = 1000
+    base = prefix.rstrip("/")
+    to_visit = [base]
+    paths: list[str] = []
+    while to_visit:
+        folder = to_visit.pop()
+        offset = 0
+        while True:   # paginate: a folder may hold more than one page of objects
+            r = httpx.post(f"{SUPABASE_URL}/storage/v1/object/list/{bucket}",
+                           headers={**_service_headers, "Content-Type": "application/json"},
+                           json={"prefix": folder, "limit": page, "offset": offset},
+                           timeout=60)
+            r.raise_for_status()
+            entries = r.json()
+            for entry in entries:
+                name = entry.get("name")
+                if not name:
+                    continue
+                full = f"{folder}/{name}" if folder else name
+                if entry.get("id") is None:      # a folder — descend
+                    to_visit.append(full)
+                else:
+                    paths.append(full)
+            if len(entries) < page:
+                break
+            offset += page
+    for start in range(0, len(paths), 100):
+        batch = paths[start:start + 100]
+        rr = httpx.request("DELETE", f"{SUPABASE_URL}/storage/v1/object/{bucket}",
+                           headers={**_service_headers, "Content-Type": "application/json"},
+                           json={"prefixes": batch}, timeout=60)
+        rr.raise_for_status()
+    return len(paths)
+
+
 def storage_upload(bucket: str, path: str, src_file: str,
                    content_type: str = "video/mp4") -> None:
     with open(src_file, "rb") as f:

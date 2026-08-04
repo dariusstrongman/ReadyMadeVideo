@@ -50,7 +50,7 @@ class FakeSupabase:
                             "publishability_reports", "tournament_runs",
                             "editor_documents", "editor_operations",
                             "editor_render_requests", "editor_revision_proposals",
-                            "editor_audit_events")}
+                            "editor_audit_events", "pending_storage_cleanup")}
         self.storage: dict[str, bytes] = {}          # "bucket/path" -> data
         self.fail_tables: set[str] = set()           # simulate write failures
         self.conflict_once_tables: set[str] = set()  # simulate one unique collision
@@ -132,12 +132,24 @@ class FakeSupabase:
                 b.setdefault("last_activity_at", _now())
             if table == "human_edit_timing_events":
                 b.setdefault("occurred_at", _now())
-            if table == "picture_edit_runs":
+            if table in ("preproduction_runs", "picture_edit_runs"):
+                # Mirror the real (project_id, version) unique index AND the primary key:
+                # the bridge writes deterministic ids, so a concurrent peer inserting the
+                # same id must 409 (PK) and a version race must 409 (unique).
+                if b.get("id") is not None and any(
+                        r.get("id") == b["id"] for r in self.tables[table]):
+                    return resp(409, {"message": f"duplicate {table} id"})
                 duplicate = [r for r in self.tables[table]
                              if r["project_id"] == b["project_id"]
                              and r.get("version") == b.get("version")]
                 if duplicate:
-                    return resp(409, {"message": "duplicate picture-edit version"})
+                    return resp(409, {"message": f"duplicate {table} version"})
+            if table == "pending_storage_cleanup":
+                duplicate = [r for r in self.tables[table]
+                             if r.get("bucket") == b.get("bucket")
+                             and r.get("object_path") == b.get("object_path")]
+                if duplicate:
+                    return resp(409, {"message": "duplicate storage-cleanup entry"})
             if table == "music_sound_runs":
                 duplicate = [r for r in self.tables[table]
                              if r["project_id"] == b["project_id"]
@@ -169,6 +181,25 @@ class FakeSupabase:
                                   or r.get("candidate_index") == b.get("candidate_index"))]
                 if duplicate:
                     return resp(409, {"message": "duplicate editorial candidate"})
+                # Mirror migration 0016 candidate_runs_bridged_ancestry_check.
+                lineage = ("music_sound_run_id", "audio_mix_run_id",
+                           "graphics_run_id", "caption_run_id", "color_run_id")
+                kind = b.get("generation_kind")
+                present = [k for k in lineage if b.get(k) is not None]
+                if kind == "bridged" and present:
+                    return resp(400, {"message": "bridged candidate must not carry "
+                                                 "music/audio/graphics/caption/color lineage"})
+                # Mirror enforce_editorial_candidate_refs exact bridged ancestry: the
+                # picture_edit_run must descend from the candidate's preproduction_run.
+                if kind == "bridged" and b.get("picture_edit_run_id") is not None:
+                    pe = [r for r in self.tables["picture_edit_runs"]
+                          if r.get("id") == b.get("picture_edit_run_id")]
+                    if pe and pe[0].get("preproduction_run_id") != b.get("preproduction_run_id"):
+                        return resp(400, {"message": "bridged candidate picture_edit_run "
+                                                     "does not descend from its preproduction_run"})
+                if kind in ("initial", "revised") and len(present) != len(lineage):
+                    return resp(400, {"message": "initial/revised candidate requires "
+                                                 "full music/audio/graphics/caption/color lineage"})
             if table == "critic_runs":
                 duplicate = [r for r in self.tables[table]
                              if r.get("candidate_run_id") == b.get("candidate_run_id")
@@ -312,6 +343,15 @@ def install(monkeypatch, fake: FakeSupabase):
                         lambda b, p, s, content_type="video/mp4":
                         fake.storage.__setitem__(f"{b}/{p}",
                                                  open(s, "rb").read()))
+    monkeypatch.setattr(supa, "storage_remove",
+                        lambda b, p: fake.storage.pop(f"{b}/{p}", None))
+
+    def _remove_prefix(bucket, prefix):
+        victims = [k for k in list(fake.storage) if k.startswith(f"{bucket}/{prefix}")]
+        for k in victims:
+            del fake.storage[k]
+        return len(victims)
+    monkeypatch.setattr(supa, "storage_remove_prefix", _remove_prefix)
     monkeypatch.setattr(httpx, "post", fake.httpx_post)
     monkeypatch.setattr(httpx, "patch", fake.httpx_patch)
     monkeypatch.setattr(httpx, "get", fake.httpx_get)
