@@ -86,4 +86,20 @@ select pg_temp.expect_rejected($sql$
     'f5000000-0000-0000-0000-000000000001')
 $sql$, 'bridged preview must use the autoedit prefix');
 
+-- Ancestry: a bridged candidate's picture_edit_run must descend from the SAME
+-- preproduction_run the candidate points at (picture bound to the selected preproduction,
+-- never cross-linked to another).
+do $$
+declare mismatched int;
+begin
+  select count(*) into mismatched
+  from public.candidate_runs c
+  join public.picture_edit_runs pe on pe.id = c.picture_edit_run_id
+  where c.generation_kind = 'bridged'
+    and pe.preproduction_run_id is distinct from c.preproduction_run_id;
+  if mismatched > 0 then
+    raise exception 'bridged candidate picture_edit_run does not descend from its preproduction_run';
+  end if;
+end $$;
+
 rollback;

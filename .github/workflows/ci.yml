@@ -101,6 +101,8 @@ jobs:
           echo "migration 0014 reapplied cleanly (idempotency check)"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260803_0016_bridged_candidate_origin.sql
           echo "migration 0016 reapplied cleanly (restores bridge trigger after the 0013 reapply)"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260803_0019_soft_delete_child_rls.sql
+          echo "migration 0019 reapplied cleanly (restores child-table not-deleted RLS after the 0013/0014 reapplies)"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/human_ceiling_integrity.sql
           echo "human-ceiling PostgreSQL integrity assertions passed"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/picture_editor_integrity.sql
@@ -117,6 +119,8 @@ jobs:
           echo "bridged-candidate PostgreSQL integrity assertions passed"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/project_deletion_integrity.sql
           echo "project-deletion-state PostgreSQL integrity assertions passed"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/soft_delete_child_integrity.sql
+          echo "soft-deleted-child RLS + render_jobs insert-denial PostgreSQL integrity assertions passed"
 
   secret-scan:
     runs-on: ubuntu-latest

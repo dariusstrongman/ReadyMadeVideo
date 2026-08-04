@@ -4,6 +4,8 @@ rejected from every customer API, and the disabled legacy /render surface.
 import os
 from uuid import uuid4
 
+import pytest
+
 os.environ.setdefault("SUPABASE_URL", "https://fake.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "fake-service-key")
 os.environ["WORKER_ENABLED"] = "0"
@@ -105,6 +107,20 @@ def test_soft_deleted_project_rejected_everywhere(monkeypatch, tmp_path):
                        json={"documentId": str(uuid4())}).status_code == 404
 
 
+def test_get_job_rejects_soft_deleted_parent_for_owner(monkeypatch, tmp_path):
+    fake, uid, token, project, _, cand = _setup(monkeypatch, tmp_path)
+    client = TestClient(app, raise_server_exceptions=False)
+    job = fake.insert("pipeline_jobs", {"project_id": project["id"], "user_id": uid,
+                                        "kind": "autoedit"}).json()[0]
+    assert client.get(f"/jobs/{job['id']}", headers=_auth(token)).status_code == 200
+    assert client.delete(f"/projects/{project['id']}", headers=_auth(token)).status_code == 200
+    r = client.get(f"/jobs/{job['id']}", headers=_auth(token))
+    assert r.status_code == 404          # parent soft-deleted -> job hidden from the owner
+    # An operator still sees it (support/forensics access preserved).
+    _, op_token = fake.add_user("op@example.com", operator=True)
+    assert client.get(f"/jobs/{job['id']}", headers=_auth(op_token)).status_code == 200
+
+
 # ---------------- P1-7: legacy /render disabled ----------------
 def test_legacy_render_disabled(monkeypatch, tmp_path):
     fake, uid, token, project, _, _ = _setup(monkeypatch, tmp_path, bridge=False)
@@ -143,6 +159,77 @@ def test_export_never_reuses_a_different_revisions_render(monkeypatch, tmp_path)
     r2 = client.post(f"/projects/{project['id']}/editor/render",
                      headers=_auth(token), json={"documentId": v2["id"]})
     assert r2.status_code == 409                       # never silently returns the v1 job
+
+
+def test_export_race_never_returns_a_different_revisions_job(monkeypatch, tmp_path):
+    """Faithful simulation of the concurrent race: a different-revision request won the
+    insert AFTER our pre-check passed, so enqueue_job hands us back ITS job. The endpoint
+    must revalidate and reject — never return a render bound to the wrong revision."""
+    fake, uid, token, project, asset_id, cand = _setup(monkeypatch, tmp_path)
+    client = TestClient(app, raise_server_exceptions=False)
+    v1 = client.post(f"/projects/{project['id']}/editor/start",
+                     headers=_auth(token), json={"candidateRunId": cand["id"]}).json()
+    picture = next(t for t in v1["document"]["tracks"] if t["type"] == "picture")["items"]
+    v2 = client.post(f"/projects/{project['id']}/editor/{v1['id']}/operations",
+                     headers=_auth(token), json=_reorder(picture[0]["id"], 1)).json()
+
+    # enqueue_job returns the winner's active v1 job (what the real 409-dedup does when a
+    # concurrent v1 request landed inside our race window). No v1 job is actually active,
+    # so the pre-check passes and control reaches the post-enqueue revalidation guard.
+    winner = {"id": "winner-v1-job", "project_id": project["id"], "kind": "final_render",
+              "status": "queued",
+              "params": {"editor_document_id": v1["id"], "editor_document_version": 1}}
+    monkeypatch.setattr(jobs, "enqueue_job", lambda *a, **k: winner)
+
+    r = client.post(f"/projects/{project['id']}/editor/render",
+                    headers=_auth(token), json={"documentId": v2["id"]})
+    assert r.status_code == 409
+    assert "winner-v1-job" not in r.text          # never leaks the wrong-revision job
+
+
+def test_true_concurrent_exports_yield_one_job_and_no_cross_revision(monkeypatch, tmp_path):
+    """Real threads: several exports fired in parallel for two different revisions. The
+    (project, kind) partial-unique index admits ONE active final_render; every other
+    request must get 409/429 and no 200 may return a job for a revision it didn't ask
+    for. Serializing only the insert append makes the fake's unique index atomic — the
+    request handlers still run concurrently."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    fake, uid, token, project, asset_id, cand = _setup(monkeypatch, tmp_path)
+    client = TestClient(app, raise_server_exceptions=False)
+    v1 = client.post(f"/projects/{project['id']}/editor/start",
+                     headers=_auth(token), json={"candidateRunId": cand["id"]}).json()
+    picture = next(t for t in v1["document"]["tracks"] if t["type"] == "picture")["items"]
+    v2 = client.post(f"/projects/{project['id']}/editor/{v1['id']}/operations",
+                     headers=_auth(token), json=_reorder(picture[0]["id"], 1)).json()
+
+    lock, orig_insert = threading.Lock(), fake.insert
+    def locked_insert(table, body):          # make check-then-append atomic across threads
+        with lock:
+            return orig_insert(table, body)
+    monkeypatch.setattr(fake, "insert", locked_insert)
+
+    def fire(doc_id):
+        c = TestClient(app, raise_server_exceptions=False)
+        r = c.post(f"/projects/{project['id']}/editor/render",
+                   headers=_auth(token), json={"documentId": doc_id})
+        return doc_id, r.status_code, r.json()
+
+    requests = [v1["id"], v2["id"]] * 3       # 6 concurrent, two revisions interleaved
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        results = list(ex.map(fire, requests))
+
+    for doc_id, status, _ in results:
+        assert status in (200, 409, 429)      # never 500 / never silent wrong job
+    created = [r for r in fake.select("pipeline_jobs", f"project_id=eq.{project['id']}")
+              if r["kind"] == "final_render"]
+    assert len(created) <= 1                  # at most one active render for the project
+    ok = [(doc_id, body) for doc_id, status, body in results if status == 200]
+    for doc_id, body in ok:                   # every success maps to ITS OWN revision
+        want = 1 if doc_id == v1["id"] else 2
+        assert (body.get("params") or {}).get("editor_document_version") == want
+    assert len({body["id"] for _, body in ok}) <= 1   # all successes share one job
 
 
 # ---------------- new blocker 3: deleted project cannot restart analysis ----------------
@@ -221,3 +308,129 @@ def test_storage_remove_prefix_paginates(monkeypatch):
     assert removed == 1500                    # every object across pages
     assert seen["list"] >= 2                  # paginated beyond the first 1000
     assert len(seen["deleted"]) == 1500
+
+
+# ---------------- Issue 5: bridge concurrency + ancestry ----------------
+def _timeline_row(fake, project, asset_id, uid, *, tid=None, version=1):
+    tl = {"version": 1, "width": 1080, "height": 1920, "fps": 30, "duration": 8,
+          "tracks": [{"id": "v", "type": "video", "clips": [
+              {"id": "c", "assetId": asset_id, "sourceStart": 0, "sourceEnd": 8,
+               "timelineStart": 0, "timelineEnd": 8, "speed": 1, "volume": 1}]}]}
+    body = {"project_id": project["id"], "user_id": uid, "version": version,
+            "timeline_json": tl, "lineage": "autonomous_revised"}
+    if tid:
+        body["id"] = tid
+    return fake.insert("timelines", body).json()[0]
+
+
+def _bridge(project, tl_row, preview, **over):
+    kw = dict(insert=jobs._insert, db_select=supa.db_select, upload_export=jobs._upload_export,
+              now=jobs._now, remove=supa.storage_remove, update=supa.db_update)
+    kw.update(over)
+    return autoedit_bridge.bridge_from_autoedit(project, tl_row, str(preview), **kw)
+
+
+def test_bridge_version_allocation_retries_on_collision(monkeypatch, tmp_path):
+    """max(version)+1 is race-prone; a unique-violation must trigger a bounded retry, not
+    a crash or a lost candidate."""
+    fake, uid, token, project, asset_id, _ = _setup(monkeypatch, tmp_path, bridge=False)
+    tl_row = _timeline_row(fake, project, asset_id, uid, tid="T1")
+    preview = tmp_path / "p.mp4"
+    preview.write_bytes(b"P")
+    fake.conflict_once_tables.add("preproduction_runs")   # first version insert 409s once
+    cand = _bridge(project, tl_row, preview)
+    assert cand and cand["generation_kind"] == "bridged"  # retry produced the candidate
+    assert len(fake.select("preproduction_runs", f"project_id=eq.{project['id']}")) == 1
+
+
+def test_concurrent_same_timeline_bridge_is_one_candidate_no_dup_ancestry(monkeypatch, tmp_path):
+    """True concurrent bridges of the SAME project+timeline: exactly one candidate, one
+    preproduction, one picture (bound to it), and no cross-timeline linkage."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    fake, uid, token, project, asset_id, _ = _setup(monkeypatch, tmp_path, bridge=False)
+    tl_row = _timeline_row(fake, project, asset_id, uid, tid="TL-CONC")
+    preview = tmp_path / "p.mp4"
+    preview.write_bytes(b"P")
+
+    lock, orig_insert = threading.Lock(), fake.insert
+    def locked_insert(table, body):          # atomic check-then-append (real unique index)
+        with lock:
+            return orig_insert(table, body)
+    monkeypatch.setattr(fake, "insert", locked_insert)   # _route -> self.insert picks this up
+
+    results = list(ThreadPoolExecutor(max_workers=4).map(
+        lambda _i: _bridge(project, tl_row, preview), range(4)))
+
+    assert all(r is not None for r in results)
+    assert len({r["id"] for r in results}) == 1                    # one shared candidate
+    cands = fake.select("candidate_runs", f"project_id=eq.{project['id']}")
+    pres = fake.select("preproduction_runs", f"project_id=eq.{project['id']}")
+    pics = fake.select("picture_edit_runs", f"project_id=eq.{project['id']}")
+    assert len(cands) == 1 and len(pres) == 1 and len(pics) == 1   # no duplicate ancestry
+    assert pics[0]["preproduction_run_id"] == pres[0]["id"]        # picture bound to preproduction
+    assert cands[0]["preproduction_run_id"] == pres[0]["id"]
+    assert cands[0]["picture_edit_run_id"] == pics[0]["id"]
+    assert pics[0]["request"]["timeline_id"] == "TL-CONC"          # no cross-timeline link
+
+
+# ---------------- Issue 6: orphan preview cleanup persist + retry ----------------
+def test_orphan_preview_cleanup_is_persisted_then_drained(monkeypatch, tmp_path):
+    fake, uid, token, project, asset_id, _ = _setup(monkeypatch, tmp_path, bridge=False)
+    tl_row = _timeline_row(fake, project, asset_id, uid, tid="T-ORPHAN")
+    preview = tmp_path / "p.mp4"
+    preview.write_bytes(b"P")
+
+    def dead_remove(bucket, path):
+        raise RuntimeError("storage unavailable")
+
+    # (1) candidate insert fails AND cleanup fails -> failure surfaced, orphan persisted.
+    fake.fail_tables.add("candidate_runs")
+    with pytest.raises(RuntimeError):
+        _bridge(project, tl_row, preview, remove=dead_remove)
+    fake.fail_tables.discard("candidate_runs")
+    pending = [r for r in fake.select("pending_storage_cleanup",
+                                      f"project_id=eq.{project['id']}") if not r.get("cleaned_at")]
+    assert len(pending) == 1                               # retryable state recorded, not swallowed
+    orphan = pending[0]
+    assert f"{orphan['bucket']}/{orphan['object_path']}" in fake.storage   # object still there
+
+    # (2) storage recovers -> the drain retries and clears the persisted record.
+    cleaned = autoedit_bridge._drain_pending_cleanup(
+        db_select=supa.db_select, remove=supa.storage_remove, update=supa.db_update,
+        now=jobs._now, project_id=project["id"])
+    assert cleaned == 1
+    row = fake.select("pending_storage_cleanup", f"id=eq.{orphan['id']}")[0]
+    assert row["cleaned_at"]                               # successful later cleanup
+    assert f"{orphan['bucket']}/{orphan['object_path']}" not in fake.storage
+
+
+def test_idempotency_race_returns_winner_without_touching_shared_preview(monkeypatch, tmp_path):
+    """On the idempotency-race (409) path the winner is returned. Because the preview key
+    is deterministic per project, our upload IS the winner's referenced object, so it must
+    be left intact — no deletion, no failure of the successful edit, even if remove would
+    have failed."""
+    fake, uid, token, project, asset_id, cand = _setup(monkeypatch, tmp_path)  # bridged cand exists
+    winner_preview = f"exports/{cand['preview_storage_path']}"
+    fake.storage.setdefault(winner_preview, b"WINNER")
+    # Hide the existing candidate ONLY at the early idempotency check so control reaches the
+    # candidate insert, which then 409s against the real (batch_id, candidate_key) unique row.
+    calls = {"n": 0}
+    real_select = supa.db_select
+    def select_hiding_existing(table, filters, sel="*"):
+        if (table == "candidate_runs" and "generation_kind=eq.bridged" in filters
+                and calls["n"] == 0):
+            calls["n"] += 1
+            return []
+        return real_select(table, filters, sel)
+
+    def dead_remove(bucket, path):
+        raise RuntimeError("remove must never be called on the shared winner preview")
+    tl_row = fake.select("timelines", f"project_id=eq.{project['id']}")[0]
+    preview = tmp_path / "p.mp4"
+    preview.write_bytes(b"P")
+    got = _bridge(project, tl_row, preview, db_select=select_hiding_existing, remove=dead_remove)
+    assert got and got["id"] == cand["id"]               # successful edit: winner returned
+    assert winner_preview in fake.storage                # winner's preview left intact
+    assert fake.select("pending_storage_cleanup", f"project_id=eq.{project['id']}") == []

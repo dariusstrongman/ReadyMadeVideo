@@ -34,27 +34,100 @@ def _clips_from_timeline(timeline: dict) -> list[dict]:
 
 
 def _next_version(db_select, table: str, project_id: str) -> int:
-    """Allocate a non-colliding version for a per-project (project_id, version) table
-    so the bridge never conflicts with existing Milestone ancestry at version 1."""
+    """Compute a candidate next version for a per-project (project_id, version) table.
+    This alone is race-prone (two concurrent bridges read the same max), so writers must
+    go through _insert_versioned, which retries on the unique-violation it can still hit."""
     rows = db_select(table, f"project_id=eq.{project_id}&order=version.desc&limit=1")
     return (int(rows[0]["version"]) + 1) if rows else 1
 
 
-def _find_bridge_preproduction(db_select, project_id: str, timeline_id: str) -> dict | None:
-    """Reuse a bridge preproduction row left by a prior partial run FOR THE SAME
-    source timeline (recovery), so a failed bridge never orphans immutable ancestry
-    or associates a new timeline with another timeline's partial ancestry."""
-    for row in db_select("preproduction_runs", f"project_id=eq.{project_id}&order=version.desc"):
-        req = row.get("request") or {}
-        if (req.get("origin") == "basic_autoedit"
-                and str(req.get("timeline_id")) == str(timeline_id)):
-            return row
-    return None
+def _bridge_ancestry(insert, db_select, table: str, project_id: str, det_id: str,
+                     body: dict, attempts: int = 6) -> dict:
+    """Create-or-reuse one bridge ancestry row, collision-safe on BOTH axes:
+
+    * Duplicate ancestry: the row has a DETERMINISTIC id derived from (project, timeline),
+      so concurrent same-timeline bridges (or a recovery re-run) converge on the SAME row —
+      exactly one preproduction/picture per timeline, never a duplicate, never cross-linked.
+    * Version race: (project_id, version) is unique, and max(version)+1 is race-prone, so a
+      unique-violation triggers a bounded recompute-and-retry. A 409 that turns out to be
+      OUR deterministic row (a peer inserted it first) is resolved by reusing that row.
+    """
+    existing = db_select(table, f"id=eq.{det_id}&limit=1")
+    if existing:
+        return existing[0]
+    last = None
+    for _ in range(attempts):
+        version = _next_version(db_select, table, project_id)
+        resp = insert(table, {**body, "id": det_id, "version": version})
+        if resp.status_code == 201:
+            return resp.json()[0]
+        if resp.status_code == 409:
+            dup = db_select(table, f"id=eq.{det_id}&limit=1")
+            if dup:                       # a peer created our deterministic row -> reuse
+                return dup[0]
+            last = resp                   # a different row took our version -> recompute
+            continue
+        resp.raise_for_status()
+    if last is not None:
+        last.raise_for_status()
+    raise RuntimeError(f"could not allocate a {table} version after {attempts} attempts")
+
+
+def _drain_pending_cleanup(*, db_select, remove, update, now, project_id: str) -> int:
+    """Opportunistically retry previously-orphaned storage objects for this project.
+    Each row stays pending until its object is actually removed, so a transient storage
+    outage is recovered on a later run instead of leaking silently."""
+    if not (db_select and remove and update):
+        return 0
+    try:
+        rows = [r for r in db_select("pending_storage_cleanup",
+                                     f"project_id=eq.{project_id}")
+                if not r.get("cleaned_at")]
+    except Exception:  # noqa: BLE001 — janitorial; never blocks the edit
+        return 0
+    cleaned = 0
+    for r in rows:
+        try:
+            remove(r["bucket"], r["object_path"])
+            update("pending_storage_cleanup", f"id=eq.{r['id']}",
+                   {"cleaned_at": now(), "attempts": (r.get("attempts") or 0) + 1,
+                    "last_attempt_at": now()})
+            cleaned += 1
+        except Exception as exc:  # noqa: BLE001 — remains pending, retried next run
+            try:
+                update("pending_storage_cleanup", f"id=eq.{r['id']}",
+                       {"attempts": (r.get("attempts") or 0) + 1,
+                        "last_attempt_at": now(), "last_error": type(exc).__name__[:200]})
+            except Exception:  # noqa: BLE001
+                pass
+    return cleaned
+
+
+def _cleanup_or_persist(*, remove, insert, now, project: dict, bucket: str, path: str,
+                        reason: str) -> bool:
+    """Remove an orphaned preview object. If removal fails the failure is NOT swallowed —
+    a retryable pending_storage_cleanup row is persisted so a later run drains it. Returns
+    True when removed immediately. The persisted row is the visible, recoverable record."""
+    if not (remove and path):
+        return False
+    try:
+        remove(bucket, path)
+        return True
+    except Exception:  # noqa: BLE001 — surfaced via the persisted retry row
+        if insert:
+            try:
+                insert("pending_storage_cleanup", {
+                    "project_id": project["id"], "user_id": project["user_id"],
+                    "bucket": bucket, "object_path": path, "reason": reason,
+                    "attempts": 1, "last_attempt_at": now()})
+            except Exception:  # noqa: BLE001 — last resort; never fails a successful edit
+                pass
+        return False
 
 
 def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: str,
                          *, insert, db_select, upload_export, now,
-                         remove=None, json_loads=None) -> dict | None:
+                         remove=None, update=None, json_loads=None) -> dict | None:
     """Create (idempotently) a bridged candidate_runs from a basic-autoedit timeline.
 
     Returns the candidate row (new or pre-existing), or None if the timeline has no
@@ -62,6 +135,10 @@ def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: 
     """
     import json as _json
     loads = json_loads or _json.loads
+
+    # Opportunistically drain any storage orphaned by a prior run's failed cleanup.
+    _drain_pending_cleanup(db_select=db_select, remove=remove, update=update, now=now,
+                           project_id=project["id"])
 
     # Idempotency: one bridged candidate per project.
     existing = db_select(
@@ -82,44 +159,39 @@ def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: 
     brief = project.get("name") or "basic autoedit"
     timeline_id = str(timeline_row["id"])
 
-    # Real, minimal preproduction ancestry (honest defaults; no fabricated analysis).
-    # Reuse a prior partial run's ancestry ONLY when it originated from THIS timeline
-    # (recovery — no orphan/duplicate, no cross-timeline mismatch); safe version.
-    pre = _find_bridge_preproduction(db_select, project["id"], timeline_id)
-    if not pre:
-        pre = insert("preproduction_runs", {
-            "project_id": project["id"], "user_id": uid,
-            "version": _next_version(db_select, "preproduction_runs", project["id"]),
-            "status": "ready",
-            "request": {"origin": "basic_autoedit", "brief": brief, "timeline_id": timeline_id},
-            "creative_treatment": {"origin": "basic_autoedit", "brief": brief},
-            "capture_quality_report": {"origin": "basic_autoedit"},
-            "composition_by_segment": {}, "story_variants": [],
-        }).json()[0]
+    # Deterministic ancestry ids per (project, timeline): concurrent same-timeline bridges
+    # and recovery re-runs converge on ONE preproduction + ONE picture row — never a
+    # duplicate, never cross-linked to another timeline.
+    pre_id = str(uuid.uuid5(_BRIDGE_NS, f"{project['id']}:{timeline_id}:preproduction"))
+    pic_id = str(uuid.uuid5(_BRIDGE_NS, f"{project['id']}:{timeline_id}:picture"))
 
-    # Real picture ancestry derived from the actual autoedit timeline (reuse-or-create).
-    # The preproduction row is timeline-bound, so its picture child is too.
+    # Real, minimal preproduction ancestry (honest defaults; no fabricated analysis).
+    pre = _bridge_ancestry(insert, db_select, "preproduction_runs", project["id"], pre_id, {
+        "project_id": project["id"], "user_id": uid,
+        "status": "ready",
+        "request": {"origin": "basic_autoedit", "brief": brief, "timeline_id": timeline_id},
+        "creative_treatment": {"origin": "basic_autoedit", "brief": brief},
+        "capture_quality_report": {"origin": "basic_autoedit"},
+        "composition_by_segment": {}, "story_variants": [],
+    })
+
+    # Real picture ancestry derived from the actual autoedit timeline, bound to THIS
+    # preproduction (reuse-or-create on the deterministic id).
     picture_candidate_id = f"bridged-{timeline_id}"
-    existing_pic = db_select("picture_edit_runs",
-                             f"preproduction_run_id=eq.{pre['id']}&limit=1")
-    if existing_pic:
-        pic = existing_pic[0]
-        picture_candidate_id = pic.get("selected_candidate_id") or picture_candidate_id
-    else:
-        pic = insert("picture_edit_runs", {
-            "project_id": project["id"], "user_id": uid,
-            "preproduction_run_id": pre["id"],
-            "version": _next_version(db_select, "picture_edit_runs", project["id"]),
-            "status": "ready",
-            "request": {"origin": "basic_autoedit", "timeline_id": timeline_id},
-            "visual_rhythm_plans": [],
-            "candidates": [{
-                "candidateId": picture_candidate_id, "source": "basic_autoedit",
-                "sourceAssetIds": source_asset_ids, "timeline": timeline,
-                "clipCount": len(clips),
-            }],
-            "selected_candidate_id": picture_candidate_id,
-        }).json()[0]
+    pic = _bridge_ancestry(insert, db_select, "picture_edit_runs", project["id"], pic_id, {
+        "project_id": project["id"], "user_id": uid,
+        "preproduction_run_id": pre["id"],   # picture ancestry bound to THIS preproduction
+        "status": "ready",
+        "request": {"origin": "basic_autoedit", "timeline_id": timeline_id},
+        "visual_rhythm_plans": [],
+        "candidates": [{
+            "candidateId": picture_candidate_id, "source": "basic_autoedit",
+            "sourceAssetIds": source_asset_ids, "timeline": timeline,
+            "clipCount": len(clips),
+        }],
+        "selected_candidate_id": picture_candidate_id,
+    })
+    picture_candidate_id = pic.get("selected_candidate_id") or picture_candidate_id
 
     # Preview under the documented bridged/autoedit prefix (real autoedit render).
     candidate_id_hint = uuid.uuid5(_BRIDGE_NS, f"{project['id']}:cand")
@@ -161,14 +233,16 @@ def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: 
             "candidate_runs",
             f"project_id=eq.{project['id']}&generation_kind=eq.bridged&limit=1")
         if again:
+            # The preview object key is deterministic PER PROJECT, so our upload wrote the
+            # exact object the winning candidate references — it is NOT an orphan and must
+            # be left intact. The edit succeeded; return the winner.
             return again[0]
-    # Candidate creation failed: clean the orphan preview object (the reusable
-    # preproduction/picture ancestry is picked up on the next retry). No orphan
-    # storage, no orphan candidate.
-    if remove:
-        try:
-            remove("exports", preview_path)
-        except Exception:  # noqa: BLE001
-            pass
+    # Candidate creation failed for real: no candidate references the just-uploaded preview
+    # (the per-project idempotency check above guarantees no prior bridged candidate exists),
+    # so it is a true orphan. Remove it; a cleanup failure is persisted for retry (not
+    # swallowed), then the original candidate-insert error is raised.
+    _cleanup_or_persist(remove=remove, insert=insert, now=now, project=project,
+                        bucket="exports", path=preview_path,
+                        reason="bridged candidate insert failed: orphaned preview")
     resp.raise_for_status()
     return None

@@ -459,7 +459,8 @@ def handle_autoedit(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict
         bridged = autoedit_bridge.bridge_from_autoedit(
             project, best_tl_row, os.path.join(run_dir, preview_files[-1]),
             insert=_insert, db_select=supa.db_select,
-            upload_export=_upload_export, now=_now, remove=supa.storage_remove)
+            upload_export=_upload_export, now=_now, remove=supa.storage_remove,
+            update=supa.db_update)
         if bridged:
             artifacts["bridgedCandidateRunId"] = bridged["id"]
 

@@ -50,7 +50,7 @@ class FakeSupabase:
                             "publishability_reports", "tournament_runs",
                             "editor_documents", "editor_operations",
                             "editor_render_requests", "editor_revision_proposals",
-                            "editor_audit_events")}
+                            "editor_audit_events", "pending_storage_cleanup")}
         self.storage: dict[str, bytes] = {}          # "bucket/path" -> data
         self.fail_tables: set[str] = set()           # simulate write failures
         self.conflict_once_tables: set[str] = set()  # simulate one unique collision
@@ -132,12 +132,24 @@ class FakeSupabase:
                 b.setdefault("last_activity_at", _now())
             if table == "human_edit_timing_events":
                 b.setdefault("occurred_at", _now())
-            if table == "picture_edit_runs":
+            if table in ("preproduction_runs", "picture_edit_runs"):
+                # Mirror the real (project_id, version) unique index AND the primary key:
+                # the bridge writes deterministic ids, so a concurrent peer inserting the
+                # same id must 409 (PK) and a version race must 409 (unique).
+                if b.get("id") is not None and any(
+                        r.get("id") == b["id"] for r in self.tables[table]):
+                    return resp(409, {"message": f"duplicate {table} id"})
                 duplicate = [r for r in self.tables[table]
                              if r["project_id"] == b["project_id"]
                              and r.get("version") == b.get("version")]
                 if duplicate:
-                    return resp(409, {"message": "duplicate picture-edit version"})
+                    return resp(409, {"message": f"duplicate {table} version"})
+            if table == "pending_storage_cleanup":
+                duplicate = [r for r in self.tables[table]
+                             if r.get("bucket") == b.get("bucket")
+                             and r.get("object_path") == b.get("object_path")]
+                if duplicate:
+                    return resp(409, {"message": "duplicate storage-cleanup entry"})
             if table == "music_sound_runs":
                 duplicate = [r for r in self.tables[table]
                              if r["project_id"] == b["project_id"]

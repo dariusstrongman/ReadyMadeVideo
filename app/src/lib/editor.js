@@ -90,6 +90,24 @@ function reconcileHistory(entries, savedIds, version) {
   }))
 }
 
+function rebaseHistory(entries, serverDocument, version) {
+  // Conflict (409) recovery: the authoritative base changed under us, so every
+  // history snapshot's stored `document` is a pre-conflict (stale) view. Rebuild
+  // each one by replaying that entry's rebased pending ops onto the fresh server
+  // document, so undo/redo navigate states derived from the authoritative base and
+  // can NEVER restore stale remote content. Operation IDs / pending are preserved.
+  return entries.map((entry) => {
+    const pending = rebaseOperations(entry.pending, version)
+    let document
+    try {
+      document = replay(serverDocument, pending)
+    } catch {
+      document = serverDocument   // diverged too far to replay; fall back to the base
+    }
+    return { document, pending }
+  })
+}
+
 function pendingPrefix(prefix, operations) {
   return prefix.every((operation, index) =>
     operations[index]?.operationId === operation.operationId)
@@ -208,8 +226,8 @@ export function editorReducer(state, action) {
       version,
       document,
       pending,
-      past: reconcileHistory(state.past, new Set(), version),
-      future: reconcileHistory(state.future, new Set(), version),
+      past: rebaseHistory(state.past, action.document, version),
+      future: rebaseHistory(state.future, action.document, version),
     }
   }
   return state

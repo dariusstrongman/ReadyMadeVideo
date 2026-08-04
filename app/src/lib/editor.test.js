@@ -93,6 +93,43 @@ describe('editor operation reducer', () => {
     expect(rebased.past).toHaveLength(state.past.length)
   })
 
+  it('conflict rebase rebuilds undo/redo onto the authoritative base (never restores '
+    + 'stale remote state)', () => {
+    // Local pending edit: reorder clip c to the front.
+    const reorder = makeOperation('reorder_clip', 'c', 1, { toIndex: 0 })
+    const state = apply(createEditorState(document, 1), reorder)
+    expect(state.past).toHaveLength(1)                       // pre-edit snapshot (caption "Old")
+
+    // The server diverged to v5 WITHOUT our op AND with a different change to the same
+    // document (caption is now "Server" — this is the authoritative base).
+    const server = structuredClone(document)
+    server.tracks[1].items[0].text = 'Server'
+    const rebased = editorReducer(state, { type: 'rebase', document: server, version: 5 })
+
+    // Display reflects BOTH the authoritative server change and our replayed pending op.
+    expect(rebased.document.tracks[1].items[0].text).toBe('Server')
+    expect(rebased.document.tracks[0].items.map((i) => i.id)).toEqual(['c', 'a', 'b'])
+    expect(rebased.pending).toHaveLength(1)
+    expect(rebased.pending[0].operationId).toBe(reorder.operationId)
+    expect(rebased.pending[0].baseVersion).toBe(5)
+
+    // Undo drops our pending op and must land on the AUTHORITATIVE base (caption
+    // "Server", original clip order) — never the stale pre-conflict snapshot ("Old").
+    const undone = editorReducer(rebased, { type: 'undo' })
+    expect(undone.document.tracks[1].items[0].text).toBe('Server')   // not stale "Old"
+    expect(undone.document.tracks[0].items.map((i) => i.id)).toEqual(['a', 'b', 'c'])
+    expect(undone.document).toEqual(server)
+    expect(undone.pending).toHaveLength(0)
+
+    // Redo restores our pending op on top of the authoritative base — consistent.
+    const redone = editorReducer(undone, { type: 'redo' })
+    expect(redone.document.tracks[1].items[0].text).toBe('Server')
+    expect(redone.document.tracks[0].items.map((i) => i.id)).toEqual(['c', 'a', 'b'])
+    expect(redone.pending.map((i) => i.operationId)).toEqual([reorder.operationId])
+    expect(redone.pending[0].baseVersion).toBe(5)
+    expect(redone.document).toEqual(rebased.document)                // display == export target
+  })
+
   it('reconciles a successful retry against the returned immutable revision', () => {
     const operation = makeOperation('update_caption', 'caption', 1, { text: 'Retried' })
     const pending = apply(createEditorState(document, 1), operation)

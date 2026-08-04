@@ -458,8 +458,16 @@ def op_get_job(job_id: str, authorization: str = Header(default="")):
     if not rows:
         raise HTTPException(404, "job not found")
     job = rows[0]
+    is_operator = bool(supa.db_select("operators", f"user_id=eq.{user['id']}"))
     if job["user_id"] != user["id"]:
-        _require_operator(authorization)   # owners or operators only
+        if not is_operator:                # owners or operators only
+            raise HTTPException(403, "operator access required")
+        return job
+    # Owner path: a job whose parent project has been soft-deleted is hidden, matching
+    # the child-table RLS (operators retain access for support/forensics).
+    parent = supa.db_select("projects", f"id=eq.{job['project_id']}&limit=1")
+    if parent and parent[0].get("deleted_at") and not is_operator:
+        raise HTTPException(404, "job not found")
     return job
 
 
@@ -2122,6 +2130,24 @@ class EditorRenderBody(BaseModel):
     documentId: UUID
 
 
+def _public_candidate(row: dict) -> dict:
+    """Drop raw storage internals from a customer-facing candidate. The preview is fetched
+    via /candidates/{id}/preview-url (server-signed), so the raw path/bucket are never
+    needed client-side and are not exposed."""
+    return {k: v for k, v in row.items()
+            if k not in ("preview_storage_path", "preview_storage_bucket")}
+
+
+def _public_render_job(row: dict) -> dict:
+    """Drop the raw export storage path from a customer-facing render job. Downloads go
+    through /editor/renders/{job}/sign (server-signed); artifacts keep only the display
+    metadata (dimensions/size/telemetry), never the raw object key."""
+    art = row.get("artifacts")
+    if isinstance(art, dict) and "output" in art:
+        return {**row, "artifacts": {k: v for k, v in art.items() if k != "output"}}
+    return row
+
+
 @app.get("/projects/{project_id}/workspace")
 def customer_workspace(project_id: str, authorization: str = Header(default="")):
     user, project = _owned_project(project_id, authorization)
@@ -2141,10 +2167,11 @@ def customer_workspace(project_id: str, authorization: str = Header(default=""))
     )
     return {
         "project": project,
-        "candidates": [{**row, "publishability": report_by_candidate.get(row["id"])}
+        "candidates": [{**_public_candidate(row),
+                        "publishability": report_by_candidate.get(row["id"])}
                        for row in candidates],
         "editorDocuments": documents,
-        "renderJobs": jobs,
+        "renderJobs": [_public_render_job(j) for j in jobs],
         "viewerUserId": user["id"],
     }
 
@@ -2438,6 +2465,16 @@ def customer_editor_render(project_id: str, body: EditorRenderBody,
         )
     except job_service.ConcurrencyLimit as exc:
         raise HTTPException(429, str(exc))
+    # Revalidate the returned job. enqueue_job dedupes only on (project, kind): under a
+    # concurrent race two different-revision requests can both pass the pre-check above,
+    # and the loser's enqueue_job returns the WINNER's active job (a different revision).
+    # If the job it handed back is not for THIS exact revision, reject rather than return
+    # a render that would export the wrong revision.
+    job_params = job.get("params") or {}
+    if (job_params.get("editor_document_id") != document["id"]
+            or job_params.get("editor_document_version") != document["version"]):
+        raise HTTPException(409, "another export is already in progress for a different "
+                                 "revision of this project; wait for it to finish")
     # Idempotent: enqueue_job dedupes to the existing active job on a duplicate
     # click, so a render-request row for this job may already exist — that's fine.
     try:
@@ -2449,7 +2486,7 @@ def customer_editor_render(project_id: str, body: EditorRenderBody,
         })
     except Exception:  # noqa: BLE001 — tracking row only; the job is the source of truth
         pass
-    return job
+    return _public_render_job(job)
 
 
 @app.post("/projects/{project_id}/editor/renders/{job_id}/retry")
@@ -2471,7 +2508,7 @@ def customer_editor_render_retry(project_id: str, job_id: UUID,
         "status": "queued", "progress": 0, "error_message": None,
         "current_stage": "retry queued", "completed_at": None,
     })
-    return supa.db_select("pipeline_jobs", f"id=eq.{job['id']}")[0]
+    return _public_render_job(supa.db_select("pipeline_jobs", f"id=eq.{job['id']}")[0])
 
 
 @app.post("/projects/{project_id}/editor/renders/{job_id}/sign")
