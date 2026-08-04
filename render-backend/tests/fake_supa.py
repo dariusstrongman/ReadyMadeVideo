@@ -50,7 +50,8 @@ class FakeSupabase:
                             "publishability_reports", "tournament_runs",
                             "editor_documents", "editor_operations",
                             "editor_render_requests", "editor_revision_proposals",
-                            "editor_audit_events", "pending_storage_cleanup")}
+                            "editor_audit_events", "pending_storage_cleanup",
+                            "editorial_plans")}
         self.storage: dict[str, bytes] = {}          # "bucket/path" -> data
         self.fail_tables: set[str] = set()           # simulate write failures
         self.conflict_once_tables: set[str] = set()  # simulate one unique collision
@@ -104,6 +105,12 @@ class FakeSupabase:
         for b in rows:
             b = dict(b)
             if table == "pipeline_jobs":
+                # Mirror migration 0022's pipeline_jobs_kind_check.
+                if b.get("kind") not in ("analysis", "autoedit", "revision",
+                                         "final_render", "editorial_plan"):
+                    return resp(400, {"message": "new row for relation "
+                                                 "\"pipeline_jobs\" violates check "
+                                                 "constraint \"pipeline_jobs_kind_check\""})
                 dup = [r for r in self.tables[table]
                        if r["project_id"] == b["project_id"]
                        and r["kind"] == b["kind"] and r["status"] in ACTIVE]
@@ -144,6 +151,12 @@ class FakeSupabase:
                              and r.get("version") == b.get("version")]
                 if duplicate:
                     return resp(409, {"message": f"duplicate {table} version"})
+            if table == "editorial_plans":
+                duplicate = [r for r in self.tables[table]
+                             if r["project_id"] == b["project_id"]
+                             and r.get("version") == b.get("version")]
+                if duplicate:
+                    return resp(409, {"message": "duplicate editorial plan version"})
             if table == "pending_storage_cleanup":
                 duplicate = [r for r in self.tables[table]
                              if r.get("bucket") == b.get("bucket")

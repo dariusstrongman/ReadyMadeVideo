@@ -433,6 +433,65 @@ def op_request_analysis(project_id: str,
         raise HTTPException(429, str(e))
     return job
 
+class EditorialPlanRequest(BaseModel):
+    """Binding creative constraints for the Editorial Planner (all optional)."""
+    brief: str | None = Field(default=None, max_length=2000)
+    platform: str | None = Field(default=None, max_length=40)
+    aspectRatio: str | None = Field(default=None, max_length=10)
+    tone: str | None = Field(default=None, max_length=200)
+    style: str | None = Field(default=None, max_length=200)
+    # When true, tone/style words that cannot be parsed into enforceable
+    # policy become warned advisories instead of hard rejections.
+    toneAdvisoryOnly: bool = False
+    durationMin: float | None = Field(default=None, gt=0, le=3600)
+    durationMax: float | None = Field(default=None, gt=0, le=3600)
+    mustInclude: list[str] = Field(default_factory=list, max_length=20)
+    mustExclude: list[str] = Field(default_factory=list, max_length=20)
+
+
+@app.post("/projects/{project_id}/editorial-plan")
+def customer_request_editorial_plan(project_id: str,
+                                    body: EditorialPlanRequest = EditorialPlanRequest(),
+                                    authorization: str = Header(default="")):
+    """Run the Editorial Planner (separate structured planning stage).
+
+    Requires a completed analysis (segment catalog). Owner-only, deleted-aware,
+    idempotent per (project, kind): an active planning job is returned as-is.
+    The plan lands in editorial_plans; poll GET /projects/{id}/editorial-plan.
+    """
+    from . import jobs as job_service
+    user, _ = _owned_project(project_id, authorization)
+    _rate_check(user["id"], "editorial_plan")
+    if body.durationMin and body.durationMax and body.durationMin > body.durationMax:
+        raise HTTPException(422, "durationMin exceeds durationMax")
+    if not supa.db_select("segments", f"project_id=eq.{project_id}&limit=1"):
+        raise HTTPException(409, "no segment catalog yet — run analysis first")
+    active = supa.db_select(
+        "pipeline_jobs",
+        f"project_id=eq.{project_id}&kind=eq.editorial_plan"
+        "&status=in.(queued,processing)&order=created_at.desc&limit=1")
+    if active:
+        return active[0]
+    try:
+        return job_service.enqueue_job(project_id, user["id"], "editorial_plan",
+                                       body.model_dump(exclude_none=True))
+    except job_service.ConcurrencyLimit as exc:
+        raise HTTPException(429, str(exc))
+
+
+@app.get("/projects/{project_id}/editorial-plan")
+def customer_get_editorial_plan(project_id: str,
+                                authorization: str = Header(default="")):
+    """Latest editorial plan for the project (owner-only, deleted-aware)."""
+    _owned_project(project_id, authorization)
+    rows = supa.db_select(
+        "editorial_plans",
+        f"project_id=eq.{project_id}&order=version.desc&limit=1")
+    if not rows:
+        raise HTTPException(404, "no editorial plan yet")
+    return rows[0]
+
+
 @app.post("/projects/{project_id}/generate-draft")
 def op_generate_draft(project_id: str, body: JobParams = JobParams(),
                       authorization: str = Header(default="")):

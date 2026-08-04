@@ -23,7 +23,9 @@ begin
       'edit_runs','user_corrections','draft_evaluations','preproduction_runs',
       'picture_edit_runs','music_sound_runs','licensed_music_assets','audio_mix_runs',
       'graphics_runs','caption_runs','color_runs','human_edit_sessions',
-      'human_edit_timing_events','timeline_scorecards','project_status_events'] loop
+      'human_edit_timing_events','timeline_scorecards','project_status_events',
+      -- gated at creation (0022)
+      'editorial_plans'] loop
     if not exists (
       select 1 from pg_policies
       where schemaname = 'public' and tablename = t
@@ -59,7 +61,8 @@ begin
         'edit_runs','user_corrections','draft_evaluations','preproduction_runs',
         'picture_edit_runs','music_sound_runs','licensed_music_assets','audio_mix_runs',
         'graphics_runs','caption_runs','color_runs','human_edit_sessions',
-        'human_edit_timing_events','timeline_scorecards','project_status_events')
+        'human_edit_timing_events','timeline_scorecards','project_status_events',
+        'editorial_plans')
       and cmd in ('SELECT', 'ALL')
   loop
     if r.q ilike '%auth.uid()%'
