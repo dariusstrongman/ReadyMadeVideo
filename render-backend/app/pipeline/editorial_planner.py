@@ -1435,6 +1435,55 @@ class PlanRejected(RuntimeError):
                          f"violations: {'; '.join(last[:5])}")
 
 
+_CLAMP_EPSILON_S = 0.75
+
+
+def _normalize_timeline_arithmetic(raw: dict, segments: list[Segment]) -> None:
+    """Deterministic bookkeeping for the planned timeline (2026-08-05).
+
+    The model's CREATIVE decisions — which segment, what trim, what order —
+    are untouched. What is normalized is pure arithmetic the validator can
+    recompute exactly and production kept rejecting over one-decimal slips:
+
+    - sourceIn/sourceOut clamped INTO the cited segment's real range, only
+      when the overshoot is a slip (<= 0.75 s); bigger overshoots are left
+      for the validator to reject honestly.
+    - timelineIn/timelineOut rebuilt as a contiguous cursor from the trims
+      (speed is fixed 1.0 in planned timelines).
+    - plannedDurationSeconds set to the recomputed total.
+
+    Nothing here can invent footage: clamping only ever SHRINKS a trim into
+    the segment's actual recorded range.
+    """
+    if not isinstance(raw, dict) or not isinstance(raw.get("timeline"), list):
+        return
+    by_id = {s.segmentId: s for s in segments}
+    cursor = 0.0
+    for entry in raw["timeline"]:
+        if not isinstance(entry, dict):
+            return                      # malformed — validator's job
+        seg = by_id.get(entry.get("segmentId"))
+        try:
+            s_in = float(entry.get("sourceIn"))
+            s_out = float(entry.get("sourceOut"))
+        except (TypeError, ValueError):
+            return
+        if seg is not None:
+            lo, hi = float(seg.sourceStart), float(seg.sourceEnd)
+            if s_in < lo and lo - s_in <= _CLAMP_EPSILON_S:
+                s_in = lo
+            if s_out > hi and s_out - hi <= _CLAMP_EPSILON_S:
+                s_out = hi
+        if s_out <= s_in:
+            return                      # degenerate — validator's job
+        entry["sourceIn"], entry["sourceOut"] = round(s_in, 3), round(s_out, 3)
+        entry["timelineIn"] = round(cursor, 3)
+        cursor += s_out - s_in
+        entry["timelineOut"] = round(cursor, 3)
+    if isinstance(raw.get("plannedDurationSeconds"), (int, float)):
+        raw["plannedDurationSeconds"] = round(cursor, 3)
+
+
 def plan_editorial(segments: list[Segment], constraints: dict,
                    music_available: bool, generate,
                    max_attempts: int = MAX_ATTEMPTS) -> dict:
@@ -1480,6 +1529,7 @@ def plan_editorial(segments: list[Segment], constraints: dict,
             raw["audio"]["musicAvailable"] = music_available
             if not music_available:
                 raw["audio"]["musicPlan"] = None
+        _normalize_timeline_arithmetic(raw, segments)
         try:
             plan = EditorialPlan(**raw)
         except ValidationError as exc:

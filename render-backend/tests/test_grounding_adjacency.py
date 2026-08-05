@@ -83,3 +83,44 @@ class TestLabelBranchUntouched:
         item = ep.GroundedText(text="The Setup", claimType="editorial_label",
                                evidence=[])
         assert _violations(item) == []
+
+
+class TestTimelineArithmeticNormalization:
+    """Bookkeeping is code's job; creative choices stay the model's."""
+
+    def _plan(self, entries):
+        return {"timeline": entries, "plannedDurationSeconds": 999.0}
+
+    def _segs(self):
+        return [Segment(segmentId="seg-1", assetId="a1", sourceStart=10.0,
+                        sourceEnd=20.0, action="crew works", shotType="wide",
+                        location="Dallas")]
+
+    def test_small_overshoot_is_clamped_and_cursor_rebuilt(self):
+        raw = self._plan([
+            {"segmentId": "seg-1", "sourceIn": 9.6, "sourceOut": 15.0,
+             "timelineIn": 0.3, "timelineOut": 99.0},
+            {"segmentId": "seg-1", "sourceIn": 15.0, "sourceOut": 20.5,
+             "timelineIn": 7.7, "timelineOut": 8.0}])
+        ep._normalize_timeline_arithmetic(raw, self._segs())
+        t0, t1 = raw["timeline"]
+        assert t0["sourceIn"] == 10.0            # clamped up (0.4s slip)
+        assert t1["sourceOut"] == 20.0           # clamped down (0.5s slip)
+        assert (t0["timelineIn"], t0["timelineOut"]) == (0.0, 5.0)
+        assert (t1["timelineIn"], t1["timelineOut"]) == (5.0, 10.0)
+        assert raw["plannedDurationSeconds"] == 10.0
+
+    def test_large_overshoot_is_left_for_the_validator(self):
+        raw = self._plan([
+            {"segmentId": "seg-1", "sourceIn": 5.0, "sourceOut": 15.0,
+             "timelineIn": 0.0, "timelineOut": 10.0}])
+        ep._normalize_timeline_arithmetic(raw, self._segs())
+        assert raw["timeline"][0]["sourceIn"] == 5.0     # 5s overshoot: honest reject
+
+    def test_unknown_segment_still_gets_cursor_math(self):
+        raw = self._plan([
+            {"segmentId": "ghost", "sourceIn": 1.0, "sourceOut": 3.0,
+             "timelineIn": 9.0, "timelineOut": 9.5}])
+        ep._normalize_timeline_arithmetic(raw, self._segs())
+        assert (raw["timeline"][0]["timelineIn"],
+                raw["timeline"][0]["timelineOut"]) == (0.0, 2.0)
