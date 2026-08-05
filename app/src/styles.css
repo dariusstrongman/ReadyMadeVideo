@@ -2048,6 +2048,17 @@ textarea { resize: vertical; min-height: 80px; }
    surface gets the behaviour by using the class, not by editing this rule. */
 .st-toolhost:hover .st-tools,
 .st-tools:focus-within { opacity: 1; }
+
+/* The hero is one large object, not one of many cards: there is no clutter to
+   protect it from, and hiding its controls behind a hover over one corner of
+   the video made them undiscoverable. Always shown, slightly stronger contrast
+   so they read against arbitrary video frames. */
+.st-tools-pinned { opacity: 1; }
+.st-tools-pinned .st-tool {
+  background: rgba(8,8,14,0.86);
+  border-color: var(--border-3);
+  color: var(--text);
+}
 .st-tool {
   width: 26px; height: 26px; border-radius: var(--radius);
   display: grid; place-items: center;

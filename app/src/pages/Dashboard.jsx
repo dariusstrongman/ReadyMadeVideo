@@ -279,7 +279,7 @@ export default function Dashboard() {
             slateLabel={heroStatus.label} play={!heroTools} />
           {/* The hero is a project like any other — it needs the same controls. */}
           <ProjectTools project={hero} onChanged={load} onDeleted={load}
-            onOpenChange={setHeroTools} />
+            onOpenChange={setHeroTools} pinned />
           {heroStatus.intent === 'ready' && (
             <span className="st-play" aria-hidden="true">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
@@ -352,7 +352,7 @@ export default function Dashboard() {
    Escape raced the commit — the input unmounted, blur fired, and the discarded
    text got written anyway. An explicit button removes the race instead of
    guarding it. */
-function ProjectTools({ project: p, onChanged, onDeleted, onOpenChange }) {
+function ProjectTools({ project: p, onChanged, onDeleted, onOpenChange, pinned = false }) {
   const session = useAuth()
   const [mode, setMode] = useState('idle')       // idle | rename | confirm
   const [draft, setDraft] = useState(p.name)
@@ -396,7 +396,7 @@ function ProjectTools({ project: p, onChanged, onDeleted, onOpenChange }) {
   return (
     <>
       {mode === 'idle' && (
-        <div className="st-tools" onClick={stop}>
+        <div className={`st-tools${pinned ? ' st-tools-pinned' : ''}`} onClick={stop}>
           <button className="st-tool" title="Rename" aria-label={`Rename ${p.name}`}
             onClick={(e) => { stop(e); setDraft(p.name); go('rename') }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
