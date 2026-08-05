@@ -40,6 +40,7 @@ def test_unreadable_error_body_still_reports_status(monkeypatch):
     def boom(req, timeout):
         raise err
     monkeypatch.setattr(gemini_common.urllib.request, "urlopen", boom)
+    monkeypatch.setattr(gemini_common.time, "sleep", lambda s: None)  # 503 retries
     with pytest.raises(RuntimeError, match="503"):
         gemini_common.http("GET", "https://generativelanguage.googleapis.com/v1beta/files/x?key=k")
 

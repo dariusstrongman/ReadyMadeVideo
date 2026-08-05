@@ -521,6 +521,63 @@ def _content_tokens(text: str) -> list[str]:
             if len(m.group(0)) >= 3 and m.group(0).lower() not in _STOPWORDS]
 
 
+# Words that describe the VIDEO ARTIFACT itself rather than the world in it.
+# "this video shows the crew" fabricates nothing about the footage — treating
+# such meta-language as an invented fact rejected real plans in production.
+_MEDIA_META_WORDS = frozenset({
+    "video", "clip", "clips", "footage", "edit", "shot", "shots", "scene",
+    "scenes", "screen", "camera", "montage", "timelapse", "close-up",
+    # artifact-narration verbs: "the video shows/opens/ends with ..."
+    "show", "shows", "showing", "begin", "begins", "start", "starts",
+    "end", "ends", "ending", "open", "opens", "opening", "close", "closes",
+    "feature", "features", "capture", "captures", "captured"})
+
+_SUFFIXES = ("'s", "ies", "ing", "ions", "tion", "ion", "ers", "ment",
+             "ness", "edly", "ed", "es", "ly", "er", "s", "d")
+
+
+def _stem(token: str) -> str:
+    """Tiny deterministic suffix-stripper for evidence-ADJACENT morphology.
+
+    "inspection" traces to a catalog that says "inspect"; "damaged" to
+    "damage". Approved loosening (2026-08-05): morphology of catalog words is
+    not fabrication. Inventions still fail — a stem absent from the catalog
+    stays absent no matter the suffix.
+    """
+    t = token.lower()
+    for suf in _SUFFIXES:
+        if t.endswith(suf) and len(t) - len(suf) >= 3:
+            t = t[: len(t) - len(suf)]
+            break
+    return t
+
+
+def _allowed_token_sets(allowed_text: str) -> tuple[set, set]:
+    toks = {m.group(0).lower() for m in _WORD.finditer(allowed_text)}
+    return toks, {_stem(t) for t in toks} | toks
+
+
+def _word_supported(low: str, toks: set, stems: set) -> bool:
+    if low in toks or low in _MEDIA_META_WORDS:
+        return True
+    st = _stem(low)
+    # st+"e" recovers e-dropping inflection: damaged->damag(+e)=damage
+    return st in stems or (st + "e") in toks or _stem(low) in _MEDIA_META_WORDS
+
+
+def _token_supported(token: str, toks: set, stems: set) -> bool:
+    low = token.lower()
+    if _word_supported(low, toks, stems):
+        return True
+    # hyphenated compound: supported iff EVERY part is ("water-damaged"
+    # against a catalog that says "water damage")
+    if "-" in low:
+        parts = [p for p in low.split("-") if p]
+        return bool(parts) and all(
+            p in _STOPWORDS or _word_supported(p, toks, stems) for p in parts)
+    return False
+
+
 def _grounded_text_violations(item: GroundedText | Caption | GraphicItem,
                               segments_by_id: dict, pool: str,
                               constraints: dict, where: str,
@@ -568,7 +625,9 @@ def _grounded_text_violations(item: GroundedText | Caption | GraphicItem,
         # inventions are rejected exactly like capitalized ones
         allowed = (pool + " " + " ".join(supported_quotes) + " "
                    + " ".join(_NEUTRAL_LABEL_WORDS))
-        unsupported = [t for t in _content_tokens(text) if t not in allowed]
+        toks, stems = _allowed_token_sets(allowed)
+        unsupported = [t for t in _content_tokens(text)
+                       if not _token_supported(t, toks, stems)]
         if unsupported:
             out.append(f"{where} unsupported factual content: {unsupported}")
     else:  # editorial_label / cta: STRICTLY structural words — fail closed.
@@ -1118,13 +1177,29 @@ Think before you cut:
    structured evidence:
    {sourceType: transcript|segment_metadata|user_input, segmentId, quoteOrValue}
    where the quote is literally present in that source and every content word
-   of the text traces to it. editorial_label / cta text is limited to a
+   of the text traces to it. quoteOrValue must be COPIED VERBATIM,
+   CHARACTER-FOR-CHARACTER, from the cited segment's transcript or metadata —
+   a paraphrase, summary or re-wording is rejected as fabricated evidence.
+   Write factual text using the CATALOG'S OWN VOCABULARY (words from the
+   cited segments; simple morphological variants like inspect/inspection are
+   fine); words about the video artifact itself (video, clip, footage) are
+   allowed. audio.musicAvailable must EXACTLY equal the value given in the
+   constraints — planning music that is not available is fabrication. When no
+   licensed music exists, audio.musicPlan must be null (NOT the words "no
+   music") and no audio field may mention music at all. editorial_label / cta text is limited to a
    STRICTLY CLOSED structural vocabulary (e.g. "The Setup", "Step 2",
    "The Final Push", "Watch Until the End", "Key Takeaway", "Quick Tip",
    "Bonus") — ANY other word, including words from the footage itself,
    makes it a factual claim requiring evidence.
    storySentence, viewerPromise, premise, payoff, hook.text, captions,
    graphics and technicalWarnings all use this grounded structure.
+5a-geometry. A transition of duration D needs D/2 seconds of UNUSED source
+   footage (handles) on BOTH sides of the cut: if a clip is used to its
+   sourceStart/sourceEnd boundary, its handle there is 0.0s and any
+   transition across that cut is rejected. Prefer cuts, and only add a
+   transition where both adjacent timeline entries leave enough unused
+   source. The final beat must be the payoff — the timeline may not end on
+   any other beat.
 5b. The STRUCTURED CREATIVE POLICIES include a binding tone profile parsed
    from the user's tone/style. A low-energy tone forbids aggressive
    transitions (whip/push/slide/zoom), speed ramps above 2x, more than one
@@ -1372,11 +1447,22 @@ def plan_editorial(segments: list[Segment], constraints: dict,
     """
     if not segments:
         raise RuntimeError("no segment catalog — run analysis first")
+    vocab = sorted({t for seg in segments
+                    for t in _content_tokens(_segment_text(seg))})
     base_parts = [
         {"text": _SPEC},
         {"text": _constraints_text(constraints, music_available)},
         {"text": "SEGMENT CATALOG (the ONLY footage that exists):\n"
                  + _catalog_json(segments)},
+        # The gate rejects factual words outside the catalog. Synonyms are the
+        # top rejection cause in production ("technician" for a catalog that
+        # says "crew") — so the legal vocabulary is handed over explicitly.
+        {"text": "ALLOWED FACTUAL VOCABULARY — factual text (storySentence, "
+                 "viewerPromise, premises, payoffs, captions, warnings) may "
+                 "use ONLY these catalog words, their simple grammatical "
+                 "variants, structural connectives, and media words like "
+                 "video/clip/footage. Synonyms are treated as fabrication:\n"
+                 + " ".join(vocab)},
     ]
     schema = _response_schema()
     history: list[list[str]] = []
@@ -1478,7 +1564,13 @@ def gemini_generate(parts: list[dict], schema: dict) -> dict:
           " the index the core plan implements; the captions; the graphics;"
           " and the technical warnings. Every claim needs REAL evidence"
           " entries (sourceType + quoteOrValue from the catalog) — an empty"
-          " evidence object is a rejection.")}]
+          " evidence object is a rejection. quoteOrValue must be COPIED"
+          " CHARACTER-FOR-CHARACTER from the cited segment; if a technical"
+          " warning cannot cite a verbatim quote, OMIT it — an empty"
+          " technicalWarnings array is honest and preferred over a"
+          " paraphrased one. For premise and payoff text, REUSE the wording"
+          " of the core plan's storySentence/viewerPromise and the cited"
+          " evidence — do not introduce new words.")}]
     rest = generate_json(model, strict_parts, strict, api_key,
                          temperature=0.4, timeout=600,
                          ladder=[strict, {"type": "OBJECT"}])

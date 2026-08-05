@@ -10,7 +10,8 @@ import urllib.request
 BASE = "https://generativelanguage.googleapis.com"
 
 
-def http(method, url, headers=None, body=None, raw=None, timeout=300):
+def http(method, url, headers=None, body=None, raw=None, timeout=300,
+         _retries=3, _backoff=15):
     data = raw if raw is not None else (json.dumps(body).encode() if body else None)
     req = urllib.request.Request(url, data=data, method=method, headers=headers or {})
     try:
@@ -28,9 +29,24 @@ def http(method, url, headers=None, body=None, raw=None, timeout=300):
             detail = (payload.get("error") or {}).get("message", "")[:500]
         except Exception:
             pass
+        if e.code in (429, 500, 502, 503, 504) and _retries > 0:
+            # Server-side congestion ("high demand") and rate spikes are
+            # temporary — a bounded backoff beats burning a repair attempt.
+            time.sleep(_backoff)
+            return http(method, url, headers=headers, body=body, raw=raw,
+                        timeout=timeout, _retries=_retries - 1,
+                        _backoff=min(_backoff * 2, 120))
         raise RuntimeError(
             f"Gemini API {e.code} on {url.split('?')[0]}: "
             f"{detail or e.reason}") from e
+    except (TimeoutError, OSError):
+        # One retry on transport-level stalls (SSL read timeouts, resets):
+        # a 10-minute editorial-plan call dying to a flaky socket should not
+        # burn a whole repair attempt. HTTPError is handled above — this
+        # clause only sees genuine transport failures.
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, json.loads(r.read().decode() or "{}"), \
+                {k.lower(): v for k, v in r.headers.items()}
 
 
 def upload_file(path: str, api_key: str, mime: str = "video/mp4") -> dict:
