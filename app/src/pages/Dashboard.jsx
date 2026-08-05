@@ -1,46 +1,42 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
 import { editorApi } from '../lib/editor'
+import { isExportJob } from './Project'
 
-const STATUS_LABEL = {
-  draft:           'Ready for footage',
-  uploading:       'Uploading footage',
-  ready:           'Footage uploaded',
-  analyzing:       'Creating your edit…',
-  analysis_failed: 'Analysis failed',
-  draft_ready:     'Your edit is ready',
-  rendering:       'Rendering…',
-  render_failed:   'Export failed',
-  completed:       'Export ready',
-  complete:        'Export ready',
+/* Status vocabulary ─────────────────────────────────────────────────────
+   Four intents, in the order footage actually travels through the studio:
+     idle  → waiting on you for footage      (neutral)
+     work  → Stromation is cutting           (cyan — the brand at work)
+     ready → your eyes are needed            (violet)
+     done  → exported                        (green)
+     error → something stopped               (red)
+   Colour is never decorative here: it always encodes where a video is. */
+const STATUS = {
+  draft:           { intent: 'idle',  label: 'Waiting for footage', action: 'Add footage',   lead: true },
+  uploading:       { intent: 'work',  label: 'Uploading footage',   action: 'View upload' },
+  ready:           { intent: 'work',  label: 'Footage received',    action: 'Open video' },
+  analyzing:       { intent: 'work',  label: 'Building your edit',  action: 'Watch progress' },
+  rendering:       { intent: 'work',  label: 'Rendering',           action: 'Watch progress' },
+  draft_ready:     { intent: 'ready', label: 'Your edit is ready',  action: 'Watch your edit', lead: true },
+  completed:       { intent: 'done',  label: 'Exported',            action: 'Download' },
+  complete:        { intent: 'done',  label: 'Exported',            action: 'Download' },
+  analysis_failed: { intent: 'error', label: 'Edit failed',         action: 'See what happened', lead: true },
+  render_failed:   { intent: 'error', label: 'Export failed',       action: 'See what happened', lead: true },
 }
+const statusOf = (s) => STATUS[s] || { intent: 'idle', label: String(s).replaceAll('_', ' '), action: 'Open' }
 
-const STATUS_DOT = {
-  draft:           'dot-idle',
-  uploading:       'dot-active',
-  ready:           'dot-active',
-  analyzing:       'dot-active',
-  analysis_failed: 'dot-error',
-  draft_ready:     'dot-ready',
-  rendering:       'dot-active',
-  render_failed:   'dot-error',
-  completed:       'dot-done',
-  complete:        'dot-done',
-}
+/* The hero answers one question: which video needs you right now?
+   Lower number wins. Ordering is by how much it is blocked on the human. */
+const HERO_RANK = { draft_ready: 0, analysis_failed: 1, render_failed: 1, draft: 2, analyzing: 3, rendering: 3, uploading: 4, ready: 4, completed: 5, complete: 5 }
 
-const STATUS_ACTION = {
-  draft:           { label: 'Add footage',         primary: true },
-  uploading:       { label: 'View upload',      primary: false },
-  ready:           { label: 'Open video',          primary: false },
-  analyzing:       { label: 'Watch progress',   primary: false },
-  analysis_failed: { label: 'See what happened',primary: false },
-  draft_ready:     { label: 'Watch your edit',     primary: true },
-  rendering:       { label: 'Watch progress',   primary: false },
-  render_failed:   { label: 'See what happened',primary: false },
-  completed:       { label: 'Download video',   primary: true },
-  complete:        { label: 'Download video',   primary: true },
+const HERO_COPY = {
+  ready: { eyebrow: 'Ready to watch', line: 'Your first cut is finished. Watch it, then download it or ask for changes.' },
+  work:  { eyebrow: 'In the bay',     line: 'Stromation is cutting this now. You can leave — it keeps working.' },
+  idle:  { eyebrow: 'Needs footage',  line: 'Drop in your raw clips and the edit starts on its own.' },
+  error: { eyebrow: 'Stopped',        line: 'This one did not finish. Open it to see what happened.' },
+  done:  { eyebrow: 'Exported',       line: 'This video is finished and downloaded.' },
 }
 
 function timeAgo(ts) {
@@ -51,16 +47,6 @@ function timeAgo(ts) {
   const h = Math.floor(m / 60)
   if (h < 24) return `${h}h ago`
   return `${Math.floor(h / 24)}d ago`
-}
-
-function StatCard({ label, value, sub, accent }) {
-  return (
-    <div className="stat-card" style={accent ? { borderColor: `${accent}40` } : {}}>
-      <div className="stat-value" style={accent ? { color: accent } : {}}>{value}</div>
-      <div className="stat-label">{label}</div>
-      {sub && <div className="stat-sub">{sub}</div>}
-    </div>
-  )
 }
 
 function FilmIcon({ size = 48 }) {
@@ -79,48 +65,124 @@ function FilmIcon({ size = 48 }) {
   )
 }
 
+/* An empty gate: what a camera sees before it rolls. Used wherever a video
+   has no frame yet — far more honest than a grey placeholder icon. */
+function Slate({ intent, label }) {
+  return (
+    <div className={`st-slate st-i-${intent}`} aria-hidden="true">
+      <span className="st-slate-corner tl" /><span className="st-slate-corner tr" />
+      <span className="st-slate-corner bl" /><span className="st-slate-corner br" />
+      <span className="st-slate-label">{label}</span>
+    </div>
+  )
+}
+
+/* Real footage, not an icon. `#t=0.1` makes the browser paint an actual
+   frame from the cut as the poster. Hover plays it silently — the medium
+   is video, so the dashboard should move like video. */
+function Frame({ src, intent, slateLabel, play = true }) {
+  const ref = useRef(null)
+  const [failed, setFailed] = useState(false)
+  if (!src || failed) return <Slate intent={intent} label={slateLabel} />
+
+  const motionOK = () => !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
+  return (
+    <video
+      ref={ref}
+      className="st-frame-video"
+      src={`${src}#t=0.1`}
+      preload="metadata"
+      muted
+      playsInline
+      loop
+      tabIndex={-1}
+      onError={() => setFailed(true)}
+      onMouseEnter={() => { if (play && motionOK()) ref.current?.play().catch(() => {}) }}
+      onMouseLeave={() => { const v = ref.current; if (v) { v.pause(); v.currentTime = 0.1 } }}
+    />
+  )
+}
+
 export default function Dashboard() {
   const session = useAuth()
   const navigate = useNavigate()
   const [projects, setProjects] = useState(null)
   const [jobs, setJobs] = useState([])
+  const [posters, setPosters] = useState({})   // projectId -> signed url | null
   const [error, setError] = useState('')
 
-  async function load() {
+  const load = useCallback(async () => {
     const [{ data: projs, error: pe }, { data: js }] = await Promise.all([
       supabase.from('projects')
         .select('id, name, status, created_at, updated_at')
         .is('deleted_at', null)          // hide soft-deleted projects
         .order('updated_at', { ascending: false }),
+      // Only real exports belong here. `analysis` and `autoedit` are internal
+      // pipeline stages, not something the customer downloaded — listing them
+      // under "downloads" (badged "exported") was reporting machine steps as
+      // user deliverables. Same rule Project.jsx already uses for isExportJob.
       supabase.from('pipeline_jobs')
-        .select('id, project_id, status, kind, created_at, artifacts')
-        .in('kind', ['analysis', 'autoedit', 'final_render'])
+        .select('id, project_id, status, kind, created_at, artifacts, params')
+        .eq('kind', 'final_render')
         .eq('status', 'completed')
         .order('created_at', { ascending: false })
         .limit(10),
     ])
     if (pe) setError(pe.message)
     else setProjects(projs || [])
-    if (js) setJobs(js)
-  }
+    // Reuse Project.jsx's tested rule rather than restating it here.
+    if (js) setJobs(js.filter(isExportJob))
+  }, [])
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [load])
+
+  /* Posters load after the page paints, so nothing blocks first render.
+     One query gets every candidate the user owns (RLS scopes it); the
+     newest per project wins, and only that one gets a signed URL. */
+  useEffect(() => {
+    if (!projects?.length || !session) return undefined
+    let cancelled = false
+    ;(async () => {
+      const { data: cands } = await supabase
+        .from('candidate_runs')
+        .select('id, project_id, created_at')
+        .order('created_at', { ascending: false })
+      if (cancelled || !cands?.length) return
+      const newest = {}
+      for (const c of cands) if (!newest[c.project_id]) newest[c.project_id] = c.id
+      // Each signing call is audited server-side, so cap the fan-out: posters
+      // are a nicety, not worth N audit writes on every dashboard visit.
+      const order = projects.map(p => p.id).filter(id => newest[id]).slice(0, 12)
+      for (const pid of order) {
+        const cid = newest[pid]
+        if (cancelled) return
+        try {
+          const { url } = await editorApi(
+            `/projects/${pid}/candidates/${cid}/preview-url`, session,
+            { method: 'POST', body: JSON.stringify({}) })
+          if (!cancelled) setPosters(p => ({ ...p, [pid]: url }))
+        } catch {
+          if (!cancelled) setPosters(p => ({ ...p, [pid]: null }))
+        }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [projects, session])
 
   if (projects === null) {
     return (
-      <div className="dashboard-loading">
-        <div className="dash-skeleton" />
-        <div className="dash-skeleton" style={{ width: '60%' }} />
-        <div className="dash-skeleton" style={{ width: '80%' }} />
+      <div className="st-page">
+        <div className="st-skel st-skel-title" />
+        <div className="st-skel st-skel-hero" />
+        <div className="st-grid">
+          {[0, 1, 2, 3].map(i => <div key={i} className="st-skel st-skel-card" />)}
+        </div>
       </div>
     )
   }
 
-  // Stats
   const total = projects.length
-  const active = projects.filter(p => ['uploading','ready','analyzing','rendering'].includes(p.status)).length
-  const readyToReview = projects.filter(p => p.status === 'draft_ready').length
-  const exported = projects.filter(p => ['completed','complete'].includes(p.status)).length
 
   // ── Empty state ──────────────────────────────────────────────────────
   if (total === 0) {
@@ -132,24 +194,13 @@ export default function Dashboard() {
     ]
     return (
       <div className="dashboard-empty">
-        <div className="empty-icon-wrap">
-          <FilmIcon size={32} />
-        </div>
+        <div className="empty-icon-wrap"><FilmIcon size={32} /></div>
         <h1 className="empty-title">Your studio is ready.</h1>
-        <p className="empty-sub">
-          Upload raw footage. Stromation builds your first edit.
-        </p>
+        <p className="empty-sub">Upload raw footage. Stromation builds your first edit.</p>
         <div className="empty-actions">
-          <Link to="/project/new" className="btn btn-primary btn-lg">
-            + Create your first video
-          </Link>
-          <a
-            href="https://www.stromation.com/showcase.html"
-            className="empty-example-link"
-            target="_blank" rel="noopener noreferrer"
-          >
-            See Project Zero — a real example →
-          </a>
+          <Link to="/project/new" className="btn btn-primary btn-lg">+ Create your first video</Link>
+          <a href="https://www.stromation.com/showcase.html" className="empty-example-link"
+            target="_blank" rel="noopener noreferrer">See Project Zero — a real example →</a>
         </div>
         <div className="empty-steps">
           {steps.map(s => (
@@ -164,98 +215,101 @@ export default function Dashboard() {
     )
   }
 
-  // ── Active projects (has projects) ───────────────────────────────────
-  const inProgress = projects.filter(p => !['completed','complete'].includes(p.status))
-  const done = projects.filter(p => ['completed','complete'].includes(p.status))
+  // ── The one that needs you ───────────────────────────────────────────
+  const hero = [...projects].sort(
+    (a, b) => (HERO_RANK[a.status] ?? 9) - (HERO_RANK[b.status] ?? 9)
+  )[0]
+  const rest = projects.filter(p => p.id !== hero.id)
+
+  const heroStatus = statusOf(hero.status)
+  const heroCopy = HERO_COPY[heroStatus.intent] || HERO_COPY.idle
+
+  const waiting = projects.filter(p => statusOf(p.status).lead).length
+  const working = projects.filter(p => statusOf(p.status).intent === 'work').length
+  const exported = projects.filter(p => statusOf(p.status).intent === 'done').length
 
   return (
-    <div className="dashboard-page wrap">
+    <div className="st-page">
       {error && <div className="err" role="alert">{error}</div>}
 
-      {/* Header row */}
-      <div className="dash-header">
+      <header className="st-head">
         <div>
-          <h1 className="dash-title">Your studio</h1>
-          <p className="dash-sub">
-            {session?.user?.email}
+          <h1 className="st-title">Your studio</h1>
+          {/* The old four stat tiles said 2 / 0 / 1 / 0 — maximum weight for
+              minimum news. Same facts, one line, ninety percent less ink. */}
+          <p className="st-tally">
+            <span className="st-num">{total}</span> {total === 1 ? 'video' : 'videos'}
+            {working > 0 && <> <i className="st-sep" /> <span className="st-num st-i-work">{working}</span> in the bay</>}
+            {waiting > 0 && <> <i className="st-sep" /> <span className="st-num st-i-ready">{waiting}</span> waiting on you</>}
+            {exported > 0 && <> <i className="st-sep" /> <span className="st-num st-i-done">{exported}</span> exported</>}
           </p>
         </div>
-        <Link to="/project/new" className="btn btn-primary">+ New video</Link>
-      </div>
+      </header>
 
-      {/* Stats row */}
-      <div className="stats-row">
-        <StatCard label="Total videos" value={total} />
-        <StatCard label="Being edited" value={active} accent="var(--cyan)" sub={active > 0 ? 'AI is working' : null} />
-        <StatCard label="Ready to watch" value={readyToReview} accent="#a78bfa" sub={readyToReview > 0 ? 'your edit is waiting' : null} />
-        <StatCard label="Exported" value={exported} accent="#4ade80" />
-      </div>
-
-      {/* Ready-to-review callout */}
-      {readyToReview > 0 && (
-        <div className="review-callout">
-          <span className="review-callout-dot" />
-          <div>
-            <strong>{readyToReview} {readyToReview > 1 ? 'edits' : 'edit'} ready to watch</strong>
-            <p>Stromation finished {readyToReview > 1 ? 'these edits' : 'your edit'}. Watch it and download when you're happy.</p>
-          </div>
-          <button className="btn btn-primary btn-sm"
-            onClick={() => {
-              const p = projects.find(p => p.status === 'draft_ready')
-              if (p) navigate(`/project/${p.id}`)
-            }}>
-            Watch it now →
-          </button>
+      {/* ── Hero: the single next thing to do ── */}
+      <section className={`st-hero st-i-${heroStatus.intent}`}
+        role="link" tabIndex={0}
+        aria-label={`${hero.name} — ${heroStatus.label}`}
+        onClick={() => navigate(`/project/${hero.id}`)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/project/${hero.id}`) }
+        }}>
+        <div className="st-hero-frame">
+          <Frame src={posters[hero.id]} intent={heroStatus.intent}
+            slateLabel={heroStatus.label} />
+          {heroStatus.intent === 'ready' && (
+            <span className="st-play" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            </span>
+          )}
         </div>
-      )}
-
-      {/* In-progress projects */}
-      {inProgress.length > 0 && (
-        <section className="dash-section">
-          <span className="section-label">Being edited</span>
-          <div className="project-grid">
-            {inProgress.map(p => <ProjectCard key={p.id} project={p} onDelete={load} />)}
-            <Link to="/project/new" className="project-card-new">
-              <span className="pcn-plus">+</span>
-              <span>New video</span>
-            </Link>
+        <div className="st-hero-meta">
+          <span className="st-eyebrow"><i className={`st-dot st-i-${heroStatus.intent}`} />{heroCopy.eyebrow}</span>
+          <h2 className="st-hero-title">{hero.name}</h2>
+          <p className="st-hero-line">{heroCopy.line}</p>
+          <div className="st-hero-foot">
+            <button className="btn btn-primary"
+              onClick={(e) => { e.stopPropagation(); navigate(`/project/${hero.id}`) }}>
+              {heroStatus.action} →
+            </button>
+            <span className="st-stamp">{timeAgo(hero.updated_at || hero.created_at)}</span>
           </div>
-        </section>
-      )}
+        </div>
+      </section>
 
-      {/* Completed exports */}
-      {done.length > 0 && (
-        <section className="dash-section">
-          <span className="section-label">Finished videos</span>
-          <div className="project-grid">
-            {done.map(p => <ProjectCard key={p.id} project={p} onDelete={load} />)}
-          </div>
-        </section>
-      )}
+      {/* ── The wall. Status lives on each card, so one grid holds them all. ── */}
+      <section className="st-section">
+        <div className="st-rule">
+          <h2 className="st-rule-label">All videos</h2>
+          <span className="st-rule-count">{total}</span>
+        </div>
+        <div className="st-grid">
+          {rest.map(p => (
+            <FrameCard key={p.id} project={p} poster={posters[p.id]}
+              onDelete={load} onRefresh={load} />
+          ))}
+          <Link to="/project/new" className="st-new">
+            <span className="st-new-plus">+</span>
+            <span className="st-new-label">New video</span>
+          </Link>
+        </div>
+      </section>
 
-      {/* Recent export jobs */}
       {jobs.length > 0 && (
-        <section className="dash-section">
-          <span className="section-label">Recent downloads</span>
-          <div className="export-list">
+        <section className="st-section">
+          <div className="st-rule">
+            <h2 className="st-rule-label">Exports</h2>
+            <span className="st-rule-count">{jobs.length}</span>
+          </div>
+          <div className="st-list">
             {jobs.slice(0, 5).map(j => {
               const proj = projects.find(p => p.id === j.project_id)
               return (
-                <div key={j.id} className="export-row" onClick={() => proj && navigate(`/project/${proj.id}`)}
+                <div key={j.id} className="st-row"
+                  onClick={() => proj && navigate(`/project/${proj.id}`)}
                   style={{ cursor: proj ? 'pointer' : 'default' }}>
-                  <div className="export-row-icon">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                  </div>
-                  <div className="export-row-info">
-                    <p className="export-row-name">{proj?.name || 'Deleted video'}</p>
-                    <p className="export-row-meta">
-                      {j.kind ? `${j.kind.replace('_', ' ')} · ` : ''}
-                      {timeAgo(j.created_at)}
-                    </p>
-                  </div>
-                  <span className="badge completed">exported</span>
+                  <span className="st-row-name">{proj?.name || 'Deleted video'}</span>
+                  <span className="st-stamp">{timeAgo(j.created_at)}</span>
                 </div>
               )
             })}
@@ -266,57 +320,126 @@ export default function Dashboard() {
   )
 }
 
-function ProjectCard({ project: p, onDelete }) {
+function FrameCard({ project: p, poster, onDelete, onRefresh }) {
   const navigate = useNavigate()
   const session = useAuth()
-  const label = STATUS_LABEL[p.status] || p.status.replaceAll('_', ' ')
-  const dotClass = STATUS_DOT[p.status] || 'dot-idle'
-  const action = STATUS_ACTION[p.status] || { label: 'Open', primary: false }
-  const isActive = ['uploading','ready','analyzing','rendering'].includes(p.status)
+  const s = statusOf(p.status)
+  const [mode, setMode] = useState('idle')      // idle | rename | confirm
+  const [draft, setDraft] = useState(p.name)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const inputRef = useRef(null)
+  // Escape closes the input, which fires onBlur — and blur would otherwise
+  // commit the very edit Escape was meant to throw away (state updates are
+  // async, so `draft` is still the typed value at that point). This flag makes
+  // the discard win the race.
+  const abandon = useRef(false)
 
-  async function del(e) {
-    e.stopPropagation()
-    if (!confirm(`Delete "${p.name}"? This cannot be undone.`)) return
+  useEffect(() => { if (mode === 'rename') inputRef.current?.select() }, [mode])
+
+  const stop = (e) => e.stopPropagation()
+  const open = () => { if (mode === 'idle') navigate(`/project/${p.id}`) }
+
+  async function saveName(e) {
+    e?.preventDefault(); e?.stopPropagation()
+    if (busy) return                                  // Enter + blur can both fire
+    if (abandon.current) { abandon.current = false; return }
+    const name = draft.trim()
+    if (!name || name === p.name) { setMode('idle'); setDraft(p.name); return }
+    setBusy(true); setErr('')
+    const { error } = await supabase.from('projects').update({ name }).eq('id', p.id)
+    setBusy(false)
+    if (error) { setErr(error.message); return }
+    setMode('idle')
+    onRefresh()
+  }
+
+  async function confirmDelete(e) {
+    stop(e)
+    setBusy(true); setErr('')
     // Server-authorized, safe deletion: ownership-checked, marks the project deleted
     // and cleans storage server-side (preserving immutable edit evidence). Idempotent.
     try {
       await editorApi(`/projects/${p.id}`, session, { method: 'DELETE' })
-    } catch (err) {
-      // eslint-disable-next-line no-alert
-      alert(err.message || 'Could not delete the project.')
+    } catch (e2) {
+      setBusy(false)
+      setErr(e2.message || 'Could not delete this video.')
       return
     }
     onDelete()
   }
 
   return (
-    <div className="project-card" onClick={() => navigate(`/project/${p.id}`)}>
-      <div className="pc-thumb">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
-          stroke="rgba(0,212,255,0.2)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="2" y="2" width="20" height="20" rx="2.18"/>
-          <line x1="7" y1="2" x2="7" y2="22"/>
-          <line x1="17" y1="2" x2="17" y2="22"/>
-          <line x1="2" y1="12" x2="22" y2="12"/>
-        </svg>
-        {isActive && <span className="pc-thumb-pulse" />}
+    <article className={`st-card st-i-${s.intent}`}
+      role={mode === 'idle' ? 'link' : undefined}
+      tabIndex={mode === 'idle' ? 0 : undefined}
+      aria-label={`${p.name} — ${s.label}`}
+      onClick={open}
+      onKeyDown={(e) => {
+        if (mode !== 'idle') return
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open() }
+      }}>
+      <div className="st-card-frame">
+        <Frame src={poster} intent={s.intent} slateLabel={s.label} play={mode === 'idle'} />
+
+        {mode === 'idle' && (
+          <div className="st-tools" onClick={stop}>
+            <button className="st-tool" title="Rename" aria-label={`Rename ${p.name}`}
+              onClick={() => { setDraft(p.name); setMode('rename') }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+              </svg>
+            </button>
+            <button className="st-tool st-tool-kill" title="Delete" aria-label={`Delete ${p.name}`}
+              onClick={() => setMode('confirm')}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="2.4" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        )}
+
+        {/* Deleting is destructive and irreversible — ask in the card, in our
+            own voice, rather than handing off to a browser confirm() dialog. */}
+        {mode === 'confirm' && (
+          <div className="st-veil" onClick={stop}>
+            <p className="st-veil-q">Delete this video?</p>
+            <p className="st-veil-sub">The footage and the edit go with it.</p>
+            {err && <p className="st-veil-err" role="alert">{err}</p>}
+            <div className="st-veil-row">
+              <button className="btn btn-sm btn-ghost" disabled={busy}
+                onClick={(e) => { stop(e); setMode('idle'); setErr('') }}>Keep</button>
+              <button className="btn btn-sm btn-danger" disabled={busy} aria-busy={busy}
+                onClick={confirmDelete}>{busy ? 'Deleting…' : 'Delete'}</button>
+            </div>
+          </div>
+        )}
       </div>
-      <div className="pc-body">
-        <p className="pc-name">{p.name}</p>
-        <div className="pc-status">
-          <span className={`status-dot ${dotClass}`} />
-          <span className="pc-status-label">{label}</span>
-        </div>
-        <p className="pc-meta">{timeAgo(p.updated_at || p.created_at)}</p>
+
+      <div className="st-card-meta">
+        {mode === 'rename' ? (
+          <form onSubmit={saveName} onClick={stop}>
+            <input ref={inputRef} className="st-rename" value={draft} maxLength={120}
+              aria-label="Video name" disabled={busy}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={saveName}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Escape') {
+                  abandon.current = true
+                  setMode('idle'); setDraft(p.name); setErr('')
+                }
+              }} />
+            {err && <p className="st-veil-err" role="alert">{err}</p>}
+          </form>
+        ) : (
+          <h3 className="st-card-name" title={p.name}>{p.name}</h3>
+        )}
+        <p className="st-card-status">
+          <i className={`st-dot st-i-${s.intent}`} />{s.label}
+          <span className="st-stamp">{timeAgo(p.updated_at || p.created_at)}</span>
+        </p>
       </div>
-      <div className="pc-actions" onClick={e => e.stopPropagation()}>
-        <button
-          className={`btn btn-sm ${action.primary ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={() => navigate(`/project/${p.id}`)}>
-          {action.label}
-        </button>
-        <button className="btn btn-sm btn-danger" onClick={del} aria-label={`Delete ${p.name}`}>✕</button>
-      </div>
-    </div>
+    </article>
   )
 }

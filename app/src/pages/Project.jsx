@@ -125,10 +125,13 @@ export default function Project() {
   const [jobs, setJobs] = useState([])
   const [analysis, setAnalysis] = useState([])
   const [networkError, setNetworkError] = useState(null)
+  const [wsAttempted, setWsAttempted] = useState(false)
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadPct, setUploadPct] = useState(0)
   const [uploadInfo, setUploadInfo] = useState(null)  // {bytesUploaded,totalBytes,speedBps,etaSeconds,state}
+  const [starting, setStarting] = useState(false)
+  const [startError, setStartError] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [pendingFiles, setPendingFiles] = useState([])
   const fileInputRef = useRef(null)
@@ -155,6 +158,10 @@ export default function Project() {
     } catch {
       // Candidate query failed — leave candidates empty; the project view stays on
       // its processing/empty state and the poller retries. Never crashes the page.
+    } finally {
+      // Marks that the workspace call has been ATTEMPTED, so an empty
+      // candidates list can be told apart from one that is still loading.
+      setWsAttempted(true)
     }
       setNetworkError(null)
     } catch (err) {
@@ -301,6 +308,33 @@ export default function Project() {
     await load()
   }
 
+  // Footage present, nothing queued, not mid-upload → the edit can be started.
+  const canStartEdit = (
+    assets.length > 0 && !uploading && pendingFiles.length === 0 &&
+    !jobs.some(j => ['queued', 'processing'].includes(j.status))
+  )
+
+  async function startEditing() {
+    if (starting) return
+    setStarting(true); setStartError('')
+    try {
+      // Idempotent server-side: returns the existing active job if one exists.
+      const r = await fetch(`${RENDER_API}/projects/${projectId}/request-analysis`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}))
+        throw new Error(d.detail || `Request failed (${r.status})`)
+      }
+      await load()
+    } catch (e) {
+      setStartError(e.message || 'Could not start the edit. Please try again.')
+    } finally {
+      setStarting(false)
+    }
+  }
+
   if (!project) return <div className="center"><p className="sub">Loading…</p></div>
 
   const status = project.status
@@ -329,6 +363,33 @@ export default function Project() {
         <Breadcrumb projectName={project.name} projectId={projectId} />
         <ExportView job={latestExport} project={project} projectId={projectId}
           session={session} onRetry={load} />
+      </>
+    )
+  }
+
+  // ── Edit exists, but we couldn't load it ────────────────────────────
+  // draft_ready means the cut is finished. If the workspace call failed, the
+  // old code fell through to the upload screen and asked for footage on a
+  // video that is already edited — a dead end that also hides the finished
+  // work. Say what happened and offer a retry instead.
+  if (status === 'draft_ready' && candidates.length === 0 && wsAttempted) {
+    return (
+      <>
+        <Breadcrumb projectName={project.name} projectId={projectId} />
+        <div className="wrap" style={{ paddingTop: 48, paddingBottom: 80 }}>
+          <div className="proc-error-card">
+            <div className="proc-error-icon">!</div>
+            <h2 className="proc-error-title">Your edit is ready, but it didn't load.</h2>
+            <p className="proc-error-sub">
+              The edit is finished and safe — this page just couldn't fetch it.
+              {networkError ? ` (${networkError})` : ''}
+            </p>
+            <div className="proc-error-actions">
+              <button className="btn btn-primary" onClick={load}>Try again</button>
+              <Link to="/" className="btn btn-ghost">← Back to Your Studio</Link>
+            </div>
+          </div>
+        </div>
       </>
     )
   }
@@ -471,6 +532,31 @@ export default function Project() {
             </button>
             <input ref={fileInputRef} type="file" accept="video/*" multiple style={{ display: 'none' }}
               onChange={e => handleFiles(e.target.files)} />
+          </div>
+        )}
+
+        {/* Footage is in but no job is queued — this project is one click from
+            starting, so lead with that rather than the drop zone. Reachable at
+            status `draft` too, which ProcessingWorkspace never renders for: a
+            project whose upload landed but whose status never advanced would
+            otherwise sit here with footage and no way forward. */}
+        {canStartEdit && (
+          <div className="start-bar" style={{ marginTop: 32 }}>
+            <div className="start-bar-text">
+              <p className="start-bar-title">
+                {assets.length} {assets.length === 1 ? 'clip' : 'clips'} ready
+              </p>
+              <p className="start-bar-sub">
+                Start the edit and Stromation builds your first cut. You can close this page.
+              </p>
+              {startError && (
+                <p className="start-bar-err" role="alert" aria-live="assertive">{startError}</p>
+              )}
+            </div>
+            <button className="btn btn-primary btn-lg" onClick={startEditing}
+              disabled={starting} aria-busy={starting}>
+              {starting ? 'Starting…' : 'Start editing'}
+            </button>
           </div>
         )}
 
@@ -678,6 +764,49 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError, se
             {assets.length > 0 && (
               <a href="#footage" className="btn btn-ghost">View uploaded footage</a>
             )}
+          </div>
+        </div>
+        {assets.length > 0 && (
+          <div id="footage">
+            <FootageGrid assets={assets} fmtSize={fmtSize} fmtDur={fmtDur} />
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── Footage in, nothing queued yet: hand over the control that starts it ──
+  // The automatic POST /request-analysis fired after upload can fail quietly —
+  // a dropped connection, or a 429 from the per-user concurrency cap. Showing a
+  // progress spinner for work that was never enqueued is a lie the user can't
+  // act on, and the stall card only appears after five minutes of that. Say
+  // plainly that it hasn't started and offer the button. /request-analysis is
+  // idempotent, so pressing it is safe even if a job did just start.
+  if (state.kind === 'analysis_not_started' && canRetry) {
+    return (
+      <div className="wrap" style={{ paddingTop: 48, paddingBottom: 80 }}>
+        <div className="proc-error-card proc-start-card">
+          <div className="proc-start-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </div>
+          <h2 className="proc-error-title">Your footage is ready.</h2>
+          <p className="proc-error-sub">
+            {assets.length} {assets.length === 1 ? 'clip' : 'clips'} uploaded. Start the edit and
+            Stromation builds your first cut. You can leave this page while it works.
+          </p>
+          {retryError && (
+            <p className="proc-error-detail" role="alert" aria-live="assertive">{retryError}</p>
+          )}
+          <div className="proc-error-actions">
+            <button
+              className="btn btn-primary btn-lg"
+              onClick={handleRetry}
+              disabled={retrying}
+              aria-busy={retrying}
+            >
+              {retrying ? 'Starting…' : 'Start editing'}
+            </button>
+            <Link to="/" className="btn btn-ghost">← Back to Your Studio</Link>
           </div>
         </div>
         {assets.length > 0 && (
