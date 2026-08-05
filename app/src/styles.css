@@ -2347,3 +2347,7 @@ textarea { resize: vertical; min-height: 80px; }
   display: flex; justify-content: center; gap: var(--sp-3);
   margin-top: var(--sp-6); flex-wrap: wrap;
 }
+
+/* Rename form inside the frame veil (used by hero and cards alike). */
+.st-veil-form { width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: var(--sp-2); }
+.st-veil-form .st-veil-q { margin-bottom: var(--sp-1); }

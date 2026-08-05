@@ -121,6 +121,7 @@ export default function Dashboard() {
   const [jobs, setJobs] = useState([])
   const [posters, setPosters] = useState({})   // projectId -> signed url | null
   const [footage, setFootage] = useState({})   // projectId -> clip count
+  const [heroTools, setHeroTools] = useState(false)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
@@ -265,15 +266,20 @@ export default function Dashboard() {
 
       {/* ── Hero: the single next thing to do ── */}
       <section className={`st-hero st-i-${heroStatus.intent}`}
-        role="link" tabIndex={0}
+        role={heroTools ? undefined : 'link'}
+        tabIndex={heroTools ? undefined : 0}
         aria-label={`${hero.name} — ${heroStatus.label}`}
-        onClick={() => navigate(`/project/${hero.id}`)}
+        onClick={() => { if (!heroTools) navigate(`/project/${hero.id}`) }}
         onKeyDown={(e) => {
+          if (heroTools) return
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/project/${hero.id}`) }
         }}>
         <div className="st-hero-frame">
           <Frame src={posters[hero.id]} intent={heroStatus.intent}
-            slateLabel={heroStatus.label} />
+            slateLabel={heroStatus.label} play={!heroTools} />
+          {/* The hero is a project like any other — it needs the same controls. */}
+          <ProjectTools project={hero} onChanged={load} onDeleted={load}
+            onOpenChange={setHeroTools} />
           {heroStatus.intent === 'ready' && (
             <span className="st-play" aria-hidden="true">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
@@ -337,45 +343,46 @@ export default function Dashboard() {
   )
 }
 
-function FrameCard({ project: p, poster, clips = 0, onDelete, onRefresh }) {
-  const navigate = useNavigate()
+/* Rename + delete for one project, rendered inside its frame.
+   Shared by the hero and the grid cards: the hero IS a project, and while these
+   lived only on the card the single project promoted to hero could not be
+   renamed or deleted at all.
+
+   Rename commits on an explicit Save rather than on blur. Blur-to-save meant
+   Escape raced the commit — the input unmounted, blur fired, and the discarded
+   text got written anyway. An explicit button removes the race instead of
+   guarding it. */
+function ProjectTools({ project: p, onChanged, onDeleted, onOpenChange }) {
   const session = useAuth()
-  const s = statusOf(p.status, clips > 0)
-  const [mode, setMode] = useState('idle')      // idle | rename | confirm
+  const [mode, setMode] = useState('idle')       // idle | rename | confirm
   const [draft, setDraft] = useState(p.name)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const inputRef = useRef(null)
-  // Escape closes the input, which fires onBlur — and blur would otherwise
-  // commit the very edit Escape was meant to throw away (state updates are
-  // async, so `draft` is still the typed value at that point). This flag makes
-  // the discard win the race.
-  const abandon = useRef(false)
 
   useEffect(() => { if (mode === 'rename') inputRef.current?.select() }, [mode])
 
   const stop = (e) => e.stopPropagation()
-  const open = () => { if (mode === 'idle') navigate(`/project/${p.id}`) }
+  function go(next) { setMode(next); setErr(''); onOpenChange?.(next !== 'idle') }
 
   async function saveName(e) {
     e?.preventDefault(); e?.stopPropagation()
-    if (busy) return                                  // Enter + blur can both fire
-    if (abandon.current) { abandon.current = false; return }
     const name = draft.trim()
-    if (!name || name === p.name) { setMode('idle'); setDraft(p.name); return }
+    if (!name || name === p.name) { setDraft(p.name); go('idle'); return }
     setBusy(true); setErr('')
     const { error } = await supabase.from('projects').update({ name }).eq('id', p.id)
     setBusy(false)
     if (error) { setErr(error.message); return }
-    setMode('idle')
-    onRefresh()
+    go('idle')
+    onChanged?.()
   }
 
   async function confirmDelete(e) {
     stop(e)
     setBusy(true); setErr('')
-    // Server-authorized, safe deletion: ownership-checked, marks the project deleted
-    // and cleans storage server-side (preserving immutable edit evidence). Idempotent.
+    // Server-authorized, safe deletion: ownership-checked, marks the project
+    // deleted and cleans storage server-side (preserving immutable edit
+    // evidence). Idempotent.
     try {
       await editorApi(`/projects/${p.id}`, session, { method: 'DELETE' })
     } catch (e2) {
@@ -383,75 +390,94 @@ function FrameCard({ project: p, poster, clips = 0, onDelete, onRefresh }) {
       setErr(e2.message || 'Could not delete this video.')
       return
     }
-    onDelete()
+    onDeleted?.()
   }
 
   return (
+    <>
+      {mode === 'idle' && (
+        <div className="st-tools" onClick={stop}>
+          <button className="st-tool" title="Rename" aria-label={`Rename ${p.name}`}
+            onClick={(e) => { stop(e); setDraft(p.name); go('rename') }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+            </svg>
+          </button>
+          <button className="st-tool st-tool-kill" title="Delete" aria-label={`Delete ${p.name}`}
+            onClick={(e) => { stop(e); go('confirm') }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2.4" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      )}
+
+      {mode === 'rename' && (
+        <div className="st-veil" onClick={stop}>
+          <form className="st-veil-form" onSubmit={saveName}>
+            <label className="st-veil-q" htmlFor={`rn-${p.id}`}>Name this video</label>
+            <input id={`rn-${p.id}`} ref={inputRef} className="st-rename" value={draft}
+              maxLength={120} disabled={busy}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Escape') { setDraft(p.name); go('idle') }
+              }} />
+            {err && <p className="st-veil-err" role="alert">{err}</p>}
+            <div className="st-veil-row">
+              <button type="button" className="btn btn-sm btn-ghost" disabled={busy}
+                onClick={(e) => { stop(e); setDraft(p.name); go('idle') }}>Cancel</button>
+              <button type="submit" className="btn btn-sm btn-primary" disabled={busy}
+                aria-busy={busy}>{busy ? 'Saving…' : 'Save'}</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Deleting is destructive and irreversible — ask here, in our own voice,
+          rather than handing off to a browser confirm() dialog. */}
+      {mode === 'confirm' && (
+        <div className="st-veil" onClick={stop}>
+          <p className="st-veil-q">Delete this video?</p>
+          <p className="st-veil-sub">The footage and the edit go with it.</p>
+          {err && <p className="st-veil-err" role="alert">{err}</p>}
+          <div className="st-veil-row">
+            <button className="btn btn-sm btn-ghost" disabled={busy}
+              onClick={(e) => { stop(e); go('idle') }}>Keep</button>
+            <button className="btn btn-sm btn-danger" disabled={busy} aria-busy={busy}
+              onClick={confirmDelete}>{busy ? 'Deleting…' : 'Delete'}</button>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+function FrameCard({ project: p, poster, clips = 0, onDelete, onRefresh }) {
+  const navigate = useNavigate()
+  const s = statusOf(p.status, clips > 0)
+  const [toolsOpen, setToolsOpen] = useState(false)
+
+  const open = () => { if (!toolsOpen) navigate(`/project/${p.id}`) }
+
+  return (
     <article className={`st-card st-i-${s.intent}`}
-      role={mode === 'idle' ? 'link' : undefined}
-      tabIndex={mode === 'idle' ? 0 : undefined}
+      role={toolsOpen ? undefined : 'link'}
+      tabIndex={toolsOpen ? undefined : 0}
       aria-label={`${p.name} — ${s.label}`}
       onClick={open}
       onKeyDown={(e) => {
-        if (mode !== 'idle') return
+        if (toolsOpen) return
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open() }
       }}>
       <div className="st-card-frame">
-        <Frame src={poster} intent={s.intent} slateLabel={s.label} play={mode === 'idle'} />
-
-        {mode === 'idle' && (
-          <div className="st-tools" onClick={stop}>
-            <button className="st-tool" title="Rename" aria-label={`Rename ${p.name}`}
-              onClick={() => { setDraft(p.name); setMode('rename') }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
-              </svg>
-            </button>
-            <button className="st-tool st-tool-kill" title="Delete" aria-label={`Delete ${p.name}`}
-              onClick={() => setMode('confirm')}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                strokeWidth="2.4" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-            </button>
-          </div>
-        )}
-
-        {/* Deleting is destructive and irreversible — ask in the card, in our
-            own voice, rather than handing off to a browser confirm() dialog. */}
-        {mode === 'confirm' && (
-          <div className="st-veil" onClick={stop}>
-            <p className="st-veil-q">Delete this video?</p>
-            <p className="st-veil-sub">The footage and the edit go with it.</p>
-            {err && <p className="st-veil-err" role="alert">{err}</p>}
-            <div className="st-veil-row">
-              <button className="btn btn-sm btn-ghost" disabled={busy}
-                onClick={(e) => { stop(e); setMode('idle'); setErr('') }}>Keep</button>
-              <button className="btn btn-sm btn-danger" disabled={busy} aria-busy={busy}
-                onClick={confirmDelete}>{busy ? 'Deleting…' : 'Delete'}</button>
-            </div>
-          </div>
-        )}
+        <Frame src={poster} intent={s.intent} slateLabel={s.label} play={!toolsOpen} />
+        <ProjectTools project={p} onChanged={onRefresh} onDeleted={onDelete}
+          onOpenChange={setToolsOpen} />
       </div>
 
       <div className="st-card-meta">
-        {mode === 'rename' ? (
-          <form onSubmit={saveName} onClick={stop}>
-            <input ref={inputRef} className="st-rename" value={draft} maxLength={120}
-              aria-label="Video name" disabled={busy}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={saveName}
-              onKeyDown={(e) => {
-                e.stopPropagation()
-                if (e.key === 'Escape') {
-                  abandon.current = true
-                  setMode('idle'); setDraft(p.name); setErr('')
-                }
-              }} />
-            {err && <p className="st-veil-err" role="alert">{err}</p>}
-          </form>
-        ) : (
-          <h3 className="st-card-name" title={p.name}>{p.name}</h3>
-        )}
+        <h3 className="st-card-name" title={p.name}>{p.name}</h3>
         <p className="st-card-status">
           <i className={`st-dot st-i-${s.intent}`} />{s.label}
           <span className="st-stamp">{timeAgo(p.updated_at || p.created_at)}</span>
