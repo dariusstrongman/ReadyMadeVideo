@@ -208,21 +208,36 @@ def build_picture_edit(plan_row: dict, segments: list[Segment], *,
         reasons.append(f"timeline ({actual_duration}s) is materially longer "
                        f"than the requested maximum ({hi}s)")
 
-    # ---- pacing engine: beat-level targets from the approved plan
+    # ---- pacing engine: beat-level targets from the approved plan.
+    # Actual delivered energy is measured deterministically from the footage
+    # itself: duration-weighted motion intensity of the used segments blended
+    # with cut density (2 cuts/second saturates the cutting contribution).
     pacing_metrics: list[dict] = []
     by_beat: dict[str, list[dict]] = {}
     for m in mappings:
         by_beat.setdefault(m["beat"], []).append(m)
     for pb in plan.pacing:
-        actual = sum(m["timelineOut"] - m["timelineIn"]
-                     for m in by_beat.get(pb.beat, []))
-        shots = len(by_beat.get(pb.beat, []))
+        beat_maps = by_beat.get(pb.beat, [])
+        actual = sum(m["timelineOut"] - m["timelineIn"] for m in beat_maps)
+        shots = len(beat_maps)
         deviation = round(actual - pb.targetDurationSeconds, 3)
+        density = round(shots / actual, 3) if actual else 0.0
+        if actual > 0:
+            motion = sum((m["timelineOut"] - m["timelineIn"])
+                         * (by_id[m["segmentId"]].motionIntensity
+                            if m["segmentId"] in by_id else 0.0)
+                         for m in beat_maps) / actual
+        else:
+            motion = 0.0
+        actual_energy = round(min(1.0, 0.6 * motion
+                                  + 0.4 * min(1.0, density / 2.0)), 3)
         pacing_metrics.append({
             "beat": pb.beat, "targetDurationSeconds": pb.targetDurationSeconds,
             "actualDurationSeconds": round(actual, 3),
-            "energyTarget": pb.energy, "shotCount": shots,
-            "shotDensity": round(shots / actual, 3) if actual else 0.0,
+            "energyTarget": pb.energy,
+            "actualEnergy": actual_energy,
+            "energyDeviation": round(actual_energy - pb.energy, 3),
+            "shotCount": shots, "shotDensity": density,
             "deviationSeconds": deviation})
         if abs(deviation) > PACING_HARD_TOLERANCE(pb.targetDurationSeconds):
             reasons.append(f"pacing materially violates the approved plan: beat "
@@ -392,7 +407,10 @@ def build_picture_edit(plan_row: dict, segments: list[Segment], *,
             "speedInstructions": speed_instructions,
             "transitionInstructions": transition_instructions,
             "reframeInstructions": reframe_instructions,
+            "actualDuration": actual_duration,
             "actualDurationSeconds": actual_duration,
+            "requestedDuration": {"min": request.get("durationMin"),
+                                  "max": request.get("durationMax")},
             "requestedDurationMin": request.get("durationMin"),
             "requestedDurationMax": request.get("durationMax"),
             "pacingMetrics": pacing_metrics,

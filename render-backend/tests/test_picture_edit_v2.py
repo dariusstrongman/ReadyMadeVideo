@@ -169,6 +169,23 @@ def test_pacing_metrics_calculated_per_beat():
         assert m["actualDurationSeconds"] == 4.0 and m["deviationSeconds"] == 0.0
         assert m["shotCount"] == 1 and m["shotDensity"] == 0.25
         assert 0 <= m["energyTarget"] <= 1
+        assert 0 <= m["actualEnergy"] <= 1                  # measured, not copied
+        assert m["energyDeviation"] == round(m["actualEnergy"]
+                                             - m["energyTarget"], 3)
+
+
+def test_actual_energy_measured_from_footage_motion_and_cut_density():
+    segs = [s.model_copy(update={"motionIntensity": 0.8}) for s in _segments()]
+    out = _build(segments=segs)
+    hook = next(m for m in out["pacingMetrics"] if m["beat"] == "hook")
+    # duration-weighted motion 0.8, cut density 0.25 shots/s:
+    # 0.6*0.8 + 0.4*min(1, 0.25/2) = 0.48 + 0.05 = 0.53
+    assert hook["actualEnergy"] == 0.53
+    assert hook["energyDeviation"] == round(0.53 - hook["energyTarget"], 3)
+    calm = _build()                                          # motionIntensity 0
+    calm_hook = next(m for m in calm["pacingMetrics"] if m["beat"] == "hook")
+    assert calm_hook["actualEnergy"] == 0.05                 # cuts only
+    assert calm_hook["actualEnergy"] != calm_hook["energyTarget"]
 
 
 def test_payoff_hold_materially_violated_is_rejected():
@@ -329,6 +346,44 @@ def test_render_executes_cuts_transitions_and_crops(two_clips, tmp_path,
     #                                     transitions consume source handles)
 
 
+def test_preview_dims_preserve_every_approved_aspect():
+    dims = picture_render_v2._preview_dims
+    assert dims({"width": 1920, "height": 1080}) == (640, 360)   # landscape
+    assert dims({"width": 1080, "height": 1920}) == (360, 640)   # portrait
+    assert dims({"width": 1080, "height": 1080}) == (640, 640)   # SQUARE
+    assert dims({"width": 1080, "height": 1350}) == (512, 640)   # 4:5
+
+
+def test_fps_string_never_truncates_fractional_rates():
+    fps = picture_render_v2._fps_str
+    assert fps({"fps": 29.97}) == "29.97"
+    assert fps({"fps": 30}) == "30"
+    assert fps({"fps": 59.94}) == "59.94"
+    assert fps({"fps": 23.976}) == "23.976"
+
+
+def test_square_output_and_fractional_fps_rendered_correctly(two_clips,
+                                                             tmp_path):
+    """Codex repro: an approved 1080x1080 @ 29.97 plan must render square at
+    29.97 — not 16:9 at 29."""
+    import json as _json
+
+    from app.renderer import FFPROBE, probe
+    result = _render_result("hard_cut")
+    result["timeline"].update(width=1080, height=1080, fps=29.97)
+    out = str(tmp_path / "square.mp4")
+    picture_render_v2.render_picture_edit(result, two_clips, out)
+    info = probe(out)
+    assert (info.width, info.height) == (640, 640)          # aspect preserved
+    raw = subprocess.run([FFPROBE, "-v", "error", "-print_format", "json",
+                          "-show_streams", out], capture_output=True,
+                         check=True, timeout=60).stdout
+    vstream = next(s for s in _json.loads(raw)["streams"]
+                   if s["codec_type"] == "video")
+    num, den = vstream["r_frame_rate"].split("/")
+    assert abs(int(num) / int(den) - 29.97) < 0.01           # not truncated
+
+
 # ------------------------------------------------ handler / flag / idempotency
 def _project_env(fake, with_plan=True, plan=None, request=None):
     uid, token = fake.add_user("pe2@example.com")
@@ -404,9 +459,57 @@ def test_flag_on_repeated_run_reuses_persisted_result(monkeypatch):
     assert runs[0]["artifacts"]["reused"] is False
     assert runs[1]["artifacts"]["reused"] is True
     assert runs[1]["artifacts"]["timelineId"] == runs[0]["artifacts"]["timelineId"]
+    # the reused result still hands the Product Editor its candidate
+    assert runs[1]["artifacts"]["bridgedCandidateRunId"] \
+        == runs[0]["artifacts"]["bridgedCandidateRunId"]
     # no duplicate timelines or edit runs
     assert len(fake.select("timelines", f"project_id=eq.{project['id']}")) == 1
     assert len(fake.select("edit_runs", f"project_id=eq.{project['id']}")) == 1
+
+
+def test_retry_after_bridge_failure_repairs_the_missing_candidate(monkeypatch):
+    """Codex repro: attempt 1 persists the timeline but the bridge fails ->
+    job failed, no candidate. The retry must NOT report success through
+    timeline reuse while the Product Editor still has nothing to open — it
+    must repair the bridge."""
+    from app import autoedit_bridge
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    monkeypatch.setenv("PICTURE_EDIT_ENGINE_V2_ENABLED", "1")
+    _stub_render(monkeypatch)
+    uid, token, project = _project_env(fake)
+
+    real_bridge = autoedit_bridge.bridge_from_autoedit
+    def broken_bridge(*a, **k):
+        raise RuntimeError("storage exploded mid-bridge")
+    monkeypatch.setattr(autoedit_bridge, "bridge_from_autoedit", broken_bridge)
+    jobs.enqueue_job(project["id"], uid, "autoedit", {})
+    jobs._run_job(jobs._claim_next())
+    first = [r for r in fake.select("pipeline_jobs",
+                                    f"project_id=eq.{project['id']}")
+             if r["kind"] == "autoedit"][0]
+    assert first["status"] == "failed"
+    assert len(fake.select("timelines", f"project_id=eq.{project['id']}")) == 1
+    assert fake.select("candidate_runs", f"project_id=eq.{project['id']}") == []
+
+    monkeypatch.setattr(autoedit_bridge, "bridge_from_autoedit", real_bridge)
+    jobs.enqueue_job(project["id"], uid, "autoedit", {})
+    jobs._run_job(jobs._claim_next())
+    retry = sorted((r for r in fake.select("pipeline_jobs",
+                                           f"project_id=eq.{project['id']}")
+                    if r["kind"] == "autoedit"),
+                   key=lambda r: r["created_at"])[-1]
+    assert retry["status"] == "completed", retry.get("error_message")
+    art = retry["artifacts"]
+    assert art["reused"] is True and art.get("bridgeRepaired") is True
+    cands = fake.select("candidate_runs", f"project_id=eq.{project['id']}")
+    assert len(cands) == 1 and cands[0]["generation_kind"] == "bridged"
+    assert art["bridgedCandidateRunId"] == cands[0]["id"]
+    # still exactly one timeline + edit run (repair, not duplication)
+    assert len(fake.select("timelines", f"project_id=eq.{project['id']}")) == 1
+    assert len(fake.select("edit_runs", f"project_id=eq.{project['id']}")) == 1
+    assert fake.select("projects", f"id=eq.{project['id']}")[0]["status"] \
+        == "draft_ready"
 
 
 def test_flag_on_without_approved_plan_fails_loudly_no_fallback(monkeypatch):
@@ -484,12 +587,17 @@ def test_engine_output_contract_fields():
                   "editorialPlanId", "editorialPlanVersion", "sourceCatalogHash",
                   "timeline", "segmentMappings", "speedInstructions",
                   "transitionInstructions", "reframeInstructions",
-                  "actualDurationSeconds", "requestedDurationMin",
+                  "actualDuration", "actualDurationSeconds",
+                  "requestedDuration", "requestedDurationMin",
                   "requestedDurationMax", "pacingMetrics", "continuityFindings",
                   "technicalWarnings", "unsupportedExecution",
                   "trimAdjustments", "deterministicHash", "createdAt"):
         assert field in out, field
     assert out["schemaVersion"] == 1 and out["engineVersion"] == "2.0.0"
+    assert out["actualDuration"] == out["actualDurationSeconds"] == 12.0
+    assert out["requestedDuration"] == {"min": None, "max": None}
+    bounded = _build(request={"durationMin": 10, "durationMax": 20})
+    assert bounded["requestedDuration"] == {"min": 10, "max": 20}
 
 
 def test_continuity_findings_flag_repetition_and_backjumps():

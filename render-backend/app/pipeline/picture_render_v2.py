@@ -19,10 +19,29 @@ import os
 import subprocess
 
 from ..renderer import FFMPEG, RenderError, probe
-from ..renderer2 import PREVIEW, _atempo_chain, _dims
+from ..renderer2 import PREVIEW, _atempo_chain
 
 XFADE_NAMES = {"dissolve": "fade", "dip_to_black": "fadeblack",
                "dip_to_white": "fadewhite"}
+PREVIEW_LONG_EDGE = 640
+
+
+def _preview_dims(timeline: dict) -> tuple[int, int]:
+    """Preview dimensions that PRESERVE the approved aspect ratio exactly —
+    landscape, portrait AND square (renderer2's helper only knows the first
+    two). Longest edge scales to the preview budget; both sides stay even."""
+    w = int(timeline.get("width", 1920))
+    h = int(timeline.get("height", 1080))
+    scale = PREVIEW_LONG_EDGE / max(w, h)
+    even = lambda v: max(2, int(round(v * scale / 2)) * 2)  # noqa: E731
+    return even(w), even(h)
+
+
+def _fps_str(timeline: dict) -> str:
+    """Frame rate WITHOUT integer truncation: 29.97 stays 29.97, 30 stays 30."""
+    fps = float(timeline.get("fps", 30))
+    text = f"{fps:.3f}".rstrip("0").rstrip(".")
+    return text or "30"
 
 
 def _crop_filter(inst: dict, out_dur: float) -> str:
@@ -44,8 +63,8 @@ def render_picture_edit(result: dict, sources: dict[str, str], out_path: str,
              for c in t["clips"]]
     if not clips:
         raise RenderError("picture edit has no clips")
-    W, H = _dims(timeline, PREVIEW)
-    fps = int(timeline.get("fps", 30))
+    W, H = _preview_dims(timeline)
+    fps = _fps_str(timeline)
 
     # soft executable transitions by boundary index (clip i -> i+1)
     soft: dict[int, dict] = {
@@ -123,7 +142,7 @@ def render_picture_edit(result: dict, sources: dict[str, str], out_path: str,
     for f in input_files:
         cmd += ["-i", f]
     cmd += ["-filter_complex", ";".join(parts), "-map", acc, "-map", "[ca]",
-            "-r", str(fps), "-c:v", "libx264",
+            "-r", fps, "-c:v", "libx264",
             "-preset", PREVIEW["preset"], "-crf", str(PREVIEW["crf"]),
             "-c:a", "aac", "-shortest", out_path]
     proc = subprocess.run(cmd, capture_output=True, timeout=timeout)

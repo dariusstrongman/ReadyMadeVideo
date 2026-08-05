@@ -374,23 +374,59 @@ def handle_autoedit_v2(job: dict, project: dict, tmp: str, ctx: JobContext) -> d
     result = picture_edit_v2.build_picture_edit(plan_row, segments, now=_now())
 
     # ---- idempotency: same project + plan version + engine version + catalog
-    # hash returns the EXISTING persisted result (no duplicate timelines/runs)
+    # hash returns the EXISTING persisted result (no duplicate timelines/runs).
+    # A retry after a mid-journey failure REPAIRS what is missing (e.g. the
+    # bridge failed after the timeline persisted) instead of reporting success
+    # while the Product Editor has no candidate to open.
     for run in supa.db_select("edit_runs",
                               f"project_id=eq.{project['id']}"
                               "&order=created_at.desc&limit=25"):
         bp = run.get("blueprint") or {}
         if bp.get("deterministicHash") == result["deterministicHash"] \
                 and run.get("timeline_v2_id"):
-            log_event("PICTURE-EDIT-V2-REUSED", job_id=job["id"],
-                      edit_run_id=run["id"], hash=result["deterministicHash"])
-            return {"engine": "picture_edit_v2",
-                    "engineVersion": result["engineVersion"],
-                    "reused": True, "editRunId": run["id"],
-                    "timelineId": run["timeline_v2_id"],
-                    "deterministicHash": result["deterministicHash"],
-                    "editorialPlanId": result["editorialPlanId"],
-                    "editorialPlanVersion": result["editorialPlanVersion"],
-                    "actualDurationSeconds": result["actualDurationSeconds"]}
+            artifacts = {"engine": "picture_edit_v2",
+                         "engineVersion": result["engineVersion"],
+                         "reused": True, "editRunId": run["id"],
+                         "timelineId": run["timeline_v2_id"],
+                         "deterministicHash": result["deterministicHash"],
+                         "editorialPlanId": result["editorialPlanId"],
+                         "editorialPlanVersion": result["editorialPlanVersion"],
+                         "actualDurationSeconds": result["actualDurationSeconds"]}
+            bridged_rows = supa.db_select(
+                "candidate_runs",
+                f"project_id=eq.{project['id']}&generation_kind=eq.bridged&limit=1")
+            if bridged_rows:
+                artifacts["bridgedCandidateRunId"] = bridged_rows[0]["id"]
+                log_event("PICTURE-EDIT-V2-REUSED", job_id=job["id"],
+                          edit_run_id=run["id"],
+                          hash=result["deterministicHash"])
+                return artifacts
+            # bridge repair: re-render the preview and finish the journey
+            log_event("PICTURE-EDIT-V2-BRIDGE-REPAIR", job_id=job["id"],
+                      edit_run_id=run["id"])
+            sources, _ = _download_sources(project, tmp, ctx)
+            ctx.checkpoint("before_v2_bridge_repair")
+            preview_path = os.path.join(tmp, "picture-edit-v2-preview.mp4")
+            picture_render_v2.render_picture_edit(
+                result, sources, preview_path,
+                cancel_check=lambda: ctx.cancelled())
+            tl_rows = supa.db_select("timelines",
+                                     f"id=eq.{run['timeline_v2_id']}&limit=1")
+            if not tl_rows:
+                raise RuntimeError("persisted V2 timeline vanished — cannot "
+                                   "repair the bridge")
+            bridged = autoedit_bridge.bridge_from_autoedit(
+                project, tl_rows[0], preview_path,
+                insert=_insert, db_select=supa.db_select,
+                upload_export=_upload_export, now=_now,
+                remove=supa.storage_remove, update=supa.db_update)
+            if not bridged:
+                raise RuntimeError("bridge repair produced no candidate")
+            artifacts["bridgedCandidateRunId"] = bridged["id"]
+            artifacts["bridgeRepaired"] = True
+            set_project_status(project["id"], "draft_ready",
+                               "picture edit v2 bridge repaired on retry")
+            return artifacts
 
     sources, _ = _download_sources(project, tmp, ctx)
     ctx.checkpoint("before_v2_render")
