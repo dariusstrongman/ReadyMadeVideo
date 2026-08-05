@@ -112,6 +112,13 @@ const RESHAPE = [
   { id: '1:1',  label: 'Square' },
 ]
 
+// Duration as m:ss, read off the rendered video itself.
+const fmtClock = (s) => {
+  if (!Number.isFinite(s)) return ''
+  const m = Math.floor(s / 60), sec = Math.round(s % 60)
+  return `${m}:${String(sec).padStart(2, '0')}`
+}
+
 // Upload progress formatting (S3 multipart transport)
 const fmtBytes = (n) => n >= 1073741824
   ? `${(n / 1073741824).toFixed(2)} GB` : `${(n / 1048576).toFixed(1)} MB`
