@@ -105,6 +105,13 @@ function Breadcrumb({ projectName, projectId }) {
   )
 }
 
+// Upload progress formatting (S3 multipart transport)
+const fmtBytes = (n) => n >= 1073741824
+  ? `${(n / 1073741824).toFixed(2)} GB` : `${(n / 1048576).toFixed(1)} MB`
+const fmtSpeed = (bps) => bps ? `${fmtBytes(bps)}/s` : ''
+const fmtEta = (s) => (s == null || !isFinite(s)) ? ''
+  : s >= 60 ? `${Math.round(s / 60)}m ${Math.round(s % 60)}s left` : `${Math.round(s)}s left`
+
 export default function Project() {
   const session = useAuth()
   const { id: projectId } = useParams()
@@ -121,6 +128,7 @@ export default function Project() {
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadPct, setUploadPct] = useState(0)
+  const [uploadInfo, setUploadInfo] = useState(null)  // {bytesUploaded,totalBytes,speedBps,etaSeconds,state}
   const [dragOver, setDragOver] = useState(false)
   const [pendingFiles, setPendingFiles] = useState([])
   const fileInputRef = useRef(null)
@@ -231,9 +239,11 @@ export default function Project() {
 
   async function startUpload() {
     if (!pendingFiles.length) return
-    setUploading(true); setError(''); setUploadPct(0)
+    setUploading(true); setError(''); setUploadPct(0); setUploadInfo(null)
     const total = pendingFiles.length
+    const grandTotalBytes = pendingFiles.reduce((s, { file }) => s + file.size, 0)
     let done = 0
+    let bytesBefore = 0   // bytes from already-finalized files
     // Direct browser -> S3 multipart per file. The backend finalize step is the
     // sole creator of the media_asset (service-role only; clients can no longer
     // insert), so there is no client-side storage upload or DB insert here.
@@ -242,7 +252,7 @@ export default function Project() {
       try {
         validateFile(file)
       } catch (err) {
-        setError(err.message); setUploading(false); return
+        setError(err.message); setUploading(false); setUploadInfo(null); return
       }
       const upload = new MultipartUpload({
         file, projectId, userId: session.user.id,
@@ -250,6 +260,13 @@ export default function Project() {
         onProgress: (p) => {
           const fileFraction = (p?.percent ?? 0) / 100
           setUploadPct(Math.round(((done + fileFraction) / total) * 100))
+          setUploadInfo({
+            bytesUploaded: bytesBefore + (p?.bytesUploaded ?? 0),
+            totalBytes: grandTotalBytes,
+            speedBps: p?.speedBps ?? 0,
+            etaSeconds: p?.etaSeconds ?? null,
+            state: p?.state ?? 'uploading',
+          })
         },
       })
       try {
@@ -259,11 +276,12 @@ export default function Project() {
         await upload.start()
       } catch (err) {
         if (err instanceof UploadError && err.code === 'cancelled') {
-          setUploading(false); return
+          setUploading(false); setUploadInfo(null); return
         }
-        setError(err.message || String(err)); setUploading(false); return
+        setError(err.message || String(err)); setUploading(false); setUploadInfo(null); return
       }
       done++
+      bytesBefore += file.size
       setUploadPct(Math.round((done / total) * 100))
     }
     // finalize already set the project to `ready`; trigger analysis
@@ -279,6 +297,7 @@ export default function Project() {
     }
     setPendingFiles([])
     setUploading(false)
+    setUploadInfo(null)
     await load()
   }
 
@@ -397,10 +416,23 @@ export default function Project() {
         {uploading ? (
           <div className="upload-progress-wrap">
             <div className="upload-pct">{uploadPct}%</div>
-            <p className="upload-label">Uploading your footage securely…</p>
+            <p className="upload-label">
+              {uploadInfo && ['completing', 'finalizing'].includes(uploadInfo.state)
+                ? 'Validating your footage… processing begins after validation.'
+                : 'Uploading your footage securely…'}
+            </p>
             <div className="progress" style={{ maxWidth: 400, margin: '0 auto' }}>
               <div style={{ width: `${uploadPct}%` }} />
             </div>
+            {uploadInfo && (
+              <p className="small" style={{ marginTop: 8, textAlign: 'center' }}>
+                {fmtBytes(uploadInfo.bytesUploaded)} / {fmtBytes(uploadInfo.totalBytes)}
+                {!['completing', 'finalizing'].includes(uploadInfo.state) && uploadInfo.speedBps
+                  ? ` · ${fmtSpeed(uploadInfo.speedBps)}` : ''}
+                {!['completing', 'finalizing'].includes(uploadInfo.state) && uploadInfo.etaSeconds
+                  ? ` · ${fmtEta(uploadInfo.etaSeconds)}` : ''}
+              </p>
+            )}
           </div>
         ) : pendingFiles.length > 0 ? (
           <div>
