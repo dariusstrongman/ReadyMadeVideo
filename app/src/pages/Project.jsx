@@ -3,8 +3,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
 import { RENDER_API } from '../lib/config'
-import { probeDuration } from '../lib/media'
 import { editorApi } from '../lib/editor'
+import { UPLOAD_LIMIT_TEXT } from '../lib/config'
+import { MultipartUpload, UploadError, createRealTransport, validateFile } from '../lib/s3upload'
 
 // A customer export is a Product Editor render: pipeline_jobs.kind === 'final_render'
 // carrying an editor_document_id. Analysis/autoedit jobs are never exports.
@@ -231,55 +232,42 @@ export default function Project() {
   async function startUpload() {
     if (!pendingFiles.length) return
     setUploading(true); setError(''); setUploadPct(0)
-    const uid = session.user.id
     const total = pendingFiles.length
     let done = 0
+    // Direct browser -> S3 multipart per file. The backend finalize step is the
+    // sole creator of the media_asset (service-role only; clients can no longer
+    // insert), so there is no client-side storage upload or DB insert here.
     for (const { file } of pendingFiles) {
-      const ext = file.name.split('.').pop()
-      const key = `users/${uid}/projects/${projectId}/raw/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-      // Step 1: Upload to Supabase Storage (raw-footage bucket)
-      const { error: upErr } = await supabase.storage.from('raw-footage').upload(key, file, {
-        cacheControl: '3600', upsert: false,
-        onUploadProgress: ({ loaded, total: t }) => {
-          const fileProgress = loaded / t
-          setUploadPct(Math.round(((done + fileProgress) / total) * 100))
+      // Reject oversize / wrong type BEFORE any network call.
+      try {
+        validateFile(file)
+      } catch (err) {
+        setError(err.message); setUploading(false); return
+      }
+      const upload = new MultipartUpload({
+        file, projectId, userId: session.user.id,
+        transport: createRealTransport({ accessToken: session.access_token }),
+        onProgress: (p) => {
+          const fileFraction = (p?.percent ?? 0) / 100
+          setUploadPct(Math.round(((done + fileFraction) / total) * 100))
         },
       })
-      if (upErr) { setError(upErr.message); setUploading(false); return }
-      // Probe duration so the Product Editor has real per-asset bounds. Best
-      // effort: null if it can't be read (never blocks the upload).
-      const duration = await probeDuration(file)
-      // Step 2: Insert media_assets row using the correct schema column names:
-      //   filename (NOT original_filename) — required NOT NULL
-      //   size_bytes (NOT file_size_bytes)
-      const { error: dbErr } = await supabase.from('media_assets').insert({
-        project_id: projectId,
-        user_id: uid,
-        storage_path: key,
-        filename: file.name,
-        size_bytes: file.size,
-        mime_type: file.type,
-        duration_seconds: duration,
-      })
-      if (dbErr) {
-        // DB insert failed — clean up the orphaned storage object to avoid
-        // footage that the worker can never find
-        await supabase.storage.from('raw-footage').remove([key])
-        setError(`Could not save footage record: ${dbErr.message}. Please try again.`)
-        setUploading(false)
-        return
+      try {
+        // initiate -> sign-parts -> PUT parts -> complete -> finalize.
+        // finalize validates the object (size/MIME/ffprobe), creates the
+        // media_asset, and flips the project to `ready`.
+        await upload.start()
+      } catch (err) {
+        if (err instanceof UploadError && err.code === 'cancelled') {
+          setUploading(false); return
+        }
+        setError(err.message || String(err)); setUploading(false); return
       }
       done++
       setUploadPct(Math.round((done / total) * 100))
     }
-    // Only mark project ready if all inserts succeeded
-    const { error: statusErr } = await supabase.from('projects').update({ status: 'ready' }).eq('id', projectId)
-    if (statusErr) {
-      setError(`Upload complete but could not start processing: ${statusErr.message}`)
-      setUploading(false)
-      return
-    }
-    // Trigger analysis — idempotent: backend returns existing job if one is already active
+    // finalize already set the project to `ready`; trigger analysis
+    // (idempotent: backend returns the existing job if one is already active).
     try {
       await fetch(`${RENDER_API}/projects/${projectId}/request-analysis`, {
         method: 'POST',
@@ -445,7 +433,7 @@ export default function Project() {
           >
             <div className="drop-zone-icon">↑</div>
             <h2 className="drop-zone-title">Drop your footage here</h2>
-            <p className="drop-zone-sub">MP4 or MOV · up to 50 MB per clip · stored privately under your account</p>
+            <p className="drop-zone-sub">{UPLOAD_LIMIT_TEXT} · stored privately under your account</p>
             <button className="btn btn-ghost" onClick={e => { e.stopPropagation(); fileInputRef.current?.click() }}>
               Browse files
             </button>

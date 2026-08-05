@@ -35,6 +35,8 @@ from .logging_util import log_event
 from .pipeline import telemetry
 from .pipeline.schemas import Segment
 
+EXPORT_STORAGE_PROVIDER = os.environ.get("EXPORT_STORAGE_PROVIDER", "supabase")
+
 WORKER_CONCURRENCY = int(os.environ.get("WORKER_CONCURRENCY", "1"))
 STALE_AFTER_S = int(os.environ.get("JOB_STALE_AFTER_S", "900"))
 POLL_INTERVAL_S = float(os.environ.get("JOB_POLL_INTERVAL_S", "3"))
@@ -226,6 +228,7 @@ def owned_raw_storage_path(path: str, user_id: str, project_id: str) -> bool:
 
 
 def _download_sources(project: dict, tmp: str, ctx: JobContext | None = None):
+    from . import media_store
     assets = supa.db_select("media_assets", f"project_id=eq.{project['id']}")
     sources = {}
     for a in assets:
@@ -236,7 +239,10 @@ def _download_sources(project: dict, tmp: str, ctx: JobContext | None = None):
             raise RuntimeError(
                 f"media asset {a['id']} storage path failed ownership check")
         dst = os.path.join(tmp, a["id"] + os.path.splitext(a["filename"])[1])
-        supa.storage_download("raw-footage", path, dst)
+        # Single ownership-validating, provider-aware choke point.
+        # Handles legacy Supabase assets and S3 assets alike; the explicit
+        # owned_raw_storage_path() check above stays as defense-in-depth.
+        media_store.download_media_asset(a, project, dst)
         sources[a["id"]] = dst
     return sources, assets
 
@@ -248,7 +254,11 @@ def _load_segments(project_id: str) -> list[Segment]:
 
 def _upload_export(project: dict, rel: str, local: str) -> str:
     path = f"users/{project['user_id']}/projects/{project['id']}/{rel}"
-    supa.storage_upload("exports", path, local)
+    if EXPORT_STORAGE_PROVIDER == "s3":
+        from . import s3store
+        s3store.upload_file(path, local, "video/mp4")
+    else:
+        supa.storage_upload("exports", path, local)
     return path
 
 
@@ -719,8 +729,8 @@ def handle_final_render(job: dict, project: dict, tmp: str, ctx: JobContext) -> 
             units={"cpu_hours": dur / 3600})
     set_project_status(project["id"], "completed",
                        f"final render {job['id'][:8]} completed")
-    return {"output": path, **{k: result[k] for k in
-                               ("duration", "width", "height", "size_bytes")}}
+    return {"output": path, "export_provider": EXPORT_STORAGE_PROVIDER,
+            **{k: result[k] for k in ("duration", "width", "height", "size_bytes")}}
 
 
 def _render_bridged_editor(job: dict, project: dict, tmp: str, ctx: JobContext,
@@ -886,7 +896,8 @@ def handle_product_editor_render(job: dict, project: dict, tmp: str,
             units={"cpu_hours": 0})
     set_project_status(project["id"], "completed",
                        f"Product Editor revision {row['version']} export completed")
-    return {"output": path, "editor_document_id": row["id"],
+    return {"output": path, "export_provider": EXPORT_STORAGE_PROVIDER,
+            "editor_document_id": row["id"],
             "editor_document_version": row["version"],
             "duration": qc["durationSeconds"], "width": qc["width"],
             "height": qc["height"], "size_bytes": size,

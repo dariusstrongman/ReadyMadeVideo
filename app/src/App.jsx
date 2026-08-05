@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
+import { clearResumeRecords } from './lib/s3upload'
 import Login from './pages/Login'
 import ResetPassword from './pages/ResetPassword'
 import Dashboard from './pages/Dashboard'
@@ -154,7 +155,7 @@ function TopNav() {
               role="menuitem"
               tabIndex={0}
               ref={el => { itemRefs.current[1] = el }}
-              onClick={async () => { setMenuOpen(false); await supabase.auth.signOut(); nav('/login') }}
+              onClick={async () => { setMenuOpen(false); clearResumeRecords(session?.user?.id); await supabase.auth.signOut(); nav('/login') }}
             >
               Sign out
             </button>

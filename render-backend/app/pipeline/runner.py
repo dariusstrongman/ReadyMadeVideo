@@ -346,16 +346,21 @@ def main():
                      context=args.context)
         print(f"artifacts -> {out}")
     elif args.asset:
-        from .. import supa
+        from .. import media_store, supa
         assets = supa.db_select("media_assets", f"id=eq.{args.asset}")
         if not assets:
             sys.exit("asset not found")
         asset = assets[0]
+        projects = supa.db_select("projects", f"id=eq.{asset['project_id']}")
+        if not projects:
+            sys.exit("project for asset not found")
+        project = projects[0]
         store = CloudStore(asset)
         tmp = tempfile.mkdtemp(prefix="stromation-src-")
         try:
-            src = os.path.join(tmp, os.path.basename(asset["storage_path"]))
-            supa.storage_download("raw-footage", asset["storage_path"], src)
+            src = os.path.join(tmp, os.path.basename(
+                asset.get("storage_key") or asset["storage_path"]))
+            media_store.download_media_asset(asset, project, src)
 
             def upload_cb(files):
                 paths = {"proxy": store.upload_file(files["proxy"], "proxy.mp4", "video/mp4"),
