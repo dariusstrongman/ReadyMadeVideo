@@ -295,11 +295,66 @@ def _maybe_enqueue_customer_autoedit(project: dict) -> None:
         f"&status=in.({','.join(ACTIVE_STATES)})")
     if active:
         return
+    if picture_edit_v2_enabled():
+        # V2 journey: analysis -> editorial_plan -> (on approval) -> autoedit.
+        # The plan job carries source=customer_journey so its completion knows
+        # to chain onward and its failure is surfaced on the project (an
+        # operator-requested plan stays status-silent as before).
+        _maybe_enqueue_customer_editorial_plan(project)
+        return
     try:
         enqueue_job(project["id"], project["user_id"], "autoedit",
                     {"source": "customer_journey"})
     except ConcurrencyLimit:
         pass  # at the active-job cap; analysis still completed cleanly
+
+
+def _plan_constraints_for(project: dict) -> dict:
+    """Planning constraints derived from what the customer already told us."""
+    out = {}
+    if project.get("name"):
+        out["brief"] = project["name"]
+    if project.get("aspect_ratio"):
+        out["aspectRatio"] = project["aspect_ratio"]
+    if project.get("target_platform"):
+        out["platform"] = project["target_platform"]
+    return out
+
+
+def _maybe_enqueue_customer_editorial_plan(project: dict,
+                                           source: str = "customer_journey",
+                                           extra: dict | None = None):
+    """Idempotent analysis -> editorial_plan hand-off (V2 journey only).
+
+    If an APPROVED plan already exists but no candidate does (a mid-journey
+    failure), skip straight to autoedit with that exact plan so a retry repairs
+    the journey instead of re-planning.
+    """
+    active = supa.db_select(
+        "pipeline_jobs",
+        f"project_id=eq.{project['id']}&kind=eq.editorial_plan"
+        f"&status=in.({','.join(ACTIVE_STATES)})")
+    if active:
+        return active[0]
+    approved = supa.db_select(
+        "editorial_plans",
+        f"project_id=eq.{project['id']}&status=eq.approved"
+        "&order=version.desc&limit=1")
+    try:
+        if approved:
+            return enqueue_job(
+                project["id"], project["user_id"], "autoedit",
+                {"source": source,
+                 "editorial_plan_id": approved[0]["id"],
+                 "editorial_plan_version": approved[0]["version"],
+                 **({"aspect_ratio": (extra or {}).get("aspectRatio")}
+                    if (extra or {}).get("aspectRatio") else {})})
+        params = {**_plan_constraints_for(project), **(extra or {}),
+                  "source": source}
+        return enqueue_job(project["id"], project["user_id"],
+                           "editorial_plan", params)
+    except ConcurrencyLimit:
+        return None  # at the active-job cap; analysis still completed cleanly
 
 
 def handle_analysis(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict:
@@ -374,10 +429,28 @@ def handle_autoedit_v2(job: dict, project: dict, tmp: str, ctx: JobContext) -> d
     segments = _load_segments(project["id"])
     if not segments:
         raise RuntimeError("no segment catalog — run analysis first")
-    plans = supa.db_select(
-        "editorial_plans",
-        f"project_id=eq.{project['id']}&order=version.desc&limit=1")
-    plan_row = plans[0] if plans else None
+    params = job.get("params") or {}
+    want_id = params.get("editorial_plan_id")
+    if want_id:
+        # Customer-journey chain: consume the EXACT plan the planner job
+        # persisted — never "whatever is newest", which could silently swap in
+        # a different operator-made plan between enqueue and execution.
+        plans = supa.db_select("editorial_plans", f"id=eq.{want_id}&limit=1")
+        plan_row = plans[0] if plans else None
+        if not plan_row:
+            raise RuntimeError(f"editorial plan {want_id} not found")
+        if str(plan_row["project_id"]) != str(project["id"]):
+            raise RuntimeError("editorial plan does not belong to this project")
+        want_ver = params.get("editorial_plan_version")
+        if want_ver is not None and int(plan_row["version"]) != int(want_ver):
+            raise RuntimeError(
+                f"editorial plan version changed: expected v{want_ver}, "
+                f"found v{plan_row['version']} — refusing a stale hand-off")
+    else:
+        plans = supa.db_select(
+            "editorial_plans",
+            f"project_id=eq.{project['id']}&order=version.desc&limit=1")
+        plan_row = plans[0] if plans else None
     update_job(job["id"], {"current_stage": "picture edit v2", "progress": 10})
     t0 = time.time()
     # raises PictureEditRejected with the exact reasons — never falls back
@@ -683,6 +756,40 @@ def handle_editorial_plan(job: dict, project: dict, tmp: str, ctx: JobContext) -
     dur = time.time() - t0
     ctx.rec("editorial_plan", round(dur, 2),
             units={"gemini_requests": result["attempts"]})
+    # ── Customer-journey chain: an approved plan hands off to Picture Edit V2
+    # with the EXACT plan id/version just persisted. Operator/manual plan jobs
+    # (no `source` param) keep their original stop-here semantics.
+    source = params.get("source")
+    if source in ("customer_journey", "recut"):
+        if result["status"] == "approved":
+            chain = {"source": source, "editorial_plan_id": plan_id,
+                     "editorial_plan_version": version}
+            if params.get("aspectRatio"):
+                chain["aspect_ratio"] = params["aspectRatio"]
+            try:
+                enqueue_job(project["id"], project["user_id"],
+                            "autoedit", chain)
+            except ConcurrencyLimit:
+                # Plan is persisted and approved; the journey resumes via the
+                # retry path rather than dying silently mid-chain.
+                set_project_status(
+                    project["id"], "analysis_failed",
+                    "your edit is planned but could not start (too many "
+                    "active jobs) — retry to continue")
+        else:
+            # Honest planner outcome (insufficient_footage): no autoedit job
+            # is enqueued and no legacy fallback happens. Surface the exact
+            # reason so the customer can act on it.
+            plan_json = result["plan"] or {}
+            achievable = plan_json.get("achievableDurationSeconds")
+            missing = plan_json.get("missingFootage") or []
+            shots = "; ".join(str(m.get("shotType") or m.get("beat") or "shot")
+                              for m in missing[:4])
+            reason = ("the footage cannot fill the requested edit"
+                      + (f" (achievable {achievable}s)" if achievable else "")
+                      + (f" — missing: {shots}" if shots else ""))
+            set_project_status(project["id"], "analysis_failed",
+                               f"editorial plan v{version}: {reason}")
     return {"editorialPlanId": plan_id, "planVersion": version,
             "status": result["status"], "qualityScore": result["qualityScore"],
             "attempts": result["attempts"],
@@ -964,7 +1071,14 @@ def _run_job(job: dict) -> None:
                                "processing_seconds": round(time.time() - t0, 2),
                                "completed_at": _now()})
         fail_status = FAIL_STATUS.get(job["kind"])
-        if fail_status:      # optional stages (editorial_plan) never move status
+        # An operator-requested editorial_plan stays status-silent (optional
+        # stage), but in the V2 customer journey the plan is REQUIRED: a
+        # planner crash must surface as a failed edit, never as an eternal
+        # "building your edit" spinner and never as a silent legacy fallback.
+        if job["kind"] == "editorial_plan"                 and (job.get("params") or {}).get("source") in (
+                    "customer_journey", "recut"):
+            fail_status = "analysis_failed"
+        if fail_status:
             try:
                 set_project_status(job["project_id"], fail_status,
                                    f"job {job['id'][:8]} failed: {err[:200]}")
