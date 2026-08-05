@@ -1,0 +1,507 @@
+"""Picture Edit Engine V2 — approved EditorialPlan -> real picture timeline.
+
+Covers the full required matrix: hook execution, beat order, bounds, binding
+duration, determinism/idempotency, pacing, transitions (executable + pending),
+speed ramps, crops, feature-flag routing, no-silent-fallback, bridge and
+Product Editor compatibility. Real FFmpeg only in the marked render tests.
+"""
+import copy
+import os
+import subprocess
+import uuid
+
+import pytest
+
+os.environ.setdefault("SUPABASE_URL", "https://fake.supabase.co")
+os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "fake-service-key")
+os.environ["WORKER_ENABLED"] = "0"
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app import jobs, supa  # noqa: E402
+from app.main import app  # noqa: E402
+from app.pipeline import picture_edit_v2 as pe2  # noqa: E402
+from app.pipeline import picture_render_v2  # noqa: E402
+from tests.fake_supa import FakeSupabase, install  # noqa: E402
+from tests.test_editorial_planner import _segments, _valid_plan  # noqa: E402
+
+NOW = "2026-08-05T00:00:00+00:00"
+
+
+def _plan_row(plan=None, status="approved", version=1, request=None,
+              gate_passed=True, project_id="proj-1"):
+    return {"id": f"plan-{version}", "project_id": project_id,
+            "version": version, "status": status,
+            "request": request or {},
+            "plan": plan if plan is not None else _valid_plan(),
+            "validation": {"deterministicGate": {
+                "passed": gate_passed, "score": 100 if gate_passed else 40,
+                "hardFailures": [] if gate_passed else ["hook_grounded"]}}}
+
+
+def _build(plan=None, segments=None, **row_kw):
+    return pe2.build_picture_edit(_plan_row(plan=plan, **row_kw),
+                                  segments or _segments(), now=NOW)
+
+
+def _reject(plan=None, segments=None, needle=None, **row_kw):
+    with pytest.raises(pe2.PictureEditRejected) as exc:
+        _build(plan=plan, segments=segments, **row_kw)
+    flat = " | ".join(exc.value.reasons)
+    if needle:
+        assert needle in flat, flat
+    return flat
+
+
+# ------------------------------------------------ 1+2: hook + beat order
+def test_hook_is_timeline_zero_and_beat_order_preserved():
+    out = _build()
+    maps = out["segmentMappings"]
+    assert maps[0]["timelineIn"] == 0.0
+    assert maps[0]["segmentId"] == "seg-1"                   # the planned hook
+    plan = _valid_plan()
+    assert [m["segmentId"] for m in maps] \
+        == [t["segmentId"] for t in plan["timeline"]]        # exact plan order
+    assert [m["beat"] for m in maps] == ["hook", "process", "payoff"]
+    assert len(maps) == len(plan["timeline"])                # nothing omitted
+
+
+def test_hook_cannot_be_replaced_by_chronological_footage():
+    plan = _valid_plan()
+    plan["timeline"] = plan["timeline"][1:] + plan["timeline"][:1]
+    for i, seg in enumerate(plan["timeline"]):               # keep contiguity
+        seg["timelineIn"], seg["timelineOut"] = i * 4.0, (i + 1) * 4.0
+    _reject(plan=plan, needle="timeline[0] is not the planned hook")
+
+
+# ------------------------------------------------ 3: source bounds + trims
+def test_source_bounds_enforced_and_epsilon_trims_logged():
+    plan = _valid_plan()
+    plan["timeline"][1]["sourceOut"] = 12.0                  # catalog ends at 10
+    plan["timeline"][1]["timelineOut"] = 4.0 + 12.0
+    _reject(plan=plan, needle="past its real source end")
+
+    eps = _valid_plan()
+    eps["timeline"][2]["sourceOut"] = 10.04                  # epsilon overshoot
+    eps["timeline"][2]["sourceIn"] = 6.04
+    out = _build(plan=eps)
+    adj = out["trimAdjustments"]
+    assert adj and adj[0]["segmentId"] == "seg-3" \
+        and "clamped" in adj[0]["reason"]                    # logged, not silent
+
+
+def test_catalog_drift_rejected():
+    segs = [s for s in _segments() if s.segmentId != "seg-2"]
+    _reject(segments=segs, needle="absent from the current source catalog")
+
+
+# ------------------------------------------------ 4+5: binding duration + speed
+def test_requested_duration_is_binding_at_execution_time():
+    _reject(request={"durationMin": 45, "durationMax": 60},
+            needle="materially shorter than the requested minimum")
+
+
+def test_speed_adjusted_duration_verified():
+    plan = _valid_plan()
+    plan["timeline"][1].update(playbackSpeed=2.0, sourceIn=0.0, sourceOut=8.0)
+    out = _build(plan=plan)                                  # 8s src @2x = 4s tl
+    assert out["actualDurationSeconds"] == 12.0
+    bad = _valid_plan()
+    bad["timeline"][1]["playbackSpeed"] = 2.0                # 4s src @2x != 4s tl
+    _reject(plan=bad, needle="speed-adjusted duration is impossible")
+
+
+# ------------------------------------------------ 6: honest insufficient footage
+def test_insufficient_footage_plan_refused_honestly():
+    plan = _valid_plan()
+    plan["status"] = "insufficient_footage"
+    plan["achievableDurationSeconds"] = 12.0
+    plan["missingFootage"] = [{"beat": "closing reaction",
+                               "shotType": "close-up",
+                               "recommendedDurationSeconds": 5.0,
+                               "why": "the payoff needs a reaction shot"}]
+    flat = _reject(plan=plan, status="insufficient_footage",
+                   needle="insufficient footage")
+    assert "closing reaction" in flat                        # exact missing shots
+
+
+def test_unapproved_or_gateless_plan_refused():
+    _reject(status="running", needle="not 'approved'")
+    _reject(gate_passed=False, needle="did not pass the deterministic quality gate")
+    with pytest.raises(pe2.PictureEditRejected, match="run the Editorial Planner"):
+        pe2.build_picture_edit(None, _segments(), now=NOW)
+
+
+# ------------------------------------------------ 7: duplicates rejected
+def test_duplicate_source_ranges_rejected():
+    plan = _valid_plan()
+    plan["timeline"][2] = dict(plan["timeline"][0],
+                               timelineIn=8.0, timelineOut=12.0, beat="payoff")
+    _reject(plan=plan, needle="repeats an identical source range")
+
+
+# ------------------------------------------------ 9+10: determinism
+def test_same_inputs_produce_identical_hash_regardless_of_clock():
+    a = pe2.build_picture_edit(_plan_row(), _segments(), now=NOW)
+    b = pe2.build_picture_edit(_plan_row(), _segments(),
+                               now="2030-01-01T00:00:00+00:00")
+    assert a["deterministicHash"] == b["deterministicHash"]
+    assert a["createdAt"] != b["createdAt"]
+
+
+def test_plan_version_and_catalog_change_the_hash():
+    base = _build()
+    v2 = _build(version=2)
+    assert v2["deterministicHash"] != base["deterministicHash"]
+    drift = _segments()
+    drift[0] = drift[0].model_copy(update={"sourceEnd": 9.5})
+    other = _build(segments=drift)
+    assert other["deterministicHash"] != base["deterministicHash"]
+    assert other["sourceCatalogHash"] != base["sourceCatalogHash"]
+
+
+# ------------------------------------------------ 11+12: pacing + payoff hold
+def test_pacing_metrics_calculated_per_beat():
+    out = _build()
+    metrics = {m["beat"]: m for m in out["pacingMetrics"]}
+    assert set(metrics) == {"hook", "process", "payoff"}
+    for m in metrics.values():
+        assert m["actualDurationSeconds"] == 4.0 and m["deviationSeconds"] == 0.0
+        assert m["shotCount"] == 1 and m["shotDensity"] == 0.25
+        assert 0 <= m["energyTarget"] <= 1
+
+
+def test_payoff_hold_materially_violated_is_rejected():
+    plan = _valid_plan()
+    plan["pacing"][2]["targetDurationSeconds"] = 10.0        # payoff hold of 10s
+    _reject(plan=plan, needle="pacing materially violates the approved plan")
+
+
+# ------------------------------------------------ 13-15: transitions
+def test_hard_cuts_and_dissolve_are_executable_instructions():
+    plan = _valid_plan()
+    plan["timeline"][1].update(sourceIn=1.0, sourceOut=5.0)
+    plan["transitions"][0].update(type="dissolve", durationSeconds=0.5)
+    out = _build(plan=plan)
+    by_type = {t["type"]: t for t in out["transitionInstructions"]}
+    assert by_type["dissolve"]["status"] == "executable"
+    assert by_type["hard_cut"]["status"] == "executable"
+    assert out["unsupportedExecution"] == []
+
+
+def test_dissolve_without_handles_rejected():
+    plan = _valid_plan()
+    plan["transitions"][0].update(type="dissolve", durationSeconds=0.5)
+    _reject(plan=plan, needle="source handle")               # head handle is 0
+
+
+def test_unsupported_transition_preserved_not_replaced():
+    plan = _valid_plan()
+    plan["timeline"][1].update(sourceIn=1.0, sourceOut=5.0)
+    plan["transitions"][0].update(type="whip", durationSeconds=0.5)
+    out = _build(plan=plan)
+    whip = next(t for t in out["transitionInstructions"] if t["type"] == "whip")
+    assert whip["status"] == "pending_renderer_support"
+    assert "NOT replaced" in whip["note"]
+    assert whip in out["unsupportedExecution"]               # clearly surfaced
+    assert not any(t["type"] != "whip" and t["boundaryIndex"] == 0
+                   for t in out["transitionInstructions"])   # nothing substituted
+
+
+# ------------------------------------------------ 16+17: speed ramps
+def test_valid_speed_ramp_carried_as_structured_instruction():
+    plan = _valid_plan()
+    plan["speedRamps"] = [{"segmentId": "seg-2", "sourceStart": 0.0,
+                           "sourceEnd": 4.0, "entrySpeed": 0.5, "peakSpeed": 1.5,
+                           "exitSpeed": 0.5, "easing": "ease-in-out",
+                           "narrativePurpose": "hold the action"}]
+    # avg speed (0.5+3+0.5)/4 = 1.0 -> effective 4.0s == constant 4.0s
+    out = _build(plan=plan)
+    inst = out["speedInstructions"][0]
+    assert inst["effectiveDurationSeconds"] == 4.0
+    assert inst["status"] == "pending_renderer_support"      # honest, not faked
+    assert "slow motion" in inst["warning"]                  # fps metadata absent
+
+
+def test_duration_changing_ramp_rejected():
+    plan = _valid_plan()
+    plan["speedRamps"] = [{"segmentId": "seg-2", "sourceStart": 0.0,
+                           "sourceEnd": 4.0, "entrySpeed": 3.0, "peakSpeed": 3.0,
+                           "exitSpeed": 3.0, "easing": "linear",
+                           "narrativePurpose": "x"}]
+    _reject(plan=plan, needle="would change the segment's duration")
+
+
+# ------------------------------------------------ 18-20: reframes
+def test_static_and_pan_crops_executable_zoom_pending():
+    plan = _valid_plan()
+    plan["reframes"] = [
+        {"segmentId": "seg-1", "outputAspectRatio": "9:16",
+         "subjectTarget": "crew",
+         "startCrop": {"x": 0.1, "y": 0.0, "width": 0.5, "height": 0.9},
+         "endCrop": {"x": 0.1, "y": 0.0, "width": 0.5, "height": 0.9}},
+        {"segmentId": "seg-2", "outputAspectRatio": "9:16",
+         "subjectTarget": "crew",
+         "startCrop": {"x": 0.0, "y": 0.0, "width": 0.5, "height": 0.9},
+         "endCrop": {"x": 0.4, "y": 0.05, "width": 0.5, "height": 0.9}},
+        {"segmentId": "seg-3", "outputAspectRatio": "9:16",
+         "subjectTarget": "crew",
+         "startCrop": {"x": 0.0, "y": 0.0, "width": 0.9, "height": 0.9},
+         "endCrop": {"x": 0.2, "y": 0.2, "width": 0.45, "height": 0.45}}]
+    out = _build(plan=plan)
+    modes = {r["segmentId"]: r for r in out["reframeInstructions"]}
+    assert modes["seg-1"]["mode"] == "static" \
+        and modes["seg-1"]["status"] == "executable"
+    assert modes["seg-2"]["mode"] == "pan_interpolated" \
+        and modes["seg-2"]["status"] == "executable"
+    assert modes["seg-3"]["mode"] == "zoom_interpolated" \
+        and modes["seg-3"]["status"] == "pending_renderer_support"
+    assert any("upscale risk" in w for w in out["technicalWarnings"])
+
+
+def test_out_of_frame_crop_rejected():
+    plan = _valid_plan()
+    plan["reframes"] = [{"segmentId": "seg-1", "outputAspectRatio": "9:16",
+                         "subjectTarget": "crew",
+                         "startCrop": {"x": 0.9, "y": 0.0, "width": 0.9,
+                                       "height": 0.5},
+                         "endCrop": {"x": 0.9, "y": 0.0, "width": 0.9,
+                                     "height": 0.5}}]
+    _reject(plan=plan, needle="out-of-frame geometry is rejected")
+
+
+# ------------------------------------------------ real-FFmpeg render tests
+@pytest.fixture(scope="module")
+def two_clips(tmp_path_factory):
+    d = tmp_path_factory.mktemp("pe2-src")
+    paths = {}
+    for name, pattern in (("asset-a", "testsrc"), ("asset-b", "testsrc2")):
+        p = str(d / f"{name}.mp4")
+        subprocess.run([picture_render_v2.FFMPEG, "-y", "-loglevel", "error",
+                        "-f", "lavfi", "-i", f"{pattern}=size=320x180:rate=30",
+                        "-f", "lavfi", "-i", "sine=frequency=440",
+                        "-t", "3", "-c:v", "libx264", "-preset", "veryfast",
+                        "-c:a", "aac", "-shortest", p], check=True, timeout=120)
+        paths[name] = p
+    return paths
+
+
+def _render_result(transition_type):
+    """A minimal executed PictureEditV2 result over two 3s clips."""
+    clips = [{"id": "c0", "assetId": "asset-a", "sourceStart": 0.0,
+              "sourceEnd": 2.0, "timelineStart": 0.0, "timelineEnd": 2.0,
+              "speed": 1.0, "volume": 1.0},
+             {"id": "c1", "assetId": "asset-b", "sourceStart": 1.0,
+              "sourceEnd": 3.0, "timelineStart": 2.0, "timelineEnd": 4.0,
+              "speed": 1.0, "volume": 1.0}]
+    tr = {"fromSegmentId": "s-a", "toSegmentId": "s-b", "type": transition_type,
+          "durationSeconds": 0.0 if transition_type == "hard_cut" else 0.5,
+          "purpose": "test", "boundaryIndex": 0, "status": "executable"}
+    return {"timeline": {"version": 1, "width": 1920, "height": 1080,
+                         "fps": 30, "duration": 4.0,
+                         "tracks": [{"id": "v", "type": "video",
+                                     "clips": clips}]},
+            "segmentMappings": [{"segmentId": "s-a"}, {"segmentId": "s-b"}],
+            "transitionInstructions": [tr],
+            "reframeInstructions": [
+                {"segmentId": "s-a", "mode": "static", "status": "executable",
+                 "startCrop": {"x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8},
+                 "endCrop": {"x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8}},
+                {"segmentId": "s-b", "mode": "pan_interpolated",
+                 "status": "executable",
+                 "startCrop": {"x": 0.0, "y": 0.0, "width": 0.8, "height": 0.8},
+                 "endCrop": {"x": 0.2, "y": 0.1, "width": 0.8, "height": 0.8}}]}
+
+
+def _probe_duration(path):
+    from app.renderer import probe
+    return probe(path).duration
+
+
+@pytest.mark.parametrize("transition", ["hard_cut", "dissolve", "dip_to_black"])
+def test_render_executes_cuts_transitions_and_crops(two_clips, tmp_path,
+                                                    transition):
+    out = str(tmp_path / f"out-{transition}.mp4")
+    picture_render_v2.render_picture_edit(_render_result(transition),
+                                          two_clips, out)
+    dur = _probe_duration(out)
+    assert abs(dur - 4.0) < 0.35        # timeline duration preserved (soft
+    #                                     transitions consume source handles)
+
+
+# ------------------------------------------------ handler / flag / idempotency
+def _project_env(fake, with_plan=True, plan=None, request=None):
+    uid, token = fake.add_user("pe2@example.com")
+    project = fake.add_project(uid, "PE2 Test", status="ready")
+    aid = str(uuid.uuid4())          # Product Editor requires real UUID assets
+    key = f"users/{uid}/projects/{project['id']}/raw/clip.mp4"
+    fake.insert("media_assets", {"id": aid, "project_id": project["id"],
+                                 "user_id": uid, "filename": "clip.mp4",
+                                 "storage_path": key,
+                                 "duration_seconds": 10.0})
+    fake.storage[f"raw-footage/{key}"] = b"VIDEO"
+    for s in _segments(asset_id=aid):
+        fake.insert("segments", {"project_id": project["id"], "user_id": uid,
+                                 "data": s.model_dump()})
+    if with_plan:
+        the_plan = copy.deepcopy(plan or _valid_plan())
+        for entry in the_plan["timeline"]:
+            entry["assetId"] = aid
+        fake.insert("editorial_plans", {
+            "project_id": project["id"], "user_id": uid, "version": 1,
+            "status": "approved", "quality_score": 100, "attempts": 1,
+            "request": request or {}, "plan": the_plan,
+            "validation": {"deterministicGate": {"passed": True, "score": 100,
+                                                 "hardFailures": []}}})
+    return uid, token, project
+
+
+def _stub_render(monkeypatch):
+    def fake_render(result, sources, out_path, timeout=900, cancel_check=None):
+        with open(out_path, "wb") as f:
+            f.write(b"PREVIEW")
+        return result["timeline"]["duration"]
+    monkeypatch.setattr(picture_render_v2, "render_picture_edit", fake_render)
+
+
+def test_flag_on_builds_timeline_and_feeds_the_bridge(monkeypatch):
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    monkeypatch.setenv("PICTURE_EDIT_ENGINE_V2_ENABLED", "1")
+    _stub_render(monkeypatch)
+    uid, token, project = _project_env(fake)
+    jobs.enqueue_job(project["id"], uid, "autoedit", {})
+    jobs._run_job(jobs._claim_next())
+    row = fake.select("pipeline_jobs", f"project_id=eq.{project['id']}")[0]
+    assert row["status"] == "completed", row.get("error_message")
+    art = row["artifacts"]
+    assert art["engine"] == "picture_edit_v2" and art["reused"] is False
+    tl = fake.select("timelines", f"id=eq.{art['timelineId']}")[0]
+    assert tl["lineage"] == "autonomous_revised" and tl["is_immutable"] is True
+    clips = tl["timeline_json"]["tracks"][0]["clips"]
+    assert clips[0]["timelineStart"] == 0.0 and len(clips) == 3
+    # bridge compatibility: a bridged candidate exists over the V2 timeline
+    cands = fake.select("candidate_runs", f"project_id=eq.{project['id']}")
+    assert len(cands) == 1 and cands[0]["generation_kind"] == "bridged"
+    assert art["bridgedCandidateRunId"] == cands[0]["id"]
+    assert fake.select("projects", f"id=eq.{project['id']}")[0]["status"] \
+        == "draft_ready"
+
+
+def test_flag_on_repeated_run_reuses_persisted_result(monkeypatch):
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    monkeypatch.setenv("PICTURE_EDIT_ENGINE_V2_ENABLED", "1")
+    _stub_render(monkeypatch)
+    uid, token, project = _project_env(fake)
+    for _ in range(2):
+        jobs.enqueue_job(project["id"], uid, "autoedit", {})
+        jobs._run_job(jobs._claim_next())
+    runs = [r for r in fake.select("pipeline_jobs",
+                                   f"project_id=eq.{project['id']}")
+            if r["kind"] == "autoedit"]
+    assert [r["status"] for r in runs] == ["completed", "completed"]
+    assert runs[0]["artifacts"]["reused"] is False
+    assert runs[1]["artifacts"]["reused"] is True
+    assert runs[1]["artifacts"]["timelineId"] == runs[0]["artifacts"]["timelineId"]
+    # no duplicate timelines or edit runs
+    assert len(fake.select("timelines", f"project_id=eq.{project['id']}")) == 1
+    assert len(fake.select("edit_runs", f"project_id=eq.{project['id']}")) == 1
+
+
+def test_flag_on_without_approved_plan_fails_loudly_no_fallback(monkeypatch):
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    monkeypatch.setenv("PICTURE_EDIT_ENGINE_V2_ENABLED", "1")
+    called = {"legacy": False}
+
+    def legacy_sentinel(*a, **k):
+        called["legacy"] = True
+        raise AssertionError("legacy autoedit must never run as a fallback")
+    import app.pipeline.autoedit as legacy
+    monkeypatch.setattr(legacy, "autoedit", legacy_sentinel)
+    uid, token, project = _project_env(fake, with_plan=False)
+    jobs.enqueue_job(project["id"], uid, "autoedit", {})
+    jobs._run_job(jobs._claim_next())
+    row = fake.select("pipeline_jobs", f"project_id=eq.{project['id']}")[0]
+    assert row["status"] == "failed"
+    assert "run the Editorial Planner first" in row["error_message"]
+    assert called["legacy"] is False                     # 23: no silent fallback
+    assert fake.select("timelines", f"project_id=eq.{project['id']}") == []
+
+
+def test_flag_off_routes_to_legacy_path_untouched(monkeypatch):
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    monkeypatch.delenv("PICTURE_EDIT_ENGINE_V2_ENABLED", raising=False)
+
+    class LegacyReached(Exception):
+        pass
+
+    def legacy_sentinel(*a, **k):
+        raise LegacyReached()
+    import app.pipeline.autoedit as legacy
+    monkeypatch.setattr(legacy, "autoedit", legacy_sentinel)
+    monkeypatch.setattr(jobs, "handle_autoedit_v2",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            AssertionError("v2 must not run with the flag off")))
+    uid, token, project = _project_env(fake, with_plan=False)
+    job = {"id": str(uuid.uuid4()), "project_id": project["id"],
+           "user_id": uid, "kind": "autoedit", "params": {},
+           "status": "processing", "attempt_count": 1, "max_attempts": 3}
+    fake.insert("pipeline_jobs", dict(job))
+    with pytest.raises(LegacyReached):
+        jobs.handle_autoedit(job, fake.select("projects",
+                                              f"id=eq.{project['id']}")[0],
+                             "/tmp", jobs.JobContext(job))
+    # 21+26: legacy path entered, V2 untouched, no editorial plan required
+
+
+def test_product_editor_opens_the_v2_candidate(monkeypatch):
+    from app import main
+    main._rate.clear()
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    monkeypatch.setenv("PICTURE_EDIT_ENGINE_V2_ENABLED", "1")
+    _stub_render(monkeypatch)
+    uid, token, project = _project_env(fake)
+    jobs.enqueue_job(project["id"], uid, "autoedit", {})
+    jobs._run_job(jobs._claim_next())
+    cand = fake.select("candidate_runs", f"project_id=eq.{project['id']}")[0]
+    client = TestClient(app, raise_server_exceptions=False)
+    r = client.post(f"/projects/{project['id']}/editor/start",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={"candidateRunId": cand["id"]})
+    assert r.status_code == 200, r.text
+    doc = r.json()["document"]
+    picture = next(t for t in doc["tracks"] if t["type"] == "picture")
+    assert len(picture["items"]) == 3                    # 25: editor-compatible
+
+
+def test_engine_output_contract_fields():
+    out = _build()
+    for field in ("schemaVersion", "engineVersion", "projectId",
+                  "editorialPlanId", "editorialPlanVersion", "sourceCatalogHash",
+                  "timeline", "segmentMappings", "speedInstructions",
+                  "transitionInstructions", "reframeInstructions",
+                  "actualDurationSeconds", "requestedDurationMin",
+                  "requestedDurationMax", "pacingMetrics", "continuityFindings",
+                  "technicalWarnings", "unsupportedExecution",
+                  "trimAdjustments", "deterministicHash", "createdAt"):
+        assert field in out, field
+    assert out["schemaVersion"] == 1 and out["engineVersion"] == "2.0.0"
+
+
+def test_continuity_findings_flag_repetition_and_backjumps():
+    plan = _valid_plan()
+    plan["timeline"].append({"segmentId": "seg-1", "assetId": "asset-1",
+                             "sourceIn": 5.0, "sourceOut": 7.0,
+                             "timelineIn": 12.0, "timelineOut": 14.0,
+                             "beat": "payoff", "reason": "callback",
+                             "addsNew": "callback", "playbackSpeed": 1.0,
+                             "expectedViewerEffect": "recall"})
+    plan["plannedDurationSeconds"] = 14.0
+    plan["pacing"][2]["targetDurationSeconds"] = 6.0
+    out = _build(plan=plan)
+    findings = " | ".join(out["continuityFindings"])
+    assert "used 2 times" in findings

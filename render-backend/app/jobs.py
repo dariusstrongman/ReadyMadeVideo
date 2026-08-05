@@ -343,10 +343,118 @@ def handle_analysis(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict
     return {"assets_analyzed": done}
 
 
+def picture_edit_v2_enabled() -> bool:
+    """Feature flag (default OFF). With the flag off, production behavior is
+    the unchanged legacy autoedit path; with it on, an APPROVED EditorialPlan
+    is REQUIRED and the old selector is never silently used."""
+    return os.environ.get("PICTURE_EDIT_ENGINE_V2_ENABLED", "").lower() \
+        in ("1", "true", "yes")
+
+
+def handle_autoedit_v2(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict:
+    """Picture Edit Engine V2: approved EditorialPlan -> real timeline.
+
+    No silent fallback: a missing/unapproved/ungrounded plan fails this job
+    with the engine's exact validation reasons. Idempotent per (project, plan
+    version, engine version, catalog hash) via the deterministic hash persisted
+    on the edit run."""
+    from . import autoedit_bridge
+    from .pipeline import picture_edit_v2, picture_render_v2
+
+    segments = _load_segments(project["id"])
+    if not segments:
+        raise RuntimeError("no segment catalog — run analysis first")
+    plans = supa.db_select(
+        "editorial_plans",
+        f"project_id=eq.{project['id']}&order=version.desc&limit=1")
+    plan_row = plans[0] if plans else None
+    update_job(job["id"], {"current_stage": "picture edit v2", "progress": 10})
+    t0 = time.time()
+    # raises PictureEditRejected with the exact reasons — never falls back
+    result = picture_edit_v2.build_picture_edit(plan_row, segments, now=_now())
+
+    # ---- idempotency: same project + plan version + engine version + catalog
+    # hash returns the EXISTING persisted result (no duplicate timelines/runs)
+    for run in supa.db_select("edit_runs",
+                              f"project_id=eq.{project['id']}"
+                              "&order=created_at.desc&limit=25"):
+        bp = run.get("blueprint") or {}
+        if bp.get("deterministicHash") == result["deterministicHash"] \
+                and run.get("timeline_v2_id"):
+            log_event("PICTURE-EDIT-V2-REUSED", job_id=job["id"],
+                      edit_run_id=run["id"], hash=result["deterministicHash"])
+            return {"engine": "picture_edit_v2",
+                    "engineVersion": result["engineVersion"],
+                    "reused": True, "editRunId": run["id"],
+                    "timelineId": run["timeline_v2_id"],
+                    "deterministicHash": result["deterministicHash"],
+                    "editorialPlanId": result["editorialPlanId"],
+                    "editorialPlanVersion": result["editorialPlanVersion"],
+                    "actualDurationSeconds": result["actualDurationSeconds"]}
+
+    sources, _ = _download_sources(project, tmp, ctx)
+    ctx.checkpoint("before_v2_render")
+    preview_path = os.path.join(tmp, "picture-edit-v2-preview.mp4")
+    picture_render_v2.render_picture_edit(
+        result, sources, preview_path, cancel_check=lambda: ctx.cancelled())
+
+    ctx.checkpoint("before_v2_persist")
+    er = _insert("edit_runs", {
+        "project_id": project["id"], "user_id": project["user_id"],
+        "status": "completed",
+        "brief": (job.get("params") or {}).get("brief"),
+        "blueprint": result,                       # full PictureEditV2 contract
+        "selection": {"engine": "picture_edit_v2",
+                      "engineVersion": result["engineVersion"]}})
+    er.raise_for_status()
+    edit_run_id = er.json()[0]["id"]
+    existing = supa.db_select("timelines",
+                              f"project_id=eq.{project['id']}"
+                              "&order=version.desc&limit=1")
+    next_ver = (existing[0]["version"] + 1) if existing else 1
+    tl = _insert("timelines", {
+        "project_id": project["id"], "user_id": project["user_id"],
+        "version": next_ver, "timeline_json": result["timeline"],
+        "lineage": "autonomous_revised", "is_immutable": True,
+        "edit_run_id": edit_run_id})
+    tl.raise_for_status()
+    tl_row = tl.json()[0]
+    _patch("edit_runs", f"id=eq.{edit_run_id}",
+           {"timeline_v2_id": tl_row["id"]}, prefer="return=minimal")
+
+    artifacts: dict = {"engine": "picture_edit_v2",
+                       "engineVersion": result["engineVersion"], "reused": False,
+                       "editRunId": edit_run_id, "timelineId": tl_row["id"],
+                       "deterministicHash": result["deterministicHash"],
+                       "editorialPlanId": result["editorialPlanId"],
+                       "editorialPlanVersion": result["editorialPlanVersion"],
+                       "actualDurationSeconds": result["actualDurationSeconds"],
+                       "pendingExecution": len(result["unsupportedExecution"]),
+                       "continuityFindings": result["continuityFindings"],
+                       "technicalWarnings": result["technicalWarnings"]}
+    bridged = autoedit_bridge.bridge_from_autoedit(
+        project, tl_row, preview_path,
+        insert=_insert, db_select=supa.db_select,
+        upload_export=_upload_export, now=_now, remove=supa.storage_remove,
+        update=supa.db_update)
+    if bridged:
+        artifacts["bridgedCandidateRunId"] = bridged["id"]
+    dur = time.time() - t0
+    ctx.rec("picture_edit_v2", round(dur, 2), units={"cpu_hours": dur / 3600})
+    set_project_status(project["id"], "draft_ready",
+                       f"picture edit v2 built timeline v{next_ver} from plan "
+                       f"v{result['editorialPlanVersion']}")
+    return artifacts
+
+
 def handle_autoedit(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict:
     import json as _json
 
     from .pipeline.autoedit import autoedit
+    if picture_edit_v2_enabled():
+        # Flag ON: Picture Edit Engine V2 only. The legacy selector is never a
+        # silent fallback — engine failures fail this job with exact reasons.
+        return handle_autoedit_v2(job, project, tmp, ctx)
     params = job.get("params") or {}
     segments = _load_segments(project["id"])
     if not segments:

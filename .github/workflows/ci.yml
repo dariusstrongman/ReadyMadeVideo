@@ -13,7 +13,8 @@ on:
                codex/audio-asset-library-ingestion,
                codex/audio-library-pipeline-integration,
                codex/product-editor-phase-1,
-               repair/audit-fixes, feat/editorial-planner-v1]
+               repair/audit-fixes, feat/editorial-planner-v1,
+               feat/picture-edit-engine-v2]
 
 jobs:
   frontend:
