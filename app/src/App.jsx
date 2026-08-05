@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
+import ErrorBoundary from './ErrorBoundary'
 import { clearResumeRecords } from './lib/s3upload'
 import Login from './pages/Login'
 import ResetPassword from './pages/ResetPassword'
@@ -29,6 +30,7 @@ export default function App() {
     )
   return (
     <AuthCtx.Provider value={session}>
+      <ErrorBoundary>
       <Routes>
         <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />
         <Route path="/reset-password" element={<ResetPassword />} />
@@ -39,6 +41,7 @@ export default function App() {
         <Route path="/operator" element={<Protected><Operator /></Protected>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </ErrorBoundary>
     </AuthCtx.Provider>
   )
 }

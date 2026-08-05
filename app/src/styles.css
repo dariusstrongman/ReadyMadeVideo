@@ -2307,3 +2307,43 @@ textarea { resize: vertical; min-height: 80px; }
 .reshape-row .np-aspect-opt { min-width: 116px; }
 .reshape-row .np-aspect-opt:disabled { cursor: default; }
 .reshape-row .np-aspect-opt.selected:disabled { opacity: 1; }
+
+/* ── Error boundary ───────────────────────────────────────────────────
+   The last thing standing when a screen throws. Must not depend on any
+   component that might itself be broken. */
+.boundary {
+  min-height: 70vh; display: grid; place-items: center;
+  padding: var(--sp-8) var(--sp-6);
+}
+.boundary-card {
+  max-width: 560px; width: 100%; text-align: center;
+  padding: var(--sp-10) var(--sp-8);
+  background: var(--bg-1); border: 1px solid var(--border-2);
+  border-radius: var(--radius-xl); box-shadow: var(--shadow-lg);
+}
+.boundary-icon {
+  width: 46px; height: 46px; margin: 0 auto var(--sp-5);
+  display: grid; place-items: center; border-radius: var(--radius-full);
+  background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.35);
+  color: var(--amber); font-weight: 800; font-size: 1.2rem;
+}
+.boundary-title {
+  font-family: 'Archivo', var(--sans);
+  font-size: var(--text-xl); font-weight: 700; letter-spacing: -0.02em;
+  color: var(--text);
+}
+.boundary-sub {
+  font-size: var(--text-sm); color: var(--text-2);
+  margin-top: var(--sp-3); line-height: 1.6;
+}
+.boundary-detail {
+  margin-top: var(--sp-5); padding: var(--sp-3) var(--sp-4);
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); text-align: left;
+  font-family: var(--mono); font-size: var(--text-2xs); color: var(--text-2);
+  white-space: pre-wrap; overflow-x: auto; max-height: 160px;
+}
+.boundary-actions {
+  display: flex; justify-content: center; gap: var(--sp-3);
+  margin-top: var(--sp-6); flex-wrap: wrap;
+}
