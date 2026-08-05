@@ -457,6 +457,63 @@ def op_request_analysis(project_id: str,
         raise HTTPException(429, str(e))
     return job
 
+
+class RecutRequest(BaseModel):
+    """Optional new output shape for a re-cut."""
+    aspectRatio: str | None = Field(default=None, max_length=8)
+
+
+@app.post("/projects/{project_id}/recut")
+def customer_recut(project_id: str, body: RecutRequest = RecutRequest(),
+                   authorization: str = Header(default="")):
+    """Re-cut an already-analysed project, optionally at a new frame shape.
+
+    Distinct from /request-analysis: the segment catalog is expensive and does
+    not depend on the output shape, so a re-cut re-runs only the autoedit stage
+    and reuses the existing analysis. Customer-owned (unlike /generate-draft,
+    which is operator-only) because changing the shape of your own video is not
+    an operator action.
+
+    Ownership-checked, rate-limited, and idempotent: an autoedit already in
+    flight is returned rather than queued twice.
+    """
+    from . import jobs
+    user, project = _owned_project(project_id, authorization)
+    _rate_check(user["id"], "recut")
+
+    aspect = body.aspectRatio
+    if aspect is not None and aspect not in ("16:9", "9:16", "1:1"):
+        raise HTTPException(422, "aspectRatio must be one of 16:9, 9:16, 1:1")
+
+    # A re-cut reuses the catalog; without one there is nothing to cut from.
+    if not supa.db_select("segments", f"project_id=eq.{project_id}&limit=1"):
+        raise HTTPException(409, "this video has not been analysed yet")
+
+    active = supa.db_select(
+        "pipeline_jobs",
+        f"project_id=eq.{project_id}&kind=eq.autoedit"
+        f"&status=in.(queued,processing)&order=created_at.desc&limit=1")
+    if active:
+        return active[0]
+
+    if aspect and aspect != project.get("aspect_ratio"):
+        # Service-role write: aspect_ratio is customer-editable via RLS, but the
+        # job must read the same value this request decided on, so commit it here
+        # rather than trusting a separate client update to have landed first.
+        supa.db_update("projects", f"id=eq.{project_id}", {"aspect_ratio": aspect})
+        _editor_audit(user["id"], project_id, "recut_aspect_change",
+                      {"from": project.get("aspect_ratio"), "to": aspect})
+
+    try:
+        job = jobs.enqueue_job(project_id, user["id"], "autoedit",
+                               {"source": "recut",
+                                "aspect_ratio": aspect or project.get("aspect_ratio")})
+    except jobs.ConcurrencyLimit as e:
+        raise HTTPException(429, str(e))
+    jobs.set_project_status(project_id, "analyzing", "re-cutting at a new shape")
+    return job
+
+
 class EditorialPlanRequest(BaseModel):
     """Binding creative constraints for the Editorial Planner (all optional)."""
     brief: str | None = Field(default=None, max_length=2000)

@@ -105,6 +105,13 @@ function Breadcrumb({ projectName, projectId }) {
   )
 }
 
+// Output shapes offered for a re-cut. Same vocabulary as the New Project wizard.
+const RESHAPE = [
+  { id: '9:16', label: 'Vertical' },
+  { id: '16:9', label: 'Widescreen' },
+  { id: '1:1',  label: 'Square' },
+]
+
 // Upload progress formatting (S3 multipart transport)
 const fmtBytes = (n) => n >= 1073741824
   ? `${(n / 1073741824).toFixed(2)} GB` : `${(n / 1048576).toFixed(1)} MB`
@@ -133,6 +140,8 @@ export default function Project() {
   const [uploadInfo, setUploadInfo] = useState(null)  // {bytesUploaded,totalBytes,speedBps,etaSeconds,state}
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState('')
+  const [recutting, setRecutting] = useState(false)
+  const [recutError, setRecutError] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [pendingFiles, setPendingFiles] = useState([])
   const fileInputRef = useRef(null)
@@ -342,6 +351,23 @@ export default function Project() {
     }
   }
 
+  // Re-cut this project at a different frame shape. The backend reuses the
+  // existing analysis and re-runs only the autoedit stage.
+  async function recut(aspectRatio) {
+    if (recutting) return
+    setRecutting(true); setRecutError('')
+    try {
+      await editorApi(`/projects/${projectId}/recut`, session, {
+        method: 'POST', body: JSON.stringify({ aspectRatio }),
+      })
+      await load()          // status flips to analyzing; the workspace takes over
+    } catch (e) {
+      setRecutError(e.message || 'Could not start the re-cut.')
+    } finally {
+      setRecutting(false)
+    }
+  }
+
   if (!project) return <div className="center"><p className="sub">Loading…</p></div>
 
   const status = project.status
@@ -493,6 +519,31 @@ export default function Project() {
                 Download this cut
               </a>
             )}
+          </div>
+
+          {/* Re-cut at a different shape. Only the autoedit stage re-runs —
+              the analysis catalog is reused — so this is quick compared with
+              starting the video over. */}
+          <div className="reshape">
+            <p className="reshape-label">Need a different shape?</p>
+            <div className="reshape-row">
+              {RESHAPE.map(a => {
+                const current = (project.aspect_ratio || '16:9') === a.id
+                return (
+                  <button key={a.id}
+                    className={`np-aspect-opt ${current ? 'selected' : ''}`}
+                    disabled={recutting || current}
+                    onClick={() => recut(a.id)}>
+                    <span className={`np-aspect-box ar-${a.id.replace(':', '-')}`} aria-hidden="true" />
+                    <span className="np-aspect-name">{a.label}</span>
+                    <span className="np-aspect-note">
+                      {current ? 'Current' : recutting ? '…' : `Re-cut ${a.id}`}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            {recutError && <p className="start-bar-err" role="alert">{recutError}</p>}
           </div>
 
           {candidates.length > 1 && (
