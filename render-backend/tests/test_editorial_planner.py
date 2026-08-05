@@ -749,14 +749,19 @@ def test_invented_audio_segment_ids_rejected():
         _reject(plan, needle=f"audio.{field} references invented segment")
 
 
-def test_musicless_plan_may_not_describe_music():
+def test_musicless_plan_music_state_is_normalized_not_rejected():
+    """musicAvailable is the PROJECT'S authoritative state (2026-08-05): the
+    system writes the truth in rather than rejecting the plan for mis-echoing
+    it, and erases any phantom musicPlan when no music exists. Real licensing
+    fabrication (case 3) still rejects."""
     wrong_flag = _valid_plan()
     wrong_flag["audio"]["musicAvailable"] = True
     wrong_flag["audio"]["musicPlan"] = "an upbeat cue"
-    _reject(wrong_flag, music=False, needle="licensed-music availability")
-    fabricated = _valid_plan()
-    fabricated["audio"]["musicPlan"] = "energetic track at 120 BPM"
-    _reject(fabricated, music=False, needle="musicPlan must be null")
+    result = ep.plan_editorial(_segments(), {}, music_available=False,
+                               generate=_gen(wrong_flag))
+    assert result["plan"]["audio"]["musicAvailable"] is False
+    assert result["plan"]["audio"]["musicPlan"] is None
+
     licensed = _valid_plan(music_available=True)
     licensed["audio"]["musicPlan"] = "track licensed under ID 12345"
     _reject(licensed, music=True, needle="licensing metadata")

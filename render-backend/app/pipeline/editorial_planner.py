@@ -1389,7 +1389,7 @@ def _response_schema() -> dict:
             "width": s("INTEGER"), "height": s("INTEGER"), "fps": s("NUMBER"),
             "aspect": s("STRING")},
             required=["width", "height", "fps", "aspect"]),
-        "status": s("STRING")},
+        "status": s("STRING", enum=["approved", "insufficient_footage"])},
         required=["schemaVersion", "storySentence", "footageSummary",
                   "intendedAudience", "viewerPromise", "options", "chosenOption",
                   "hook", "beats", "timeline", "pacing", "pacingRationale",
@@ -1469,6 +1469,17 @@ def plan_editorial(segments: list[Segment], constraints: dict,
     feedback: list[dict] = []
     for _attempt in range(1, max_attempts + 1):
         raw = generate(base_parts + feedback, schema)
+        # Authoritative-field normalization: musicAvailable is the PROJECT'S
+        # ground truth (the validator itself says availability is
+        # authoritative). Requiring the model to echo it back is ceremony that
+        # failed six straight production runs — write the truth in, and when
+        # no music exists erase any phantom musicPlan. This normalizes SYSTEM
+        # state, never creative content; every creative claim still faces the
+        # validator untouched.
+        if isinstance(raw, dict) and isinstance(raw.get("audio"), dict):
+            raw["audio"]["musicAvailable"] = music_available
+            if not music_available:
+                raw["audio"]["musicPlan"] = None
         try:
             plan = EditorialPlan(**raw)
         except ValidationError as exc:
@@ -1536,7 +1547,7 @@ def gemini_generate(parts: list[dict], schema: dict) -> dict:
     from .gemini_common import prune_schema
     import copy
     STRICT_SECTIONS = ("options", "chosenOption", "captions", "graphics",
-                       "technicalWarnings")
+                       "technicalWarnings", "storySentence", "viewerPromise")
     core = copy.deepcopy(schema)
     for k in STRICT_SECTIONS:
         core.get("properties", {}).pop(k, None)
@@ -1568,6 +1579,11 @@ def gemini_generate(parts: list[dict], schema: dict) -> dict:
           " CHARACTER-FOR-CHARACTER from the cited segment; if a technical"
           " warning cannot cite a verbatim quote, OMIT it — an empty"
           " technicalWarnings array is honest and preferred over a"
+          " paraphrased one. storySentence and viewerPromise are claimType"
+          " 'fact' with verbatim evidence, written STRICTLY from the ALLOWED"
+          " FACTUAL VOCABULARY — no synonyms, no new words. Do not restate"
+          " the core plan's wording if it strays from the vocabulary; write"
+          " grounded sentences from the catalog itself. An empty"
           " paraphrased one. Caption text has a HARD 90-CHARACTER LIMIT —"
           " quote a SHORT verbatim excerpt (a phrase, not the whole"
           " sentence); the evidence quoteOrValue may be longer than the"

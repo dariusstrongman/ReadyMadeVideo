@@ -145,10 +145,11 @@ def test_planner_split_generates_core_then_strict_options(monkeypatch):
                            ladder=None):
         calls.append({"schema": schema, "ladder": ladder, "parts": parts})
         if len(calls) == 1:
-            return {"storySentence": {"text": "s"}}          # core
+            return {"beats": [{"key": "hook"}]}              # core
         return {"options": [1, 2, 3], "chosenOption": 0,
-                "captions": [], "graphics": [],
-                "technicalWarnings": []}                     # strict sections
+                "captions": [], "graphics": [], "technicalWarnings": [],
+                "storySentence": {"text": "s"},
+                "viewerPromise": {"text": "v"}}              # strict sections
 
     monkeypatch.setenv("GEMINI_API_KEY", "k")
     monkeypatch.setattr(gemini_common, "generate_json", fake_generate_json)
@@ -158,19 +159,20 @@ def test_planner_split_generates_core_then_strict_options(monkeypatch):
     # call 1: core schema has NO options/chosenOption anywhere
     core = calls[0]["schema"]
     for k in ("options", "chosenOption", "captions", "graphics",
-              "technicalWarnings"):
+              "technicalWarnings", "storySentence", "viewerPromise"):
         assert k not in core["properties"]
         assert k not in core.get("required", [])
     # call 2: options schema is STRICT (no pruned rung before free-form) and
     # small enough for the state budget — measured accepted in production
     assert set(calls[1]["ladder"][0]["required"]) == \
         {"options", "chosenOption", "captions", "graphics",
-         "technicalWarnings"}
+         "technicalWarnings", "storySentence", "viewerPromise"}
     assert "properties" in \
         calls[1]["ladder"][0]["properties"]["options"]["items"]
     # call 2 sees the core plan it must deliberate for
     assert any("CORE PLAN IS ALREADY DECIDED" in p.get("text", "")
                for p in calls[1]["parts"])
     # merged result carries both halves
+    assert out["beats"] == [{"key": "hook"}]
     assert out["storySentence"] == {"text": "s"}
     assert out["chosenOption"] == 0 and len(out["options"]) == 3
