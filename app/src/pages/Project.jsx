@@ -126,6 +126,7 @@ export default function Project() {
   const [analysis, setAnalysis] = useState([])
   const [networkError, setNetworkError] = useState(null)
   const [wsAttempted, setWsAttempted] = useState(false)
+  const [previewMeta, setPreviewMeta] = useState(null)  // {seconds,w,h} read off the <video>
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadPct, setUploadPct] = useState(0)
@@ -399,43 +400,87 @@ export default function Project() {
     const c = candidates[candidateIdx]
     const preview = previewUrls[c.id]            // undefined = loading, null = unavailable
     const report = c.publishability
-    const label = report?.publishable ? 'Publish-ready edit' : 'AI-assembled edit'
     const score = report?.overall_publishability_score
+    // Real numbers from the manifest — never invent them.
+    const tl = c.manifest?.pictureTimeline
+    const clipsUsed = c.manifest?.sourceAssetIds?.length
+    const dl = preview
+      ? `${preview}${preview.includes('?') ? '&' : '?'}download=${encodeURIComponent(`${project.name || 'edit'}.mp4`)}`
+      : null
     return (
       <>
         <Breadcrumb projectName={project.name} projectId={projectId} />
-        <div className="candidate-reveal">
-          <div className="candidate-reveal-header">
-            <h2>Your edit is ready.</h2>
-            {candidates.length > 1 && <span>{candidateIdx + 1} of {candidates.length} edits</span>}
-          </div>
-          <div className="candidate-video-wrap">
+        <StepIndicator step={3} />
+        <div className="reveal">
+          <header className="reveal-head">
+            <span className="reveal-eyebrow">
+              {report?.publishable ? 'Publish-ready' : 'First cut'}
+              {Number.isFinite(score) ? ` · scores ${Math.round(score)}` : ''}
+            </span>
+            <h1 className="reveal-title">Your edit is ready.</h1>
+            <p className="reveal-sub">
+              Watch it below. Open the editor to change the cut, or download it as it is.
+            </p>
+          </header>
+
+          <div className="reveal-stage">
             {preview
-              ? <video ref={videoRef} src={preview} autoPlay muted loop playsInline />
-              : <div className="candidate-video-placeholder">
-                  {preview === undefined ? 'Loading preview…' : 'Preview not available'}
+              ? <video
+                  ref={videoRef}
+                  className="reveal-video"
+                  src={preview}
+                  controls autoPlay muted loop playsInline
+                  onLoadedMetadata={(e) => setPreviewMeta({
+                    seconds: e.currentTarget.duration,
+                    w: e.currentTarget.videoWidth,
+                    h: e.currentTarget.videoHeight,
+                  })}
+                />
+              : <div className="reveal-placeholder">
+                  {preview === undefined ? 'Loading your edit…' : 'This preview could not be loaded.'}
                 </div>
             }
           </div>
-          <div className="candidate-info">
-            <p className="candidate-title">{c.candidate_key || `Edit ${candidateIdx + 1}`}</p>
-            <p className="candidate-highlights">
-              {label}{Number.isFinite(score) ? ` · Score: ${Math.round(score)}` : ''}
-            </p>
-            {error && <div className="err" role="alert">{error}</div>}
-            <div className="candidate-actions">
-              <button className="btn btn-primary btn-lg" disabled={opening}
-                onClick={() => openCandidate(c)}>
-                {opening ? 'Opening…' : 'Open in editor'}
-              </button>
-            </div>
+
+          {/* Facts about the cut, read off the render itself and the manifest. */}
+          <dl className="reveal-facts">
+            {previewMeta?.seconds > 0 && (
+              <div><dt>Length</dt><dd>{fmtClock(previewMeta.seconds)}</dd></div>
+            )}
+            {clipsUsed > 0 && (
+              <div><dt>Clips used</dt><dd>{clipsUsed}{assets.length ? ` of ${assets.length}` : ''}</dd></div>
+            )}
+            {previewMeta?.w > 0 && (
+              <div><dt>Frame</dt><dd>{previewMeta.w}×{previewMeta.h}</dd></div>
+            )}
+            {tl?.fps && <div><dt>Rate</dt><dd>{tl.fps} fps</dd></div>}
+          </dl>
+
+          {error && <div className="err" role="alert">{error}</div>}
+
+          <div className="reveal-actions">
+            <button className="btn btn-primary btn-lg" disabled={opening}
+              onClick={() => openCandidate(c)}>
+              {opening ? 'Opening…' : 'Change this edit'}
+            </button>
+            {dl && (
+              <a className="btn btn-ghost btn-lg" href={dl} download>
+                Download this cut
+              </a>
+            )}
           </div>
+
           {candidates.length > 1 && (
-            <div className="candidate-dots">
-              {candidates.map((_, i) => (
-                <button key={i} className={`candidate-dot ${i === candidateIdx ? 'active' : ''}`}
-                  onClick={() => setCandidateIdx(i)} aria-label={`Edit ${i + 1}`} />
-              ))}
+            <div className="reveal-alts">
+              <span className="reveal-alts-label">
+                {candidates.length} versions — {candidateIdx + 1} showing
+              </span>
+              <div className="candidate-dots">
+                {candidates.map((_, i) => (
+                  <button key={i} className={`candidate-dot ${i === candidateIdx ? 'active' : ''}`}
+                    onClick={() => setCandidateIdx(i)} aria-label={`Version ${i + 1}`} />
+                ))}
+              </div>
             </div>
           )}
         </div>
