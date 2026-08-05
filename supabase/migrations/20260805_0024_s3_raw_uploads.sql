@@ -1,4 +1,8 @@
--- Migration 0016: S3 multipart raw-footage uploads
+-- Migration 0024: S3 multipart raw-footage uploads
+--
+-- (Renumbered from 0016 -> 0024 to sequence after main's 0016..0023. This migration
+-- MUST run after 0019_soft_delete_child_rls.sql, which it depends on for the
+-- public.project_not_deleted() predicate below.)
 --
 -- Adds storage-provider provenance to media_assets and a server-owned table that
 -- tracks in-flight multipart upload sessions.
@@ -49,10 +53,17 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 -- SELECT-only for authenticated; writes are service-role only.
+--
+-- NOTE: main's migration 0019 redefined media_assets_all_own (FOR ALL) to also gate
+-- on public.project_not_deleted(project_id) so a soft-deleted project's assets stay
+-- hidden. We drop that write-capable policy and replace it with a SELECT-only policy
+-- that PRESERVES the same soft-delete gating — removing forge/mutate ability without
+-- regressing 0019's visibility rules.
 drop policy if exists media_assets_all_own on public.media_assets;
 drop policy if exists media_assets_select_own on public.media_assets;
 create policy media_assets_select_own on public.media_assets
-  for select to authenticated using (user_id = auth.uid());
+  for select to authenticated
+  using (user_id = auth.uid() and public.project_not_deleted(project_id));
 
 -- ---- raw_upload_sessions ----
 create table if not exists public.raw_upload_sessions (

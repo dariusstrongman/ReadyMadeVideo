@@ -135,8 +135,10 @@ the PUT response to complete the multipart. For local dev add a separate rule wi
 | `EXPORT_STORAGE_PROVIDER` | set to `s3` to also route completed exports to S3 (default `supabase`) |
 
 ### 6. Supabase migration
-Apply `supabase/migrations/20260803_0016_s3_raw_uploads.sql` (media_assets
+Apply `supabase/migrations/20260805_0024_s3_raw_uploads.sql` (media_assets
 provenance columns + `raw_upload_sessions`, RLS locked to the service role).
+It depends on `0019_soft_delete_child_rls.sql` (uses `public.project_not_deleted()`),
+so apply it only after 0019 is in place.
 **Not applied automatically** — run it against `iadzcnzgbtuigyodeqas` when ready.
 
 ---
