@@ -1265,7 +1265,7 @@ def _response_schema() -> dict:
                   "idealDurationSeconds", "strengths", "weaknesses",
                   "footageCoverage", "retentionRisks", "scores"])
     caption = s("OBJECT", properties={
-        "claimType": s("STRING"), "text": s("STRING"),
+        "claimType": s("STRING"), "text": s("STRING", maxLength=90),
         "evidence": s("ARRAY", items=evidence),
         "timelineStart": s("NUMBER"), "timelineEnd": s("NUMBER"),
         "styleTemplate": s("STRING"), "safeArea": s("STRING")},
@@ -1568,7 +1568,10 @@ def gemini_generate(parts: list[dict], schema: dict) -> dict:
           " CHARACTER-FOR-CHARACTER from the cited segment; if a technical"
           " warning cannot cite a verbatim quote, OMIT it — an empty"
           " technicalWarnings array is honest and preferred over a"
-          " paraphrased one. For premise and payoff text, REUSE the wording"
+          " paraphrased one. Caption text has a HARD 90-CHARACTER LIMIT —"
+          " quote a SHORT verbatim excerpt (a phrase, not the whole"
+          " sentence); the evidence quoteOrValue may be longer than the"
+          " caption text. For premise and payoff text, REUSE the wording"
           " of the core plan's storySentence/viewerPromise and the cited"
           " evidence — do not introduce new words.")}]
     rest = generate_json(model, strict_parts, strict, api_key,
