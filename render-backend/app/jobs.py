@@ -392,11 +392,13 @@ def handle_autoedit_v2(job: dict, project: dict, tmp: str, ctx: JobContext) -> d
                          "editorialPlanId": result["editorialPlanId"],
                          "editorialPlanVersion": result["editorialPlanVersion"],
                          "actualDurationSeconds": result["actualDurationSeconds"]}
-            bridged_rows = supa.db_select(
-                "candidate_runs",
-                f"project_id=eq.{project['id']}&generation_kind=eq.bridged&limit=1")
-            if bridged_rows:
-                artifacts["bridgedCandidateRunId"] = bridged_rows[0]["id"]
+            # ancestry-bound: only a candidate descending from THIS timeline
+            # counts — a different (older-engine) timeline's candidate never
+            # satisfies the reuse path
+            bridged_row = autoedit_bridge.find_bridged_candidate(
+                supa.db_select, project["id"], str(run["timeline_v2_id"]))
+            if bridged_row:
+                artifacts["bridgedCandidateRunId"] = bridged_row["id"]
                 log_event("PICTURE-EDIT-V2-REUSED", job_id=job["id"],
                           edit_run_id=run["id"],
                           hash=result["deterministicHash"])

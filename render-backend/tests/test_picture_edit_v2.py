@@ -583,6 +583,175 @@ def test_flag_off_routes_to_legacy_path_untouched(monkeypatch):
     # 21+26: legacy path entered, V2 untouched, no editorial plan required
 
 
+def _picture_timeline_id(fake, candidate):
+    """The source timeline a bridged candidate ancestrally descends from."""
+    pic = fake.select("picture_edit_runs",
+                      f"id=eq.{candidate['picture_edit_run_id']}")[0]
+    return pic["request"]["timeline_id"]
+
+
+def test_new_engine_version_gets_its_own_timeline_bound_candidate(monkeypatch):
+    """Codex repro: a 2.1.0 candidate must NEVER be reused for a new engine
+    version's timeline. Each timeline gets its own immutable candidate; the
+    old pair stays untouched; repeats stay idempotent per timeline."""
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    monkeypatch.setenv("PICTURE_EDIT_ENGINE_V2_ENABLED", "1")
+    _stub_render(monkeypatch)
+    uid, token, project = _project_env(fake)
+
+    jobs.enqueue_job(project["id"], uid, "autoedit", {})
+    jobs._run_job(jobs._claim_next())
+    first = [r for r in fake.select("pipeline_jobs",
+                                    f"project_id=eq.{project['id']}")
+             if r["kind"] == "autoedit"][0]["artifacts"]
+    cand_a = fake.select("candidate_runs", f"id=eq.{first['bridgedCandidateRunId']}")[0]
+    assert _picture_timeline_id(fake, cand_a) == first["timelineId"]
+
+    monkeypatch.setattr(pe2, "ENGINE_VERSION", "2.2.0-test")
+    jobs.enqueue_job(project["id"], uid, "autoedit", {})
+    jobs._run_job(jobs._claim_next())
+    runs = sorted((r for r in fake.select("pipeline_jobs",
+                                          f"project_id=eq.{project['id']}")
+                   if r["kind"] == "autoedit"), key=lambda r: r["created_at"])
+    second = runs[-1]["artifacts"]
+    assert runs[-1]["status"] == "completed"
+    assert second["timelineId"] != first["timelineId"]        # new timeline B
+    assert second["bridgedCandidateRunId"] != first["bridgedCandidateRunId"]
+    cand_b = fake.select("candidate_runs",
+                         f"id=eq.{second['bridgedCandidateRunId']}")[0]
+    # candidate B descends from timeline B; candidate A still from timeline A
+    assert _picture_timeline_id(fake, cand_b) == second["timelineId"]
+    cand_a_after = fake.select("candidate_runs", f"id=eq.{cand_a['id']}")[0]
+    assert cand_a_after == cand_a                             # A unchanged
+    assert _picture_timeline_id(fake, cand_a_after) == first["timelineId"]
+    cands = fake.select("candidate_runs", f"project_id=eq.{project['id']}")
+    assert len(cands) == 2                                    # coexist safely
+
+    # idempotency per timeline: repeat under 2.2.0-test returns candidate B
+    jobs.enqueue_job(project["id"], uid, "autoedit", {})
+    jobs._run_job(jobs._claim_next())
+    third = sorted((r for r in fake.select("pipeline_jobs",
+                                           f"project_id=eq.{project['id']}")
+                    if r["kind"] == "autoedit"),
+                   key=lambda r: r["created_at"])[-1]["artifacts"]
+    assert third["reused"] is True
+    assert third["bridgedCandidateRunId"] == cand_b["id"]     # never A
+    assert len(fake.select("candidate_runs",
+                           f"project_id=eq.{project['id']}")) == 2
+
+
+def test_editor_opens_the_new_timelines_candidate(monkeypatch):
+    from app import main
+    main._rate.clear()
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    monkeypatch.setenv("PICTURE_EDIT_ENGINE_V2_ENABLED", "1")
+    _stub_render(monkeypatch)
+    uid, token, project = _project_env(fake)
+    jobs.enqueue_job(project["id"], uid, "autoedit", {})
+    jobs._run_job(jobs._claim_next())
+    monkeypatch.setattr(pe2, "ENGINE_VERSION", "2.2.0-test")
+    jobs.enqueue_job(project["id"], uid, "autoedit", {})
+    jobs._run_job(jobs._claim_next())
+    art = sorted((r for r in fake.select("pipeline_jobs",
+                                         f"project_id=eq.{project['id']}")
+                  if r["kind"] == "autoedit"),
+                 key=lambda r: r["created_at"])[-1]["artifacts"]
+    cand_b = fake.select("candidate_runs",
+                         f"id=eq.{art['bridgedCandidateRunId']}")[0]
+    assert _picture_timeline_id(fake, cand_b) == art["timelineId"]
+    client = TestClient(app, raise_server_exceptions=False)
+    r = client.post(f"/projects/{project['id']}/editor/start",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={"candidateRunId": cand_b["id"]})
+    assert r.status_code == 200, r.text
+    picture = next(t for t in r.json()["document"]["tracks"]
+                   if t["type"] == "picture")
+    assert len(picture["items"]) == 3        # the NEW timeline's picture items
+
+
+def test_concurrent_bridges_of_new_timeline_never_return_old_candidate(monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from app import autoedit_bridge, supa as supa_mod
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    monkeypatch.setenv("PICTURE_EDIT_ENGINE_V2_ENABLED", "1")
+    _stub_render(monkeypatch)
+    uid, token, project = _project_env(fake)
+    jobs.enqueue_job(project["id"], uid, "autoedit", {})     # candidate A
+    jobs._run_job(jobs._claim_next())
+    cand_a = fake.select("candidate_runs", f"project_id=eq.{project['id']}")[0]
+    tl_a = fake.select("timelines", f"project_id=eq.{project['id']}")[0]
+    tl_b = fake.insert("timelines", {
+        "project_id": project["id"], "user_id": uid, "version": 99,
+        "timeline_json": tl_a["timeline_json"],
+        "lineage": "autonomous_revised", "is_immutable": True}).json()[0]
+
+    lock, orig_insert = threading.Lock(), fake.insert
+    def locked_insert(table, body):
+        with lock:
+            return orig_insert(table, body)
+    monkeypatch.setattr(fake, "insert", locked_insert)
+
+    def bridge(_i, tmp_path="unused"):
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            f.write(b"P")
+            preview = f.name
+        return autoedit_bridge.bridge_from_autoedit(
+            fake.select("projects", f"id=eq.{project['id']}")[0], tl_b, preview,
+            insert=jobs._insert, db_select=supa_mod.db_select,
+            upload_export=jobs._upload_export, now=jobs._now,
+            remove=supa_mod.storage_remove, update=supa_mod.db_update)
+
+    results = list(ThreadPoolExecutor(max_workers=4).map(bridge, range(4)))
+    ids = {r["id"] for r in results}
+    assert len(ids) == 1 and cand_a["id"] not in ids          # one B, never A
+    cands = fake.select("candidate_runs", f"project_id=eq.{project['id']}")
+    assert len(cands) == 2                                    # A + B, no dupes
+
+
+def test_retry_repair_resolves_the_correct_timeline_bound_candidate(monkeypatch):
+    """Bridge fails after the NEW engine version's timeline persisted, while
+    the OLD candidate A still exists. The retry must repair with a candidate
+    for timeline B — not report the old candidate A."""
+    from app import autoedit_bridge
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    monkeypatch.setenv("PICTURE_EDIT_ENGINE_V2_ENABLED", "1")
+    _stub_render(monkeypatch)
+    uid, token, project = _project_env(fake)
+    jobs.enqueue_job(project["id"], uid, "autoedit", {})     # candidate A
+    jobs._run_job(jobs._claim_next())
+    cand_a = fake.select("candidate_runs", f"project_id=eq.{project['id']}")[0]
+
+    monkeypatch.setattr(pe2, "ENGINE_VERSION", "2.2.0-test")
+    real_bridge = autoedit_bridge.bridge_from_autoedit
+    def broken_bridge(*a, **k):
+        raise RuntimeError("bridge died")
+    monkeypatch.setattr(autoedit_bridge, "bridge_from_autoedit", broken_bridge)
+    jobs.enqueue_job(project["id"], uid, "autoedit", {})
+    jobs._run_job(jobs._claim_next())                        # timeline B, no cand B
+
+    monkeypatch.setattr(autoedit_bridge, "bridge_from_autoedit", real_bridge)
+    jobs.enqueue_job(project["id"], uid, "autoedit", {})
+    jobs._run_job(jobs._claim_next())
+    retry = sorted((r for r in fake.select("pipeline_jobs",
+                                           f"project_id=eq.{project['id']}")
+                    if r["kind"] == "autoedit"),
+                   key=lambda r: r["created_at"])[-1]
+    art = retry["artifacts"]
+    assert retry["status"] == "completed"
+    assert art.get("bridgeRepaired") is True                 # A did NOT satisfy reuse
+    assert art["bridgedCandidateRunId"] != cand_a["id"]
+    cand_b = fake.select("candidate_runs",
+                         f"id=eq.{art['bridgedCandidateRunId']}")[0]
+    assert _picture_timeline_id(fake, cand_b) == art["timelineId"]
+
+
 def test_product_editor_opens_the_v2_candidate(monkeypatch):
     from app import main
     main._rate.clear()

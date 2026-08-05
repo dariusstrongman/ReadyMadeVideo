@@ -7,7 +7,9 @@ music/audio ancestry. Basic autoedit has no music, so this bridge produces an ho
 picture timeline, identity color in the manifest, and NO music/captions/graphics.
 
 Nothing here fabricates tempo, beats, energy, a license, captions, graphics, or music.
-The bridge is idempotent: at most one bridged candidate per project.
+The bridge is idempotent PER (project, SOURCE TIMELINE): at most one bridged
+candidate per timeline, and a candidate is only ever reused for the exact
+timeline it descends from — never merely because it belongs to the same project.
 
 Dependencies (insert/patch/db_select/upload_export/now) are injected so the module is
 unit-testable without a live database.
@@ -18,8 +20,10 @@ import uuid
 
 from .logging_util import log_event
 
-# Deterministic namespace so a project always maps to the same bridged batch_id —
-# repeated runs collide on (batch_id, candidate_key) and are skipped, not duplicated.
+# Deterministic namespace so a (project, timeline) pair always maps to the same
+# bridged batch_id — repeated same-timeline runs collide on
+# (batch_id, candidate_key) and are skipped, not duplicated, while different
+# timelines' candidates coexist under distinct batches.
 _BRIDGE_NS = uuid.UUID("5f3b9d2e-0000-4000-a000-000000000b21")
 
 IDENTITY_COLOR = {
@@ -172,13 +176,38 @@ def _cleanup_or_persist(*, remove, insert, update, now, project: dict, bucket: s
         return False
 
 
+def bridged_picture_id(project_id: str, timeline_id: str) -> str:
+    """Deterministic picture_edit_runs id for one (project, timeline) bridge."""
+    return str(uuid.uuid5(_BRIDGE_NS, f"{project_id}:{timeline_id}:picture"))
+
+
+def find_bridged_candidate(db_select, project_id: str, timeline_id: str):
+    """The bridged candidate DESCENDING FROM this exact timeline, or None.
+
+    Reuse is ancestry-bound: a candidate qualifies only when its
+    picture_edit_run is the deterministic per-(project, timeline) picture row —
+    a candidate that belongs to the same project but descends from a DIFFERENT
+    timeline (e.g. an older engine version's output) is never returned.
+    """
+    rows = db_select(
+        "candidate_runs",
+        f"project_id=eq.{project_id}&generation_kind=eq.bridged"
+        f"&picture_edit_run_id=eq.{bridged_picture_id(project_id, timeline_id)}"
+        "&limit=1")
+    return rows[0] if rows else None
+
+
 def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: str,
                          *, insert, db_select, upload_export, now,
                          remove=None, update=None, json_loads=None) -> dict | None:
     """Create (idempotently) a bridged candidate_runs from a basic-autoedit timeline.
 
-    Returns the candidate row (new or pre-existing), or None if the timeline has no
-    usable picture clips to bridge.
+    Idempotent PER (project, timeline): repeated bridges of the same timeline
+    return the same candidate; a different timeline (a new engine version's
+    output, a re-edit) gets its OWN candidate — candidates of older timelines
+    are never reused for a new timeline and are never mutated. Returns the
+    candidate row (new or pre-existing), or None if the timeline has no usable
+    picture clips to bridge.
     """
     import json as _json
     loads = json_loads or _json.loads
@@ -187,12 +216,12 @@ def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: 
     _drain_pending_cleanup(db_select=db_select, remove=remove, update=update, now=now,
                            project_id=project["id"])
 
-    # Idempotency: one bridged candidate per project.
-    existing = db_select(
-        "candidate_runs",
-        f"project_id=eq.{project['id']}&generation_kind=eq.bridged&limit=1")
+    # Idempotency: one bridged candidate per (project, SOURCE TIMELINE) —
+    # ancestry-bound, never merely project-bound.
+    existing = find_bridged_candidate(db_select, project["id"],
+                                      str(timeline_row["id"]))
     if existing:
-        return existing[0]
+        return existing
 
     timeline = timeline_row["timeline_json"]
     if isinstance(timeline, str):
@@ -210,7 +239,7 @@ def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: 
     # and recovery re-runs converge on ONE preproduction + ONE picture row — never a
     # duplicate, never cross-linked to another timeline.
     pre_id = str(uuid.uuid5(_BRIDGE_NS, f"{project['id']}:{timeline_id}:preproduction"))
-    pic_id = str(uuid.uuid5(_BRIDGE_NS, f"{project['id']}:{timeline_id}:picture"))
+    pic_id = bridged_picture_id(project["id"], timeline_id)
 
     # Real, minimal preproduction ancestry (honest defaults; no fabricated analysis).
     pre = _bridge_ancestry(insert, db_select, "preproduction_runs", project["id"], pre_id, {
@@ -241,7 +270,9 @@ def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: 
     picture_candidate_id = pic.get("selected_candidate_id") or picture_candidate_id
 
     # Preview under the documented bridged/autoedit prefix (real autoedit render).
-    candidate_id_hint = uuid.uuid5(_BRIDGE_NS, f"{project['id']}:cand")
+    # Per-(project, TIMELINE) preview key: coexisting timelines never share or
+    # overwrite each other's preview object.
+    candidate_id_hint = uuid.uuid5(_BRIDGE_NS, f"{project['id']}:{timeline_id}:cand")
     preview_path = upload_export(
         project, f"autoedit/{candidate_id_hint}.mp4", preview_local_path)
 
@@ -256,7 +287,10 @@ def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: 
         "fabricatedFootage": False,
     }
 
-    batch_id = str(uuid.uuid5(_BRIDGE_NS, str(project["id"])))
+    # Per-(project, TIMELINE) batch: unique(batch_id, candidate_key) then allows
+    # exactly one bridged candidate per timeline while candidates of different
+    # timelines (older engine versions) coexist immutably.
+    batch_id = str(uuid.uuid5(_BRIDGE_NS, f"{project['id']}:{timeline_id}"))
     row = {
         "batch_id": batch_id, "project_id": project["id"], "user_id": uid,
         "preproduction_run_id": pre["id"], "picture_edit_run_id": pic["id"],
@@ -276,9 +310,9 @@ def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: 
     if resp.status_code == 201:
         return resp.json()[0]
     if resp.status_code == 409:  # lost an idempotency race — return the winner
-        again = db_select(
-            "candidate_runs",
-            f"project_id=eq.{project['id']}&generation_kind=eq.bridged&limit=1")
+        again = find_bridged_candidate(db_select, project["id"], timeline_id)
+        if again:
+            again = [again]
         if again:
             # The preview object key is deterministic PER PROJECT, so our upload wrote the
             # exact object the winning candidate references — it is NOT an orphan and must
