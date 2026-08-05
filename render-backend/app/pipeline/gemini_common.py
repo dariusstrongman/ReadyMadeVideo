@@ -70,15 +70,66 @@ def delete_file(file_name: str, api_key: str) -> bool:
         return False
 
 
+def prune_schema(schema: dict, max_depth: int) -> dict:
+    """Structurally prune a response_schema below max_depth.
+
+    Gemini compiles response_schema into a constraint automaton with a hard
+    state budget; a large nested schema (the Editorial Planner's is ~240 typed
+    nodes) is rejected with "too many states for serving" REGARDLESS of content.
+    Below the cut-off, objects become free-form OBJECT and arrays become arrays
+    of free-form OBJECT — the model still sees the full contract in the prompt,
+    and every consumer of generate_json re-validates with pydantic plus its own
+    deterministic gate, so wire-schema looseness never reaches persistence.
+    """
+    def walk(node, depth):
+        if not isinstance(node, dict):
+            return node
+        t = node.get("type")
+        if depth >= max_depth:
+            if t == "ARRAY":
+                return {"type": "ARRAY", "items": {"type": "OBJECT"}}
+            if t == "OBJECT":
+                return {"type": "OBJECT"}
+            return {"type": t} if t else {}
+        out = dict(node)
+        if "properties" in out:
+            out["properties"] = {k: walk(v, depth + 1)
+                                 for k, v in out["properties"].items()}
+        if "items" in out:
+            out["items"] = walk(out["items"], depth + 1)
+        return out
+    return walk(schema, 0)
+
+
+# "too many states" fallback ladder: full schema first, then progressively
+# pruned, then fully free-form JSON. Only this specific rejection walks the
+# ladder — every other error raises immediately.
+_TOO_MANY_STATES = "too many states"
+
+
 def generate_json(model: str, parts: list[dict], schema: dict, api_key: str,
                   temperature: float = 0.2, timeout: int = 600):
-    body = {"contents": [{"parts": parts}],
-            "generationConfig": {"response_mime_type": "application/json",
-                                 "response_schema": schema,
-                                 "temperature": temperature}}
-    st, out, _ = http("POST", f"{BASE}/v1beta/models/{model}:generateContent"
-                              f"?key={api_key}",
-                      headers={"Content-Type": "application/json"}, body=body,
-                      timeout=timeout)
-    text = out["candidates"][0]["content"]["parts"][0]["text"]
-    return json.loads(text)
+    ladder = [schema, prune_schema(schema, 4), prune_schema(schema, 2),
+              {"type": "OBJECT"}]
+    last = None
+    for i, wire_schema in enumerate(ladder):
+        body = {"contents": [{"parts": parts}],
+                "generationConfig": {"response_mime_type": "application/json",
+                                     "response_schema": wire_schema,
+                                     "temperature": temperature}}
+        try:
+            st, out, _ = http(
+                "POST", f"{BASE}/v1beta/models/{model}:generateContent"
+                        f"?key={api_key}",
+                headers={"Content-Type": "application/json"}, body=body,
+                timeout=timeout)
+        except RuntimeError as e:
+            if _TOO_MANY_STATES in str(e) and i + 1 < len(ladder):
+                last = e
+                print(f"[gemini] response_schema rejected (too many states) at "
+                      f"ladder rung {i}; retrying with a pruned schema")
+                continue
+            raise
+        text = out["candidates"][0]["content"]["parts"][0]["text"]
+        return json.loads(text)
+    raise last
