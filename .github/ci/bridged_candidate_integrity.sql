@@ -108,6 +108,55 @@ select pg_temp.expect_rejected($sql$
     'f5000000-0000-0000-0000-000000000001')
 $sql$, 'bridged preview must use the autoedit prefix');
 
+-- Migration 0023: bridged-candidate uniqueness is ANCESTRY-BOUND (one per
+-- picture_edit_run, i.e. per source timeline) while different timelines'
+-- candidates coexist as separate immutable rows.
+do $$ begin
+  if not exists (select 1 from pg_indexes
+                 where indexname = 'candidate_runs_bridged_per_picture_idx') then
+    raise exception 'bridged-per-picture unique index is missing';
+  end if;
+end $$;
+-- a SECOND bridged candidate for the SAME picture run (new batch) is rejected
+select pg_temp.expect_rejected($sql$
+  insert into public.candidate_runs
+   (batch_id, project_id, user_id, preproduction_run_id, picture_edit_run_id,
+    candidate_key, candidate_index, generation_kind, source_picture_candidate_id,
+    variant_config, manifest, render_qc, preview_storage_bucket, preview_storage_path, created_by)
+  values ('f5000000-0000-0000-0000-000000000091', 'f5000000-0000-0000-0000-000000000010',
+    'f5000000-0000-0000-0000-000000000001', 'f5000000-0000-0000-0000-000000000020',
+    'f5000000-0000-0000-0000-000000000030', 'bridged', 1, 'bridged', 'bridged-pc', '{}',
+    '{"fabricatedFootage":false}', '{}', 'exports',
+    'users/f5000000-0000-0000-0000-000000000001/projects/f5000000-0000-0000-0000-000000000010/autoedit/dup.mp4',
+    'f5000000-0000-0000-0000-000000000001')
+$sql$, 'duplicate bridged candidate for the same picture run/timeline');
+-- a bridged candidate for a DIFFERENT timeline (preproduction B + its own
+-- picture run) COEXISTS with the first candidate
+insert into public.picture_edit_runs
+ (id, project_id, user_id, preproduction_run_id, version, status, request,
+  visual_rhythm_plans, candidates, selected_candidate_id) values
+ ('f5000000-0000-0000-0000-000000000031', 'f5000000-0000-0000-0000-000000000010',
+  'f5000000-0000-0000-0000-000000000001', 'f5000000-0000-0000-0000-000000000021', 2,
+  'ready', '{}', '{}', '[]', 'bridged-pc-b');
+insert into public.candidate_runs
+ (batch_id, project_id, user_id, preproduction_run_id, picture_edit_run_id,
+  candidate_key, candidate_index, generation_kind, source_picture_candidate_id,
+  variant_config, manifest, render_qc, preview_storage_bucket, preview_storage_path,
+  created_by) values
+ ('f5000000-0000-0000-0000-000000000092', 'f5000000-0000-0000-0000-000000000010',
+  'f5000000-0000-0000-0000-000000000001', 'f5000000-0000-0000-0000-000000000021',
+  'f5000000-0000-0000-0000-000000000031', 'bridged', 1, 'bridged', 'bridged-pc-b', '{}',
+  '{"fabricatedFootage":false}', '{}', 'exports',
+  'users/f5000000-0000-0000-0000-000000000001/projects/f5000000-0000-0000-0000-000000000010/autoedit/b.mp4',
+  'f5000000-0000-0000-0000-000000000001');
+do $$ begin
+  if (select count(*) from public.candidate_runs
+      where project_id = 'f5000000-0000-0000-0000-000000000010'
+        and generation_kind = 'bridged') <> 2 then
+    raise exception 'same-project different-timeline bridged candidates must coexist';
+  end if;
+end $$;
+
 -- Ancestry: a bridged candidate's picture_edit_run must descend from the SAME
 -- preproduction_run the candidate points at (picture bound to the selected preproduction,
 -- never cross-linked to another).

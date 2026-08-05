@@ -194,6 +194,14 @@ class FakeSupabase:
                                   or r.get("candidate_index") == b.get("candidate_index"))]
                 if duplicate:
                     return resp(409, {"message": "duplicate editorial candidate"})
+                # Mirror migration 0023: at most one bridged candidate per
+                # picture_edit_run (i.e. per source timeline).
+                if b.get("generation_kind") == "bridged" and any(
+                        r.get("generation_kind") == "bridged"
+                        and r.get("picture_edit_run_id") == b.get("picture_edit_run_id")
+                        for r in self.tables[table]):
+                    return resp(409, {"message": "duplicate bridged candidate for "
+                                                 "picture_edit_run"})
                 # Mirror migration 0016 candidate_runs_bridged_ancestry_check.
                 lineage = ("music_sound_run_id", "audio_mix_run_id",
                            "graphics_run_id", "caption_run_id", "color_run_id")
