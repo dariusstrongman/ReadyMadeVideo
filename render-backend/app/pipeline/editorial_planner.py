@@ -1247,10 +1247,14 @@ def _response_schema() -> dict:
         required=["segmentId", "assetId", "sourceIn", "sourceOut", "timelineIn",
                   "timelineOut", "beat", "reason", "addsNew",
                   "expectedViewerEffect"])
-    assessment = s("OBJECT", properties={**{k: s("INTEGER") for k in (
-        "hook", "storyClarity", "flowContinuity", "pacing", "clipSelection",
-        "payoff", "visualVariety", "creativeTreatment", "soundDesign",
-        "platformFit", "durationCompliance")},
+    # per-field maxima mirror ModelSelfAssessment exactly — without them on the
+    # wire the model scored uniform 0-10 and busted every 0-5 scale
+    _scales = {"hook": 15, "storyClarity": 15, "flowContinuity": 10,
+               "pacing": 10, "clipSelection": 10, "payoff": 10,
+               "visualVariety": 5, "creativeTreatment": 10, "soundDesign": 5,
+               "platformFit": 5, "durationCompliance": 5}
+    assessment = s("OBJECT", properties={**{
+        k: s("INTEGER", minimum=0, maximum=v) for k, v in _scales.items()},
         "hardFailures": s("ARRAY", items=s("STRING"))},
         required=["hook", "storyClarity", "flowContinuity", "pacing",
                   "clipSelection", "payoff", "visualVariety",
