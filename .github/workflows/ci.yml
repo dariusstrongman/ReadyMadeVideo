@@ -32,6 +32,8 @@ jobs:
         run: npm test
       - name: Frontend secret guard (no service keys in source or bundle)
         run: node scripts/check-secrets.mjs
+      - name: Frontend classname guard (no JSX class without a CSS rule)
+        run: node scripts/check-classnames.mjs
       - name: Dependency vulnerability scan (npm audit)
         run: npm audit --audit-level=high
       - name: License report (frontend)
