@@ -1384,6 +1384,20 @@ def plan_editorial(segments: list[Segment], constraints: dict,
         except ValidationError as exc:
             violations = [f"schema: {e['loc']} {e['msg']}"
                           for e in exc.errors()[:10]]
+            # Attach a compact sample of what the model ACTUALLY emitted at the
+            # first failing location — five production rounds were spent
+            # guessing at output shape from field names alone.
+            try:
+                loc = exc.errors()[0]["loc"]
+                node = raw
+                for part in loc[:-1]:
+                    node = node[part]
+                violations.append(
+                    "modelOutputSample at "
+                    f"{'.'.join(str(x) for x in loc[:-1]) or 'root'}: "
+                    + json.dumps(node)[:400])
+            except Exception:  # noqa: BLE001 — sampling must never mask errors
+                pass
         else:
             violations = validate_plan(plan, segments, constraints,
                                        music_available)
