@@ -95,3 +95,23 @@ def test_other_errors_do_not_walk_the_ladder(monkeypatch):
     monkeypatch.setattr(gemini_common, "http", fake_http)
     with pytest.raises(RuntimeError, match="API key not valid"):
         gemini_common.generate_json("m", [{"text": "hi"}], _deep_schema(), "k")
+
+
+def test_pruned_rungs_carry_the_full_contract_in_the_prompt(monkeypatch):
+    seen_parts = []
+
+    def fake_http(method, url, headers=None, body=None, raw=None, timeout=300):
+        seen_parts.append(body["contents"][0]["parts"])
+        if len(seen_parts) == 1:
+            raise RuntimeError("400: schema has too many states for serving")
+        return 200, {"candidates": [{"content": {"parts": [
+            {"text": "{\"ok\": true}"}]}}]}, {}
+
+    monkeypatch.setattr(gemini_common, "http", fake_http)
+    gemini_common.generate_json("m", [{"text": "prompt"}], _deep_schema(), "k")
+    # rung 0: prompt untouched (schema is on the wire in full)
+    assert seen_parts[0] == [{"text": "prompt"}]
+    # rung 1: pruned wire schema, so the FULL contract rides in the prompt
+    assert len(seen_parts[1]) == 2
+    assert "STRICT OUTPUT CONTRACT" in seen_parts[1][1]["text"]
+    assert '"required"' in seen_parts[1][1]["text"]

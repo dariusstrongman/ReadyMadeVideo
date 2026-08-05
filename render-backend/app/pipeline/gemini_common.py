@@ -113,7 +113,18 @@ def generate_json(model: str, parts: list[dict], schema: dict, api_key: str,
               {"type": "OBJECT"}]
     last = None
     for i, wire_schema in enumerate(ladder):
-        body = {"contents": [{"parts": parts}],
+        rung_parts = list(parts)
+        if i > 0:
+            # The wire schema was pruned, so Gemini no longer sees required
+            # fields / enums below the cut. Hand it the FULL contract as prompt
+            # text instead — first production run on a pruned rung dropped
+            # required nested fields and invented enum values without this.
+            rung_parts.append({"text": (
+                "STRICT OUTPUT CONTRACT — the JSON you return MUST validate "
+                "against this exact JSON Schema (every `required` field, exact "
+                "property names, exact `enum` values):\n"
+                + json.dumps(schema))})
+        body = {"contents": [{"parts": rung_parts}],
                 "generationConfig": {"response_mime_type": "application/json",
                                      "response_schema": wire_schema,
                                      "temperature": temperature}}

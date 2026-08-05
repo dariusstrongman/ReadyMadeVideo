@@ -1165,7 +1165,10 @@ def _response_schema() -> dict:
         "sourceType": s("STRING"), "segmentId": s("STRING"),
         "quoteOrValue": s("STRING")}, required=["sourceType", "quoteOrValue"])
     grounded = s("OBJECT", properties={
-        "text": s("STRING"), "claimType": s("STRING"),
+        "text": s("STRING"),
+        # the exact pydantic contract — without the enum here, a pruned wire
+        # schema left the model inventing claimType values
+        "claimType": s("STRING", enum=["fact", "editorial_label", "cta"]),
         "evidence": s("ARRAY", items=evidence)},
         required=["text", "claimType"])
     scores = s("OBJECT", properties={k: s("INTEGER") for k in (
