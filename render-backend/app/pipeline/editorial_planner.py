@@ -1435,30 +1435,47 @@ def gemini_generate(parts: list[dict], schema: dict) -> dict:
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY not configured")
     model = os.environ.get("EDITORIAL_PLANNER_MODEL", "gemini-2.5-pro")
-    # Ladder tuned to THIS schema: the deliberation subtree (`options`, three
-    # full scored alternatives) is the fattest branch and the only part the
-    # downstream engine never reads — so it is sacrificed first, keeping the
-    # load-bearing contract (hook, timeline, pacing, execution) wire-enforced
-    # for as long as the state budget allows. Production showed uniform depth
-    # pruning strips `options`' required-field enforcement and the model then
-    # drops those fields even with the contract in the prompt.
+    # TWO-CALL SPLIT. Measured on production (2026-08-05): the full response
+    # schema exceeds Gemini's structured-output state budget, the wire degrades
+    # to coarse pruning, and the model then emits EMPTY OBJECTS for every
+    # repetitive deep structure the wire no longer enforces — first options,
+    # then captions/graphics/technicalWarnings evidence. Root-level grounded
+    # fields survive coarse pruning fine. So the deep repetitive sections are
+    # generated in a SECOND call whose combined subtree schema (~4 KB) fits the
+    # budget with FULL enforcement, grounded on the already-decided core plan.
     from .gemini_common import prune_schema
     import copy
-    # options-shallow: options items keep their REQUIRED KEY NAMES on the wire
-    # (presence enforced) while interiors go free — production showed that with
-    # options fully freed the model reliably omits `premise`/`payoff` no matter
-    # what the prompt says, and presence costs almost nothing in states.
-    options_shallow = copy.deepcopy(schema)
-    opts = options_shallow.get("properties", {}).get("options")
-    if opts is not None and isinstance(opts.get("items"), dict):
-        options_shallow["properties"]["options"] = \
-            {"type": "ARRAY", "items": prune_schema(opts["items"], 1)}
-    options_free = copy.deepcopy(schema)
-    if options_free.get("properties", {}).get("options") is not None:
-        options_free["properties"]["options"] = \
-            {"type": "ARRAY", "items": {"type": "OBJECT"}}
-    ladder = [schema, options_shallow, options_free,
-              prune_schema(options_free, 4), prune_schema(schema, 2),
-              {"type": "OBJECT"}]
-    return generate_json(model, parts, schema, api_key,
-                         temperature=0.4, timeout=600, ladder=ladder)
+    STRICT_SECTIONS = ("options", "chosenOption", "captions", "graphics",
+                       "technicalWarnings")
+    core = copy.deepcopy(schema)
+    for k in STRICT_SECTIONS:
+        core.get("properties", {}).pop(k, None)
+    if "required" in core:
+        core["required"] = [r for r in core["required"]
+                            if r not in STRICT_SECTIONS]
+    core_ladder = [core, prune_schema(core, 4), prune_schema(core, 2),
+                   {"type": "OBJECT"}]
+    plan_core = generate_json(model, parts, core, api_key,
+                              temperature=0.4, timeout=600,
+                              ladder=core_ladder)
+
+    strict = {"type": "OBJECT",
+              "properties": {k: schema["properties"][k]
+                             for k in STRICT_SECTIONS
+                             if k in schema.get("properties", {})},
+              "required": [k for k in STRICT_SECTIONS
+                           if k in schema.get("properties", {})]}
+    strict_parts = list(parts) + [{"text": (
+        "THE CORE PLAN IS ALREADY DECIDED (do not change it):\n"
+        + json.dumps(plan_core)[:20000]
+        + "\n\nNow produce ONLY the remaining sections for this exact plan:"
+          " exactly 3 creative options that were considered (each fully"
+          " scored, grounded in the same segment catalog) with chosenOption ="
+          " the index the core plan implements; the captions; the graphics;"
+          " and the technical warnings. Every claim needs REAL evidence"
+          " entries (sourceType + quoteOrValue from the catalog) — an empty"
+          " evidence object is a rejection.")}]
+    rest = generate_json(model, strict_parts, strict, api_key,
+                         temperature=0.4, timeout=600,
+                         ladder=[strict, {"type": "OBJECT"}])
+    return {**plan_core, **rest}

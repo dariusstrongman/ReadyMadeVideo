@@ -136,32 +136,40 @@ def test_caller_supplied_ladder_is_used(monkeypatch):
     assert tried == custom
 
 
-def test_planner_ladder_sacrifices_options_first(monkeypatch):
+def test_planner_split_generates_core_then_strict_options(monkeypatch):
     from app.pipeline import editorial_planner as ep
-    captured = {}
+    calls = []
 
     def fake_generate_json(model, parts, schema, key, temperature, timeout,
                            ladder=None):
-        captured["ladder"] = ladder
-        return {"ok": True}
+        calls.append({"schema": schema, "ladder": ladder, "parts": parts})
+        if len(calls) == 1:
+            return {"storySentence": {"text": "s"}}          # core
+        return {"options": [1, 2, 3], "chosenOption": 0,
+                "captions": [], "graphics": [],
+                "technicalWarnings": []}                     # strict sections
 
     monkeypatch.setenv("GEMINI_API_KEY", "k")
-    # gemini_generate imports generate_json from gemini_common at call time
     monkeypatch.setattr(gemini_common, "generate_json", fake_generate_json)
-    ep.gemini_generate([{"text": "p"}], ep._response_schema())
-    ladder = captured["ladder"]
-    # rung 0: full schema, options intact
-    assert "properties" in ladder[0]["properties"]["options"]["items"]
-    # rung 1: options keep REQUIRED KEY PRESENCE on the wire (production round
-    # 5: with options fully freed the model omitted premise/viewerPromise/
-    # hook/structure/payoff wholesale), interiors free, rest fully enforced
-    r1_items = ladder[1]["properties"]["options"]["items"]
-    assert set(r1_items.get("required", [])) >= \
-        {"premise", "viewerPromise", "hook", "structure", "payoff"}
-    assert r1_items["properties"]["premise"] == {"type": "OBJECT"}
-    assert "properties" in ladder[1]["properties"]["hook"]
-    # rung 2: options fully freed, everything else still enforced
-    assert ladder[2]["properties"]["options"] == \
-        {"type": "ARRAY", "items": {"type": "OBJECT"}}
-    # last rung is always free-form
-    assert ladder[-1] == {"type": "OBJECT"}
+    out = ep.gemini_generate([{"text": "p"}], ep._response_schema())
+
+    assert len(calls) == 2
+    # call 1: core schema has NO options/chosenOption anywhere
+    core = calls[0]["schema"]
+    for k in ("options", "chosenOption", "captions", "graphics",
+              "technicalWarnings"):
+        assert k not in core["properties"]
+        assert k not in core.get("required", [])
+    # call 2: options schema is STRICT (no pruned rung before free-form) and
+    # small enough for the state budget — measured accepted in production
+    assert set(calls[1]["ladder"][0]["required"]) == \
+        {"options", "chosenOption", "captions", "graphics",
+         "technicalWarnings"}
+    assert "properties" in \
+        calls[1]["ladder"][0]["properties"]["options"]["items"]
+    # call 2 sees the core plan it must deliberate for
+    assert any("CORE PLAN IS ALREADY DECIDED" in p.get("text", "")
+               for p in calls[1]["parts"])
+    # merged result carries both halves
+    assert out["storySentence"] == {"text": "s"}
+    assert out["chosenOption"] == 0 and len(out["options"]) == 3
