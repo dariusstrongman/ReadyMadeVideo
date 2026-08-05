@@ -188,6 +188,18 @@ def test_actual_energy_measured_from_footage_motion_and_cut_density():
     assert calm_hook["actualEnergy"] != calm_hook["energyTarget"]
 
 
+def test_matching_energy_yields_zero_deviation():
+    """A plan whose target equals the measured delivery scores zero deviation."""
+    segs = [s.model_copy(update={"motionIntensity": 0.8}) for s in _segments()]
+    plan = _valid_plan()
+    for pb in plan["pacing"]:
+        pb["energy"] = 0.53           # == 0.6*0.8 + 0.4*min(1, 0.25/2)
+    out = _build(plan=plan, segments=segs)
+    for m in out["pacingMetrics"]:
+        assert m["actualEnergy"] == 0.53
+        assert m["energyDeviation"] == 0.0
+
+
 def test_payoff_hold_materially_violated_is_rejected():
     plan = _valid_plan()
     plan["pacing"][2]["targetDurationSeconds"] = 10.0        # payoff hold of 10s
@@ -362,26 +374,37 @@ def test_fps_string_never_truncates_fractional_rates():
     assert fps({"fps": 23.976}) == "23.976"
 
 
-def test_square_output_and_fractional_fps_rendered_correctly(two_clips,
-                                                             tmp_path):
-    """Codex repro: an approved 1080x1080 @ 29.97 plan must render square at
-    29.97 — not 16:9 at 29."""
+def _probe_dims_fps(out_path):
     import json as _json
 
     from app.renderer import FFPROBE, probe
-    result = _render_result("hard_cut")
-    result["timeline"].update(width=1080, height=1080, fps=29.97)
-    out = str(tmp_path / "square.mp4")
-    picture_render_v2.render_picture_edit(result, two_clips, out)
-    info = probe(out)
-    assert (info.width, info.height) == (640, 640)          # aspect preserved
+    info = probe(out_path)
     raw = subprocess.run([FFPROBE, "-v", "error", "-print_format", "json",
-                          "-show_streams", out], capture_output=True,
+                          "-show_streams", out_path], capture_output=True,
                          check=True, timeout=60).stdout
     vstream = next(s for s in _json.loads(raw)["streams"]
                    if s["codec_type"] == "video")
     num, den = vstream["r_frame_rate"].split("/")
-    assert abs(int(num) / int(den) - 29.97) < 0.01           # not truncated
+    return (info.width, info.height), int(num) / int(den)
+
+
+@pytest.mark.parametrize("w,h,fps,want_dims", [
+    (1080, 1080, 29.97, (640, 640)),     # SQUARE @ fractional (Codex repro)
+    (1920, 1080, 30.0, (640, 360)),      # landscape @ integer
+    (1080, 1920, 59.94, (360, 640)),     # portrait @ fractional
+])
+def test_every_aspect_and_fps_rendered_correctly(two_clips, tmp_path,
+                                                 w, h, fps, want_dims):
+    """Real ffprobe verification for landscape, portrait AND square outputs at
+    integer and fractional frame rates — never coerced to 16:9, never
+    truncated to an integer rate."""
+    result = _render_result("hard_cut")
+    result["timeline"].update(width=w, height=h, fps=fps)
+    out = str(tmp_path / f"out-{w}x{h}-{fps}.mp4")
+    picture_render_v2.render_picture_edit(result, two_clips, out)
+    dims, real_fps = _probe_dims_fps(out)
+    assert dims == want_dims
+    assert abs(real_fps - fps) < 0.01
 
 
 # ------------------------------------------------ handler / flag / idempotency
@@ -593,11 +616,25 @@ def test_engine_output_contract_fields():
                   "technicalWarnings", "unsupportedExecution",
                   "trimAdjustments", "deterministicHash", "createdAt"):
         assert field in out, field
-    assert out["schemaVersion"] == 1 and out["engineVersion"] == "2.0.0"
+    assert out["schemaVersion"] == 1 and out["engineVersion"] == "2.1.0"
+    # canonical fields + documented compatibility aliases carry equal values
     assert out["actualDuration"] == out["actualDurationSeconds"] == 12.0
     assert out["requestedDuration"] == {"min": None, "max": None}
     bounded = _build(request={"durationMin": 10, "durationMax": 20})
     assert bounded["requestedDuration"] == {"min": 10, "max": 20}
+    assert bounded["requestedDurationMin"] == 10
+    assert bounded["requestedDurationMax"] == 20
+
+
+def test_engine_version_is_bound_into_the_deterministic_hash(monkeypatch):
+    """Payload changes must ship with an ENGINE_VERSION bump: the version is
+    part of the hash identity, so a bumped engine never collides with (or
+    silently reuses) results persisted by an older engine."""
+    base = _build()
+    monkeypatch.setattr(pe2, "ENGINE_VERSION", "9.9.9-test")
+    bumped = _build()
+    assert bumped["engineVersion"] == "9.9.9-test"
+    assert bumped["deterministicHash"] != base["deterministicHash"]
 
 
 def test_continuity_findings_flag_repetition_and_backjumps():

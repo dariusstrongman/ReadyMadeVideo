@@ -8,7 +8,13 @@ Pipeline position:
 
 The engine is PURE and DETERMINISTIC: same (project, plan version, source
 catalog, engine version) always produces the same PictureEditV2 result and
-deterministic hash. It never invents footage, never reorders the approved
+deterministic hash.
+
+Contract note — canonical vs compatibility fields: `actualDuration` and
+`requestedDuration` {min,max} are the CANONICAL duration fields;
+`actualDurationSeconds` / `requestedDurationMin` / `requestedDurationMax` are
+flat COMPATIBILITY ALIASES carrying the same values for scalar-preferring
+consumers. New consumers should read the canonical fields. It never invents footage, never reorders the approved
 beats, never falls back to the old selector, and fails loudly with the exact
 validation reason when the plan is missing, unapproved, ungrounded against the
 CURRENT catalog, or impossible to execute.
@@ -32,7 +38,12 @@ from .editorial_planner import APPROVAL_THRESHOLD, EditorialPlan, TIME_EPSILON
 from .schemas import Segment
 
 SCHEMA_VERSION = 1
-ENGINE_VERSION = "2.0.0"
+# ENGINE_VERSION participates in the deterministic hash and the idempotency
+# identity: ANY change to the output payload or its semantics MUST bump this,
+# or previously persisted results would collide/miss across engine revisions.
+# 2.1.0: added actualDuration/requestedDuration canonical fields and measured
+#        actualEnergy/energyDeviation pacing metrics (payload change).
+ENGINE_VERSION = "2.1.0"
 DURATION_TOLERANCE = 0.1
 RAMP_CONSISTENCY_TOLERANCE = 0.25
 # a beat's actual duration may deviate this much from the approved pacing
@@ -407,10 +418,13 @@ def build_picture_edit(plan_row: dict, segments: list[Segment], *,
             "speedInstructions": speed_instructions,
             "transitionInstructions": transition_instructions,
             "reframeInstructions": reframe_instructions,
+            # canonical duration fields of the PictureEditV2 contract
             "actualDuration": actual_duration,
-            "actualDurationSeconds": actual_duration,
             "requestedDuration": {"min": request.get("durationMin"),
                                   "max": request.get("durationMax")},
+            # COMPATIBILITY ALIASES (not canonical): flat duplicates of the two
+            # canonical fields above, kept for consumers that prefer scalars.
+            "actualDurationSeconds": actual_duration,
             "requestedDurationMin": request.get("durationMin"),
             "requestedDurationMax": request.get("durationMax"),
             "pacingMetrics": pacing_metrics,
