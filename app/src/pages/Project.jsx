@@ -799,6 +799,14 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError, se
 
   const state = deriveProcessingState({ project, assets, analysis, jobs })
 
+  // ── Hooks ──
+  // Every hook must run on every render. These two previously sat below the
+  // `if (networkError) return` bail-out, so the hook count changed whenever a
+  // poll failed or recovered — React then tore down the whole tree and the app
+  // rendered as a blank page.
+  const [retrying, setRetrying] = React.useState(false)
+  const [retryError, setRetryError] = React.useState('')
+
   // ── Live elapsed timer ──
   const [elapsed, setElapsed] = React.useState(0)
   React.useEffect(() => {
@@ -844,9 +852,6 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError, se
   }
 
   // ── Stalled / no job created ──
-  const [retrying, setRetrying] = React.useState(false)
-  const [retryError, setRetryError] = React.useState('')
-
   const canRetry = (
     session &&
     project.user_id === session.user.id &&
