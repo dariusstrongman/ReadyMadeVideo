@@ -2443,3 +2443,12 @@ textarea { resize: vertical; min-height: 80px; }
   padding: var(--sp-10) var(--sp-8);
   border-radius: var(--radius-xl);
 }
+
+/* Preview-proxy note under the reveal actions — the preview is watchable, but
+   it is never the deliverable. */
+.reveal-preview-note {
+  text-align: center; margin-top: var(--sp-4);
+  font-size: var(--text-xs); color: var(--text-3);
+}
+.reveal-preview-note a { color: var(--text-2); text-decoration: underline; }
+.reveal-preview-note a:hover { color: var(--text); }

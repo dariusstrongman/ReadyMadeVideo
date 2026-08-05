@@ -458,6 +458,46 @@ def op_request_analysis(project_id: str,
     return job
 
 
+@app.post("/projects/{project_id}/request-edit")
+def customer_request_edit(project_id: str,
+                          authorization: str = Header(default="")):
+    """Resume the analysis -> edit journey from wherever it stopped.
+
+    The explicit retry path for a failed editorial_plan or autoedit job:
+    - V2 flag ON: re-enqueues editorial_plan (chain source preserved), or —
+      when an APPROVED plan already exists — skips straight to autoedit with
+      that exact plan id/version. Never re-runs analysis, never falls back to
+      the legacy selector.
+    - V2 flag OFF: enqueues the legacy customer autoedit, exactly what
+      analysis completion would have done.
+    Ownership-checked, rate-limited, idempotent (active jobs are returned).
+    """
+    from . import jobs
+    user, project = _owned_project(project_id, authorization)
+    _rate_check(user["id"], "request_edit")
+    if not supa.db_select("segments", f"project_id=eq.{project_id}&limit=1"):
+        raise HTTPException(409, "this video has not been analysed yet")
+    active = supa.db_select(
+        "pipeline_jobs",
+        f"project_id=eq.{project_id}&kind=in.(autoedit,editorial_plan)"
+        "&status=in.(queued,processing)&order=created_at.desc&limit=1")
+    if active:
+        return active[0]
+    try:
+        if jobs.picture_edit_v2_enabled():
+            job = jobs._maybe_enqueue_customer_editorial_plan(project)
+            if not job:
+                raise HTTPException(429, "too many active jobs — try again "
+                                         "in a moment")
+        else:
+            job = jobs.enqueue_job(project_id, user["id"], "autoedit",
+                                   {"source": "customer_journey"})
+    except jobs.ConcurrencyLimit as e:
+        raise HTTPException(429, str(e))
+    jobs.set_project_status(project_id, "analyzing", "edit restarted")
+    return job
+
+
 class RecutRequest(BaseModel):
     """Optional new output shape for a re-cut."""
     aspectRatio: str | None = Field(default=None, max_length=8)
@@ -504,10 +544,30 @@ def customer_recut(project_id: str, body: RecutRequest = RecutRequest(),
         _editor_audit(user["id"], project_id, "recut_aspect_change",
                       {"from": project.get("aspect_ratio"), "to": aspect})
 
+    effective_aspect = aspect or project.get("aspect_ratio")
     try:
-        job = jobs.enqueue_job(project_id, user["id"], "autoedit",
-                               {"source": "recut",
-                                "aspect_ratio": aspect or project.get("aspect_ratio")})
+        if jobs.picture_edit_v2_enabled():
+            # V2 journey: a re-cut re-PLANS (the plan is shape-aware), then the
+            # plan's completion chains into V2 autoedit. Never enqueue a bare
+            # autoedit here — with the flag on it would fail for lack of a
+            # plan bound to the new shape.
+            active_plan = supa.db_select(
+                "pipeline_jobs",
+                f"project_id=eq.{project_id}&kind=eq.editorial_plan"
+                f"&status=in.(queued,processing)&order=created_at.desc&limit=1")
+            if active_plan:
+                return active_plan[0]
+            plan_params = {"source": "recut"}
+            if effective_aspect:
+                plan_params["aspectRatio"] = effective_aspect
+            if project.get("name"):
+                plan_params["brief"] = project["name"]
+            job = jobs.enqueue_job(project_id, user["id"],
+                                   "editorial_plan", plan_params)
+        else:
+            job = jobs.enqueue_job(project_id, user["id"], "autoedit",
+                                   {"source": "recut",
+                                    "aspect_ratio": effective_aspect})
     except jobs.ConcurrencyLimit as e:
         raise HTTPException(429, str(e))
     jobs.set_project_status(project_id, "analyzing", "re-cutting at a new shape")

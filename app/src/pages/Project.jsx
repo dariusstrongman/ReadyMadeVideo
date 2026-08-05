@@ -171,6 +171,7 @@ export default function Project() {
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState('')
   const [recutting, setRecutting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [recutError, setRecutError] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [pendingFiles, setPendingFiles] = useState([])
@@ -252,6 +253,24 @@ export default function Project() {
 
   // Open a candidate through the Product Editor start endpoint, then navigate to
   // the returned editor_document route. Same path for bridged / initial / revised.
+  // Export the finished cut as a real deliverable: a Product Editor
+  // final_render at FINAL quality. The preview proxy is never the export.
+  async function exportFinal(c) {
+    if (exporting) return
+    setExporting(true); setError('')
+    try {
+      const doc = await editorApi(`/projects/${projectId}/editor/start`, session,
+        { method: 'POST', body: JSON.stringify({ candidateRunId: c.id }) })
+      await editorApi(`/projects/${projectId}/editor/render`, session,
+        { method: 'POST', body: JSON.stringify({ documentId: doc.id }) })
+      // Reload: latestExport now exists, so the page switches to ExportView,
+      // which polls the final_render job and signs the real MP4 download.
+      await load()
+    } catch (e) {
+      setError(e.message || 'Could not start the export.')
+    } finally { setExporting(false) }
+  }
+
   async function openCandidate(c) {
     setOpening(true); setError('')
     try {
@@ -487,7 +506,7 @@ export default function Project() {
     const tl = c.manifest?.pictureTimeline
     const clipsUsed = c.manifest?.sourceAssetIds?.length
     const dl = preview
-      ? `${preview}${preview.includes('?') ? '&' : '?'}download=${encodeURIComponent(`${project.name || 'edit'}.mp4`)}`
+      ? `${preview}${preview.includes('?') ? '&' : '?'}download=${encodeURIComponent(`${project.name || 'edit'}-preview.mp4`)}`
       : null
     return (
       <>
@@ -541,16 +560,25 @@ export default function Project() {
           {error && <div className="err" role="alert">{error}</div>}
 
           <div className="reveal-actions">
-            <button className="btn btn-primary btn-lg" disabled={opening}
+            <button className="btn btn-primary btn-lg" disabled={exporting}
+              aria-busy={exporting} onClick={() => exportFinal(c)}>
+              {exporting ? 'Starting export…' : 'Export final MP4'}
+            </button>
+            <button className="btn btn-ghost btn-lg" disabled={opening}
               onClick={() => openCandidate(c)}>
               {opening ? 'Opening…' : 'Change this edit'}
             </button>
-            {dl && (
-              <a className="btn btn-ghost btn-lg" href={dl} download>
-                Download this cut
-              </a>
-            )}
           </div>
+          {/* The watchable video above is a low-bitrate preview proxy — never
+              presented as the deliverable. The real MP4 comes from the
+              final_render export. */}
+          {dl && (
+            <p className="reveal-preview-note">
+              <a href={dl} download>Download preview</a>
+              {previewMeta?.w > 0 ? ` (${previewMeta.w}×${previewMeta.h} proxy` : ' (low-quality proxy'}
+              , not the final export)
+            </p>
+          )}
 
           {/* Re-cut at a different shape. Only the autoedit stage re-runs —
               the analysis catalog is reused — so this is quick compared with
@@ -1049,18 +1077,48 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError, se
 
   // ── Render job failed ──
   if (state.kind === 'job_failed') {
+    // Planning/edit failures retry from where they stopped (request-edit:
+    // never re-analyses, never falls back to a different engine); an analysis
+    // failure retries analysis itself.
+    const failedKind = state.job?.kind
+    const retryPath = failedKind === 'analysis' ? 'request-analysis' : 'request-edit'
     return (
       <div className="wrap" style={{ paddingTop: 48, paddingBottom: 80 }}>
         <div className="proc-error-card">
           <div className="proc-error-icon">✕</div>
-          <h2 className="proc-error-title">We couldn't start the edit.</h2>
+          <h2 className="proc-error-title">We couldn't finish the edit.</h2>
           <p className="proc-error-sub">
-            Your footage is uploaded safely, but the editing job did not start.
+            Your footage and analysis are safe — this step can be retried.
           </p>
           {state.job.error_message && (
             <p className="proc-error-detail">{state.job.error_message}</p>
           )}
+          {retryError && (
+            <p className="proc-error-detail" role="alert" aria-live="assertive">{retryError}</p>
+          )}
           <div className="proc-error-actions">
+            <button className="btn btn-primary" disabled={retrying} aria-busy={retrying}
+              onClick={async () => {
+                if (retrying) return
+                setRetrying(true); setRetryError('')
+                try {
+                  const r = await fetch(`${RENDER_API}/projects/${projectId}/${retryPath}`, {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${session.access_token}` },
+                  })
+                  if (!r.ok) {
+                    const d = await r.json().catch(() => ({}))
+                    throw new Error(d.detail || `Request failed (${r.status})`)
+                  }
+                  if (onRetry) await onRetry()
+                } catch (err) {
+                  setRetryError(err.message || 'Could not retry. Please try again.')
+                } finally {
+                  setRetrying(false)
+                }
+              }}>
+              {retrying ? 'Retrying…' : 'Try again'}
+            </button>
             <Link to="/" className="btn btn-ghost">← Back to Your Studio</Link>
             {assets.length > 0 && (
               <a href="#footage" className="btn btn-ghost">View uploaded footage</a>
