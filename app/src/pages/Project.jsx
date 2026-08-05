@@ -112,6 +112,27 @@ const RESHAPE = [
   { id: '1:1',  label: 'Square' },
 ]
 
+// Name a cut by the frame it was actually rendered at, read from its own
+// manifest — so two versions of the same video are told apart by what they ARE,
+// not by an anonymous dot.
+const shapeOf = (candidate) => {
+  const tl = candidate?.manifest?.pictureTimeline
+  const w = tl?.width, h = tl?.height
+  if (!w || !h) return { label: 'Cut', ratio: '' }
+  if (h > w) return { label: 'Vertical', ratio: '9:16' }
+  if (h === w) return { label: 'Square', ratio: '1:1' }
+  return { label: 'Widescreen', ratio: '16:9' }
+}
+
+const agoShort = (ts) => {
+  const m = Math.floor((Date.now() - new Date(ts).getTime()) / 60000)
+  if (!Number.isFinite(m)) return ''
+  if (m < 1) return 'just now'
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  return h < 24 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`
+}
+
 // Duration as m:ss, read off the rendered video itself.
 const fmtClock = (s) => {
   if (!Number.isFinite(s)) return ''
@@ -594,13 +615,30 @@ export default function Project() {
           {candidates.length > 1 && (
             <div className="reveal-alts">
               <span className="reveal-alts-label">
-                {candidates.length} versions — {candidateIdx + 1} showing
+                {candidates.length} versions of this video
               </span>
-              <div className="candidate-dots">
-                {candidates.map((_, i) => (
-                  <button key={i} className={`candidate-dot ${i === candidateIdx ? 'active' : ''}`}
-                    onClick={() => setCandidateIdx(i)} aria-label={`Version ${i + 1}`} />
-                ))}
+              {/* Re-cutting keeps every previous cut, so the switcher has to say
+                  which is which. Anonymous dots made "we kept your old version"
+                  a promise the user could not actually act on. */}
+              <div className="version-row">
+                {candidates.map((cand, i) => {
+                  const shape = shapeOf(cand)
+                  return (
+                    <button key={cand.id}
+                      className={`version-chip ${i === candidateIdx ? 'active' : ''}`}
+                      aria-current={i === candidateIdx}
+                      onClick={() => { setCandidateIdx(i); setPreviewMeta(null) }}>
+                      <span className={`np-aspect-box ar-${(shape.ratio || '16:9').replace(':', '-')}`}
+                        aria-hidden="true" />
+                      <span className="version-chip-text">
+                        <span className="version-chip-name">
+                          {shape.label}{shape.ratio ? ` · ${shape.ratio}` : ''}
+                        </span>
+                        <span className="version-chip-when">{agoShort(cand.created_at)}</span>
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )}

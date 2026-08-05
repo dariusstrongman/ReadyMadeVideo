@@ -2377,3 +2377,21 @@ textarea { resize: vertical; min-height: 80px; }
   display: flex; justify-content: flex-end; gap: var(--sp-3);
   margin-top: var(--sp-5); flex-wrap: wrap;
 }
+
+/* Version switcher — each cut named by the frame it was rendered at. */
+.version-row { display: flex; justify-content: center; gap: var(--sp-3); flex-wrap: wrap; }
+.version-chip {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-2); border-radius: var(--radius);
+  background: var(--bg-1); color: var(--text-2); text-align: left;
+  transition: border-color .18s, background .18s, color .18s;
+}
+.version-chip:hover { border-color: var(--border-3); color: var(--text); }
+.version-chip.active { border-color: var(--cyan); background: var(--cyan-dim); color: var(--text); }
+.version-chip.active .np-aspect-box { color: var(--cyan); opacity: 1; }
+.version-chip-text { display: flex; flex-direction: column; gap: 1px; }
+.version-chip-name { font-size: var(--text-xs); font-weight: 600; }
+.version-chip-when {
+  font-family: var(--mono); font-size: var(--text-2xs); color: var(--text-3);
+}
