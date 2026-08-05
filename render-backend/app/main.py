@@ -318,6 +318,12 @@ async def _unhandled(request, exc):
 # ---- simple in-memory rate limiter for expensive operator actions
 _rate: dict[str, list[float]] = {}
 RATE_LIMIT_PER_MIN = int(os.environ.get("OPERATOR_RATE_LIMIT_PER_MIN", "10"))
+# Per-bucket overrides. The 10/min operator default STRANGLED customer uploads:
+# a multipart upload signs a URL per 16 MB part, so anything over ~150 MB on a
+# normal connection hit 429 mid-transfer. Signing is cheap (auth + ownership +
+# a presign), so it gets headroom for a full 2 GB upload (128 parts).
+_RATE_OVERRIDES = {"raw_upload_sign": 240, "raw_upload": 30,
+                   "raw_finalize": 20, "editor_write": 60}
 
 
 def _rate_check(user_id: str, bucket: str = "enqueue") -> None:
@@ -325,7 +331,7 @@ def _rate_check(user_id: str, bucket: str = "enqueue") -> None:
     key = f"{user_id}:{bucket}"
     now = _t.time()
     window = [t for t in _rate.get(key, []) if now - t < 60]
-    if len(window) >= RATE_LIMIT_PER_MIN:
+    if len(window) >= _RATE_OVERRIDES.get(bucket, RATE_LIMIT_PER_MIN):
         raise HTTPException(429, "rate limit exceeded, retry in a minute")
     window.append(now)
     _rate[key] = window

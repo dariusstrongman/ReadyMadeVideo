@@ -220,6 +220,23 @@ export class MultipartUpload {
     this._emit()
 
     try {
+      // Batch-sign every remaining part in ONE call (URLs live for an hour —
+      // ample for a 2 GB transfer). Per-part signing burned one API call per
+      // 16 MB and tripped the rate limit halfway through large files.
+      const remaining = []
+      for (let n = 1; n <= partCount; n++) {
+        if (!this._uploaded.has(n)) remaining.push(n)
+      }
+      this._signedUrls = {}
+      if (remaining.length) {
+        try {
+          const { parts } = await this.transport.signParts({
+            projectId: this.projectId, sessionId: session.sessionId,
+            partNumbers: remaining,
+          })
+          for (const p of parts) this._signedUrls[p.partNumber] = p.url
+        } catch { /* fall back to per-part signing in the retry path */ }
+      }
       for (let n = 1; n <= partCount; n++) {
         if (this._cancelled) throw new UploadError('cancelled', 'upload cancelled')
         await this._waitIfPaused()
@@ -267,10 +284,17 @@ export class MultipartUpload {
       if (this._cancelled) throw new UploadError('cancelled', 'upload cancelled')
       await this._waitIfPaused()
       try {
-        const { parts } = await this.transport.signParts({
-          projectId: this.projectId, sessionId, partNumbers: [partNumber],
-        })
-        const url = parts[0].url
+        // Batch-signed URL from start() when available; a retry (or an
+        // expired URL) re-signs just this part. One call per part at 16 MB
+        // granularity used to trip the API rate limit halfway through any
+        // file over ~150 MB.
+        let url = this._signedUrls?.[partNumber]
+        if (!url || attempt > 0) {
+          const { parts } = await this.transport.signParts({
+            projectId: this.projectId, sessionId, partNumbers: [partNumber],
+          })
+          url = parts[0].url
+        }
         this._controller = new AbortController()
         const etag = await this.transport.putPart({
           url, blob, signal: this._controller.signal,
