@@ -2017,18 +2017,49 @@ textarea { resize: vertical; min-height: 80px; }
 }
 .st-card-status .st-stamp { margin-left: auto; }
 
-/* Destructive action stays quiet until you go looking for it */
-.st-kill {
+/* Card tools (rename / delete) stay quiet until you go looking for them. */
+.st-tools {
   position: absolute; top: var(--sp-2); right: var(--sp-2);
+  display: flex; gap: var(--sp-1);
+  opacity: 0; transition: opacity .18s;
+}
+.st-card:hover .st-tools,
+.st-tools:focus-within { opacity: 1; }
+.st-tool {
   width: 26px; height: 26px; border-radius: var(--radius);
   display: grid; place-items: center;
-  background: rgba(8,8,14,0.7); backdrop-filter: blur(6px);
+  background: rgba(8,8,14,0.72); backdrop-filter: blur(6px);
   border: 1px solid var(--border-2); color: var(--text-2);
-  opacity: 0; transition: opacity .18s, color .18s, background .18s, border-color .18s;
+  transition: color .18s, background .18s, border-color .18s;
 }
-.st-card:hover .st-kill { opacity: 1; }
-.st-kill:hover { color: #fff; background: var(--red); border-color: transparent; }
-.st-kill:focus-visible { opacity: 1; }
+.st-tool:hover { color: var(--text); background: rgba(20,20,32,0.92); border-color: var(--border-3); }
+.st-tool-kill:hover { color: #fff; background: var(--red); border-color: transparent; }
+.st-tool:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+/* Touch devices have no hover — never hide the only way to manage a video. */
+@media (hover: none) {
+  .st-tools { opacity: 1; }
+}
+
+/* Inline rename */
+.st-rename {
+  width: 100%; background: var(--bg-3); color: var(--text);
+  border: 1px solid var(--cyan); border-radius: var(--radius);
+  padding: 5px var(--sp-2); font-size: var(--text-sm); font-weight: 600;
+}
+.st-rename:focus { outline: none; }
+
+/* In-card delete confirmation */
+.st-veil {
+  position: absolute; inset: 0; z-index: 2;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--sp-1); padding: var(--sp-4); text-align: center;
+  background: rgba(6,6,12,0.93); backdrop-filter: blur(3px);
+}
+.st-veil-q { font-size: var(--text-sm); font-weight: 700; color: var(--text); }
+.st-veil-sub { font-size: var(--text-xs); color: var(--text-2); }
+.st-veil-err { font-size: var(--text-xs); color: var(--red); margin-top: var(--sp-1); }
+.st-veil-row { display: flex; gap: var(--sp-2); margin-top: var(--sp-3); }
 
 /* Real footage */
 .st-frame-video {

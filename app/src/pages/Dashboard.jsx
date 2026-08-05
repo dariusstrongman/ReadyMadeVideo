@@ -25,7 +25,16 @@ const STATUS = {
   analysis_failed: { intent: 'error', label: 'Edit failed',         action: 'See what happened', lead: true },
   render_failed:   { intent: 'error', label: 'Export failed',       action: 'See what happened', lead: true },
 }
-const statusOf = (s) => STATUS[s] || { intent: 'idle', label: String(s).replaceAll('_', ' '), action: 'Open' }
+const statusOf = (s, hasFootage = false) => {
+  // `draft` means "no edit has been started", NOT "no footage". A project whose
+  // upload landed but whose status never advanced is still draft, and calling
+  // that "Waiting for footage" while its clips sit on the project page is a
+  // straight contradiction. Footage present => it is waiting on a decision.
+  if (s === 'draft' && hasFootage) {
+    return { intent: 'ready', copy: 'start', label: 'Ready to edit', action: 'Start editing', lead: true }
+  }
+  return STATUS[s] || { intent: 'idle', label: String(s).replaceAll('_', ' '), action: 'Open' }
+}
 
 /* The hero answers one question: which video needs you right now?
    Lower number wins. Ordering is by how much it is blocked on the human. */
@@ -33,6 +42,7 @@ const HERO_RANK = { draft_ready: 0, analysis_failed: 1, render_failed: 1, draft:
 
 const HERO_COPY = {
   ready: { eyebrow: 'Ready to watch', line: 'Your first cut is finished. Watch it, then download it or ask for changes.' },
+  start: { eyebrow: 'Ready to edit',  line: 'Your footage is uploaded. Start the edit and Stromation builds your first cut.' },
   work:  { eyebrow: 'In the bay',     line: 'Stromation is cutting this now. You can leave — it keeps working.' },
   idle:  { eyebrow: 'Needs footage',  line: 'Drop in your raw clips and the edit starts on its own.' },
   error: { eyebrow: 'Stopped',        line: 'This one did not finish. Open it to see what happened.' },
@@ -110,10 +120,11 @@ export default function Dashboard() {
   const [projects, setProjects] = useState(null)
   const [jobs, setJobs] = useState([])
   const [posters, setPosters] = useState({})   // projectId -> signed url | null
+  const [footage, setFootage] = useState({})   // projectId -> clip count
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
-    const [{ data: projs, error: pe }, { data: js }] = await Promise.all([
+    const [{ data: projs, error: pe }, { data: js }, { data: ast }] = await Promise.all([
       supabase.from('projects')
         .select('id, name, status, created_at, updated_at')
         .is('deleted_at', null)          // hide soft-deleted projects
@@ -128,11 +139,17 @@ export default function Dashboard() {
         .eq('status', 'completed')
         .order('created_at', { ascending: false })
         .limit(10),
+      supabase.from('media_assets').select('project_id'),
     ])
     if (pe) setError(pe.message)
     else setProjects(projs || [])
     // Reuse Project.jsx's tested rule rather than restating it here.
     if (js) setJobs(js.filter(isExportJob))
+    if (ast) {
+      const counts = {}
+      for (const a of ast) counts[a.project_id] = (counts[a.project_id] || 0) + 1
+      setFootage(counts)
+    }
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -221,12 +238,12 @@ export default function Dashboard() {
   )[0]
   const rest = projects.filter(p => p.id !== hero.id)
 
-  const heroStatus = statusOf(hero.status)
-  const heroCopy = HERO_COPY[heroStatus.intent] || HERO_COPY.idle
+  const heroStatus = statusOf(hero.status, (footage[hero.id] || 0) > 0)
+  const heroCopy = HERO_COPY[heroStatus.copy || heroStatus.intent] || HERO_COPY.idle
 
-  const waiting = projects.filter(p => statusOf(p.status).lead).length
-  const working = projects.filter(p => statusOf(p.status).intent === 'work').length
-  const exported = projects.filter(p => statusOf(p.status).intent === 'done').length
+  const waiting = projects.filter(p => statusOf(p.status, (footage[p.id] || 0) > 0).lead).length
+  const working = projects.filter(p => statusOf(p.status, (footage[p.id] || 0) > 0).intent === 'work').length
+  const exported = projects.filter(p => statusOf(p.status, (footage[p.id] || 0) > 0).intent === 'done').length
 
   return (
     <div className="st-page">
@@ -286,7 +303,7 @@ export default function Dashboard() {
         <div className="st-grid">
           {rest.map(p => (
             <FrameCard key={p.id} project={p} poster={posters[p.id]}
-              onDelete={load} onRefresh={load} />
+              clips={footage[p.id] || 0} onDelete={load} onRefresh={load} />
           ))}
           <Link to="/project/new" className="st-new">
             <span className="st-new-plus">+</span>
@@ -320,10 +337,10 @@ export default function Dashboard() {
   )
 }
 
-function FrameCard({ project: p, poster, onDelete, onRefresh }) {
+function FrameCard({ project: p, poster, clips = 0, onDelete, onRefresh }) {
   const navigate = useNavigate()
   const session = useAuth()
-  const s = statusOf(p.status)
+  const s = statusOf(p.status, clips > 0)
   const [mode, setMode] = useState('idle')      // idle | rename | confirm
   const [draft, setDraft] = useState(p.name)
   const [busy, setBusy] = useState(false)
