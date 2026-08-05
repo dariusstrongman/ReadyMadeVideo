@@ -2227,3 +2227,35 @@ textarea { resize: vertical; min-height: 80px; }
   animation: st-shimmer 1.6s linear infinite;
 }
 @media (prefers-reduced-motion: reduce) { .reveal-loading { animation: none; } }
+
+/* ── Output shape picker (New Project) ────────────────────────────────
+   Each option draws the frame it produces, so the choice is visible rather
+   than a ratio string to decode. */
+.np-aspect { margin-top: var(--sp-5); text-align: left; }
+.np-aspect-label {
+  font-family: var(--mono); font-size: var(--text-2xs); font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--text-3); margin-bottom: var(--sp-3);
+}
+.np-aspect-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-3); }
+.np-aspect-opt {
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-2);
+  border: 1px solid var(--border-2); border-radius: var(--radius);
+  background: var(--bg-1); color: var(--text-2);
+  transition: border-color .18s, background .18s, color .18s;
+}
+.np-aspect-opt:hover { border-color: var(--border-3); color: var(--text); }
+.np-aspect-opt.selected {
+  border-color: var(--cyan); background: var(--cyan-dim); color: var(--text);
+}
+.np-aspect-box {
+  display: block; border: 1.5px solid currentColor; border-radius: 2px;
+  opacity: 0.65;
+}
+.np-aspect-opt.selected .np-aspect-box { opacity: 1; color: var(--cyan); }
+.ar-9-16 { width: 17px; height: 30px; }
+.ar-16-9 { width: 34px; height: 19px; }
+.ar-1-1  { width: 25px; height: 25px; }
+.np-aspect-name { font-size: var(--text-xs); font-weight: 600; }
+.np-aspect-note { font-size: var(--text-2xs); color: var(--text-3); text-align: center; }

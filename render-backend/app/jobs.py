@@ -516,7 +516,11 @@ def handle_autoedit(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict
         brief=params.get("brief") or project.get("name", "fitness edit"),
         out_dir=run_dir,
         target_duration=params.get("target_duration"),
+        # The project's own shape drives the render. An explicit job param still
+        # wins (operator overrides); otherwise the customer's choice from the
+        # New Project wizard is what gets built.
         platform=params.get("platform", "horizontal"),
+        aspect_ratio=params.get("aspect_ratio") or project.get("aspect_ratio"),
         title_text=params.get("title"),
         use_critic=params.get("use_critic", True),
         render_final=False,

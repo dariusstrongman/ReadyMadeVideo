@@ -4,12 +4,20 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { supabase } from '../lib/supabase'
 
+// Where a video is going decides the shape it should be cut to. This answer
+// used to be collected and discarded, so vertical footage bound for TikTok was
+// still rendered 16:9 with black bars burned into the export.
 const PLATFORMS = [
-  { id: 'youtube',   icon: '▶', label: 'YouTube' },
-  { id: 'reels',     icon: '◉', label: 'Instagram Reels' },
-  { id: 'tiktok',    icon: '♪', label: 'TikTok' },
-  { id: 'archive',   icon: '◫', label: 'Personal archive' },
-  { id: 'other',     icon: '○', label: 'Other' },
+  { id: 'reels',   icon: '◉', label: 'Instagram Reels', aspect: '9:16' },
+  { id: 'tiktok',  icon: '♪', label: 'TikTok',          aspect: '9:16' },
+  { id: 'youtube', icon: '▶', label: 'YouTube',         aspect: '16:9' },
+  { id: 'archive', icon: '◫', label: 'Personal archive', aspect: '16:9' },
+  { id: 'other',   icon: '○', label: 'Other',           aspect: '16:9' },
+]
+const ASPECTS = [
+  { id: '9:16', label: 'Vertical', note: 'Reels, TikTok, Shorts' },
+  { id: '16:9', label: 'Widescreen', note: 'YouTube, desktop' },
+  { id: '1:1',  label: 'Square', note: 'Feed posts' },
 ]
 const VIBES = [
   { id: 'energetic',    icon: '⚡', label: 'Energetic' },
@@ -26,6 +34,7 @@ export default function NewProject() {
   const [step, setStep] = useState(1)
   const [name, setName] = useState('')
   const [platform, setPlatform] = useState('')
+  const [aspect, setAspect] = useState('')
   const [vibe, setVibe] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -33,10 +42,28 @@ export default function NewProject() {
   async function create() {
     if (!name.trim()) return
     setBusy(true); setError('')
-    // platform and vibe are collected for future use but not yet persisted
-    const { data, error } = await supabase.from('projects')
-      .insert({ name: name.trim(), user_id: session.user.id })
+    const chosen = aspect
+      || PLATFORMS.find(p => p.id === platform)?.aspect
+      || '16:9'
+    const base = { name: name.trim(), user_id: session.user.id }
+    let { data, error } = await supabase.from('projects')
+      .insert({
+        ...base,
+        aspect_ratio: chosen,
+        target_platform: platform || null,
+        vibe: vibe || null,
+      })
       .select().single()
+
+    // This frontend can go live before migration 0025 has been applied. Rather
+    // than leaving project creation broken for that window, fall back to the
+    // columns that have always existed. The project is then rendered at the
+    // 16:9 default until the migration lands.
+    if (error && /column .* does not exist|aspect_ratio|target_platform|vibe/i.test(error.message || '')) {
+      ({ data, error } = await supabase.from('projects')
+        .insert(base).select().single())
+    }
+
     if (error) { setError(error.message); setBusy(false); return }
     navigate(`/project/${data.id}`)
   }
@@ -74,12 +101,28 @@ export default function NewProject() {
             <div className="np-option-grid">
               {PLATFORMS.map(p => (
                 <button key={p.id} className={`np-option ${platform === p.id ? 'selected' : ''}`}
-                  onClick={() => setPlatform(p.id)}>
+                  onClick={() => { setPlatform(p.id); setAspect(p.aspect) }}>
                   <span className="np-option-icon">{p.icon}</span>
                   {p.label}
                 </button>
               ))}
             </div>
+            {platform && (
+              <div className="np-aspect">
+                <p className="np-aspect-label">Shape of the finished video</p>
+                <div className="np-aspect-row">
+                  {ASPECTS.map(a => (
+                    <button key={a.id}
+                      className={`np-aspect-opt ${aspect === a.id ? 'selected' : ''}`}
+                      onClick={() => setAspect(a.id)}>
+                      <span className={`np-aspect-box ar-${a.id.replace(':', '-')}`} aria-hidden="true" />
+                      <span className="np-aspect-name">{a.label}</span>
+                      <span className="np-aspect-note">{a.note}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 10 }}>
               <button className="btn btn-ghost" onClick={() => setStep(1)}>← Back</button>
               <button className="btn btn-primary btn-lg" style={{ flex: 1 }}

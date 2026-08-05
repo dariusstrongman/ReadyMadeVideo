@@ -27,11 +27,20 @@ class CompiledRender:
 
 
 def _dims(timeline: dict, profile: dict) -> tuple[int, int]:
+    """Map the timeline's shape onto this profile's rendering size.
+
+    The profile only carries a long and a short edge, so the timeline's own
+    width/height are read for ORIENTATION, not as literal pixels. Square is its
+    own case: without it a 1080x1080 timeline fell through to the landscape
+    branch and rendered 1920x1080.
+    """
     w, h = timeline.get("width", 1920), timeline.get("height", 1080)
-    portrait = h > w
-    if portrait:
-        return profile["h_land"], profile["w_land"]  # e.g. 360x640 preview
-    return profile["w_land"], profile["h_land"]
+    long_edge, short_edge = profile["w_land"], profile["h_land"]
+    if h > w:
+        return short_edge, long_edge          # vertical, e.g. 1080x1920
+    if h == w:
+        return short_edge, short_edge         # square, e.g. 1080x1080
+    return long_edge, short_edge              # landscape, e.g. 1920x1080
 
 
 def _atempo_chain(speed: float) -> str:

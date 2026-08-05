@@ -38,12 +38,29 @@ def _save(out_dir: str, name: str, data) -> None:
         json.dump(data, f, indent=2)
 
 
+# Output frame shapes. The third value is the planner's platform vocabulary
+# ("vertical" | "horizontal"), which drives beat structure; the first two are
+# the exact timeline dimensions the renderer sizes to. Square plans like a
+# vertical piece but renders to a 1:1 frame.
+ASPECTS = {
+    "16:9": (1920, 1080, "horizontal"),
+    "9:16": (1080, 1920, "vertical"),
+    "1:1":  (1080, 1080, "vertical"),
+}
+
+
+def dims_for_aspect(aspect: str | None) -> tuple[int, int, str]:
+    """(width, height, planner_platform) for an aspect ratio; 16:9 if unknown."""
+    return ASPECTS.get(aspect or "16:9", ASPECTS["16:9"])
+
+
 def autoedit(segments: list[Segment],
              sources: dict[str, str],
              brief: str,
              out_dir: str,
              target_duration: float | None = None,
              platform: str = "horizontal",
+             aspect_ratio: str | None = None,
              title_text: str | None = None,
              template_id: str = "fitness_v1",
              use_critic: bool = True,
@@ -63,6 +80,14 @@ def autoedit(segments: list[Segment],
             return True
         return False
     asset_durations = {aid: probe(p).duration for aid, p in sources.items()}
+
+    # The project's chosen shape decides both how the story is planned and the
+    # exact frame it is built for. Without this the pipeline always planned
+    # horizontal and letterboxed vertical footage into a 1920x1080 frame.
+    out_w, out_h, aspect_platform = dims_for_aspect(aspect_ratio)
+    if aspect_ratio:
+        platform = aspect_platform
+    report["aspectRatio"] = aspect_ratio or "16:9"
 
     # 1. plan
     blueprint = plan_story(brief, segments, target_duration, platform, template_id)
@@ -93,7 +118,8 @@ def autoedit(segments: list[Segment],
 
     # 3. build timeline v1 (no manual clip ids anywhere)
     timeline = resolve_asset_ids(
-        build_timeline(blueprint, selection, title_text=title_text), segments)
+        build_timeline(blueprint, selection, title_text=title_text,
+                       width=out_w, height=out_h), segments)
     _save(out_dir, "timeline_v1.json", timeline)
 
     if _cancelled("before_preview"):
