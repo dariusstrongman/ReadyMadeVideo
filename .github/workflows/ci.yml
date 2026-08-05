@@ -106,6 +106,8 @@ jobs:
           echo "migration 0019 reapplied cleanly (restores child-table not-deleted RLS after the 0013/0014 reapplies)"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260803_0021_soft_delete_child_rls_complete.sql
           echo "migration 0021 reapplied cleanly (restores remaining child-table not-deleted RLS after the 0012 reapply)"
+          psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f supabase/migrations/20260805_0024_s3_raw_uploads.sql
+          echo "migration 0024 reapplied cleanly (restores media_assets SELECT-only write lock after the 0019 reapply)"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/human_ceiling_integrity.sql
           echo "human-ceiling PostgreSQL integrity assertions passed"
           psql -h localhost -U postgres -d ci -v ON_ERROR_STOP=1 -f .github/ci/picture_editor_integrity.sql
