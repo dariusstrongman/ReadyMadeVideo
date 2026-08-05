@@ -309,10 +309,14 @@ export default function Project() {
     await load()
   }
 
-  // Footage present, nothing queued, not mid-upload → the edit can be started.
+  // Footage present, nothing queued, not mid-upload, and no edit already made.
+  // The last two conditions matter: offering "Start editing" on a project that
+  // already has a cut invites the user to re-run analysis over finished work.
   const canStartEdit = (
     assets.length > 0 && !uploading && pendingFiles.length === 0 &&
-    !jobs.some(j => ['queued', 'processing'].includes(j.status))
+    !jobs.some(j => ['queued', 'processing'].includes(j.status)) &&
+    candidates.length === 0 &&
+    !['draft_ready', 'rendering', 'completed', 'complete'].includes(project?.status)
   )
 
   async function startEditing() {
@@ -373,7 +377,26 @@ export default function Project() {
   // old code fell through to the upload screen and asked for footage on a
   // video that is already edited — a dead end that also hides the finished
   // work. Say what happened and offer a retry instead.
-  if (status === 'draft_ready' && candidates.length === 0 && wsAttempted) {
+  // `draft_ready` is handled entirely by the three branches below and must NEVER
+  // fall through to the upload view: that screen invites you to add footage and
+  // offers "Start editing", which would re-run analysis over a finished edit.
+  // While the workspace call is still in flight, hold the step — don't guess.
+  if (status === 'draft_ready' && !wsAttempted) {
+    return (
+      <>
+        <Breadcrumb projectName={project.name} projectId={projectId} />
+        <StepIndicator step={3} />
+        <div className="reveal">
+          <div className="reveal-stage reveal-loading">
+            <div className="proc-log-spinner" aria-hidden="true" />
+            <p>Loading your edit…</p>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  if (status === 'draft_ready' && candidates.length === 0) {
     return (
       <>
         <Breadcrumb projectName={project.name} projectId={projectId} />
@@ -509,6 +532,26 @@ export default function Project() {
   }
 
   // ── Upload ──────────────────────────────────────────────────────────
+  // Reaching here is only correct for a project that genuinely wants footage.
+  // Every other status is handled above, but each of those branches depends on
+  // data that arrives asynchronously (export jobs, candidates), so a status
+  // like `rendering` can land here for a beat before its job list loads — and
+  // this screen would then ask for footage on a video that is already cut.
+  // Hold instead of guessing; the poller re-renders once the data is in.
+  if (!['draft', 'uploading'].includes(status)) {
+    return (
+      <>
+        <Breadcrumb projectName={project.name} projectId={projectId} />
+        <div className="reveal">
+          <div className="reveal-stage reveal-loading">
+            <div className="proc-log-spinner" aria-hidden="true" />
+            <p>Loading this video…</p>
+          </div>
+        </div>
+      </>
+    )
+  }
+
   const totalSize = pendingFiles.reduce((s, { file }) => s + file.size, 0)
   const fmtSize = b => b > 1e6 ? `${(b/1e6).toFixed(1)} MB` : `${(b/1e3).toFixed(0)} KB`
 

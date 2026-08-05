@@ -2212,3 +2212,11 @@ textarea { resize: vertical; min-height: 80px; }
   .reveal { padding: var(--sp-6) var(--sp-4) var(--sp-16); }
   .reveal-facts { gap: var(--sp-5); }
 }
+
+/* Holding state while the finished edit loads — never fall back to the
+   upload screen for a project that already has a cut. */
+.reveal-loading {
+  aspect-ratio: 16 / 9; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: var(--sp-4);
+  color: var(--text-3); font-size: var(--text-sm);
+}
