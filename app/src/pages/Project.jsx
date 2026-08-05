@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import { RENDER_API } from '../lib/config'
 import { editorApi } from '../lib/editor'
 import { UPLOAD_LIMIT_TEXT } from '../lib/config'
-import { MultipartUpload, UploadError, createRealTransport, validateFile } from '../lib/s3upload'
+import { MultipartUpload, UploadError, createRealTransport, interruptedUploads, validateFile } from '../lib/s3upload'
 
 // A customer export is a Product Editor render: pipeline_jobs.kind === 'final_render'
 // carrying an editor_document_id. Analysis/autoedit jobs are never exports.
@@ -214,6 +214,16 @@ export default function Project() {
   }, [projectId, session])
 
   useEffect(() => { load() }, [load])
+
+  // Closing the tab kills the browser-side uploader (direct-to-S3 by design:
+  // the bytes never transit our servers, so the page IS the upload worker).
+  // Warn before the user does it accidentally.
+  useEffect(() => {
+    if (!uploading) return undefined
+    const warn = (e) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [uploading])
 
   // Poll only while an analysis OR export job is active; stop on terminal states.
   const anyActiveJob = jobs.some(
@@ -792,6 +802,19 @@ export default function Project() {
             status `draft` too, which ProcessingWorkspace never renders for: a
             project whose upload landed but whose status never advanced would
             otherwise sit here with footage and no way forward. */}
+        {/* A tab close killed an in-flight upload: say so, and how to resume —
+            the browser cannot reopen the file itself, but re-selecting it
+            continues from the parts already in S3. */}
+        {!uploading && interruptedUploads(session?.user?.id, projectId).length > 0
+          && assets.length === 0 && (
+          <div className="resume-note" role="status">
+            <strong>An upload was interrupted.</strong>{' '}
+            Re-select {interruptedUploads(session?.user?.id, projectId)
+              .map(u => u.fileName).join(', ')}{' '}
+            and it resumes from the parts already uploaded.
+          </div>
+        )}
+
         {canStartEdit && (
           <div className="start-bar" style={{ marginTop: 32 }}>
             <div className="start-bar-text">

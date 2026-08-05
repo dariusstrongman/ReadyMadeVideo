@@ -2452,3 +2452,13 @@ textarea { resize: vertical; min-height: 80px; }
 }
 .reveal-preview-note a { color: var(--text-2); text-decoration: underline; }
 .reveal-preview-note a:hover { color: var(--text); }
+
+/* Interrupted-upload notice — the drop zone must never pretend nothing
+   happened after a tab close killed an in-flight upload. */
+.resume-note {
+  margin-top: var(--sp-4); padding: var(--sp-4) var(--sp-5);
+  border: 1px solid rgba(245,158,11,0.35); border-radius: var(--radius-lg);
+  background: rgba(245,158,11,0.08);
+  font-size: var(--text-sm); color: var(--text-2);
+}
+.resume-note strong { color: var(--amber); }

@@ -104,6 +104,28 @@ const fingerprint = (userId, projectId, file) =>
   `stromation_upload_${userId || 'anon'}_${projectId}_${file.name}_${file.size}_${file.lastModified || 0}`
 
 /** Clear any resume records for a user (call on logout to avoid cross-user reuse). */
+/** Interrupted uploads for a project: [{fileName, fileSize}] from resume
+ * records. Lets the UI say "re-select X to resume" instead of showing a blank
+ * drop zone after a tab close killed an in-flight upload. */
+export function interruptedUploads(userId, projectId, store) {
+  const out = []
+  try {
+    if (typeof localStorage === 'undefined') return out
+    const prefix = `stromation_upload_${userId || 'anon'}_${projectId}_`
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (!key || !key.startsWith(prefix)) continue
+      const rest = key.slice(prefix.length)             // name_size_mtime
+      const parts = rest.split('_')
+      if (parts.length >= 3) {
+        out.push({ fileName: parts.slice(0, -2).join('_'),
+                   fileSize: Number(parts[parts.length - 2]) || 0 })
+      }
+    }
+  } catch { /* ignore */ }
+  return out
+}
+
 export function clearResumeRecords(userId, store) {
   const s = store || localStore()
   try {
