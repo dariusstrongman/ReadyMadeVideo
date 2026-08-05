@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import urllib.error
 import urllib.request
 
 BASE = "https://generativelanguage.googleapis.com"
@@ -12,9 +13,24 @@ BASE = "https://generativelanguage.googleapis.com"
 def http(method, url, headers=None, body=None, raw=None, timeout=300):
     data = raw if raw is not None else (json.dumps(body).encode() if body else None)
     req = urllib.request.Request(url, data=data, method=method, headers=headers or {})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.status, json.loads(r.read().decode() or "{}"), \
-            {k.lower(): v for k, v in r.headers.items()}
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, json.loads(r.read().decode() or "{}"), \
+                {k.lower(): v for k, v in r.headers.items()}
+    except urllib.error.HTTPError as e:
+        # Surface Google's actual error message. urllib raises before the body
+        # is read, so without this every failure collapses into an opaque
+        # "HTTP Error 400: Bad Request" while the response says exactly what
+        # was wrong (invalid model, oversized response_schema, bad key, ...).
+        detail = ""
+        try:
+            payload = json.loads(e.read().decode() or "{}")
+            detail = (payload.get("error") or {}).get("message", "")[:500]
+        except Exception:
+            pass
+        raise RuntimeError(
+            f"Gemini API {e.code} on {url.split('?')[0]}: "
+            f"{detail or e.reason}") from e
 
 
 def upload_file(path: str, api_key: str, mime: str = "video/mp4") -> dict:
