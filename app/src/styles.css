@@ -2023,7 +2023,11 @@ textarea { resize: vertical; min-height: 80px; }
   display: flex; gap: var(--sp-1);
   opacity: 0; transition: opacity .18s;
 }
-.st-card:hover .st-tools,
+/* One trigger class, applied by every surface that embeds ProjectTools.
+   Scoping this to .st-card is what left the hero's rename/delete permanently
+   invisible; keying it to the frame the tools actually live in means a new
+   surface gets the behaviour by using the class, not by editing this rule. */
+.st-toolhost:hover .st-tools,
 .st-tools:focus-within { opacity: 1; }
 .st-tool {
   width: 26px; height: 26px; border-radius: var(--radius);

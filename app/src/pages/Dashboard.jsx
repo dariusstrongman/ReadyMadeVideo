@@ -274,7 +274,7 @@ export default function Dashboard() {
           if (heroTools) return
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/project/${hero.id}`) }
         }}>
-        <div className="st-hero-frame">
+        <div className="st-hero-frame st-toolhost">
           <Frame src={posters[hero.id]} intent={heroStatus.intent}
             slateLabel={heroStatus.label} play={!heroTools} />
           {/* The hero is a project like any other — it needs the same controls. */}
@@ -470,7 +470,7 @@ function FrameCard({ project: p, poster, clips = 0, onDelete, onRefresh }) {
         if (toolsOpen) return
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open() }
       }}>
-      <div className="st-card-frame">
+      <div className="st-card-frame st-toolhost">
         <Frame src={poster} intent={s.intent} slateLabel={s.label} play={!toolsOpen} />
         <ProjectTools project={p} onChanged={onRefresh} onDeleted={onDelete}
           onOpenChange={setToolsOpen} />
