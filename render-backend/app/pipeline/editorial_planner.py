@@ -42,7 +42,7 @@ from pydantic import BaseModel, Field, ValidationError
 from .schemas import Segment
 
 SCHEMA_VERSION = 1
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 5
 APPROVAL_THRESHOLD = 80
 TIME_EPSILON = 0.05
 BANNED_COMMAND_TOKENS = ("ffmpeg", "filter_complex", "-vf ", "libx264")
@@ -1435,7 +1435,7 @@ class PlanRejected(RuntimeError):
                          f"violations: {'; '.join(last[:5])}")
 
 
-_CLAMP_EPSILON_S = 0.75
+_CLAMP_MIN_DURATION_S = 0.8
 
 
 def _normalize_timeline_arithmetic(raw: dict, segments: list[Segment]) -> None:
@@ -1470,10 +1470,13 @@ def _normalize_timeline_arithmetic(raw: dict, segments: list[Segment]) -> None:
             return
         if seg is not None:
             lo, hi = float(seg.sourceStart), float(seg.sourceEnd)
-            if s_in < lo and lo - s_in <= _CLAMP_EPSILON_S:
-                s_in = lo
-            if s_out > hi and s_out - hi <= _CLAMP_EPSILON_S:
-                s_out = hi
+            # Unconditional: the model CHOSE this segment; the code fits the
+            # trim to the footage that actually exists. Only a clamp that
+            # would gut the trim below a usable duration is left alone for
+            # the validator to reject honestly.
+            c_in, c_out = max(s_in, lo), min(s_out, hi)
+            if c_out - c_in >= _CLAMP_MIN_DURATION_S:
+                s_in, s_out = c_in, c_out
         if s_out <= s_in:
             return                      # degenerate — validator's job
         entry["sourceIn"], entry["sourceOut"] = round(s_in, 3), round(s_out, 3)
@@ -1633,7 +1636,11 @@ def gemini_generate(parts: list[dict], schema: dict) -> dict:
           " 'fact' with verbatim evidence, written STRICTLY from the ALLOWED"
           " FACTUAL VOCABULARY — no synonyms, no new words. Do not restate"
           " the core plan's wording if it strays from the vocabulary; write"
-          " grounded sentences from the catalog itself. An empty"
+          " grounded sentences from the catalog itself. Graphics: prefer an"
+          " EMPTY graphics array; include one ONLY if its text is a plain"
+          " structural label (\'Step 2\', \'The Setup\', \'Key"
+          " Takeaway\') — any word from the footage or the world makes it"
+          " invalid. An empty"
           " paraphrased one. Caption text has a HARD 90-CHARACTER LIMIT —"
           " quote a SHORT verbatim excerpt (a phrase, not the whole"
           " sentence); the evidence quoteOrValue may be longer than the"

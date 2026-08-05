@@ -110,12 +110,23 @@ class TestTimelineArithmeticNormalization:
         assert (t1["timelineIn"], t1["timelineOut"]) == (5.0, 10.0)
         assert raw["plannedDurationSeconds"] == 10.0
 
-    def test_large_overshoot_is_left_for_the_validator(self):
+    def test_large_overshoot_clamps_to_real_footage(self):
+        """2026-08-05 final: unconditional clamp — the model chose the
+        segment; the code fits the trim to footage that exists."""
         raw = self._plan([
             {"segmentId": "seg-1", "sourceIn": 5.0, "sourceOut": 15.0,
              "timelineIn": 0.0, "timelineOut": 10.0}])
         ep._normalize_timeline_arithmetic(raw, self._segs())
-        assert raw["timeline"][0]["sourceIn"] == 5.0     # 5s overshoot: honest reject
+        assert raw["timeline"][0]["sourceIn"] == 10.0
+        assert raw["timeline"][0]["sourceOut"] == 15.0
+
+    def test_clamp_that_would_gut_the_trim_is_left_alone(self):
+        # segment 10-20; trim 19.9-25.0 would clamp to 0.1s — honest reject
+        raw = self._plan([
+            {"segmentId": "seg-1", "sourceIn": 19.9, "sourceOut": 25.0,
+             "timelineIn": 0.0, "timelineOut": 5.1}])
+        ep._normalize_timeline_arithmetic(raw, self._segs())
+        assert raw["timeline"][0]["sourceOut"] == 25.0
 
     def test_unknown_segment_still_gets_cursor_math(self):
         raw = self._plan([
