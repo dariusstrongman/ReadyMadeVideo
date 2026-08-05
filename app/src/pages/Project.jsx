@@ -159,14 +159,16 @@ export default function Project() {
     } catch {
       // Candidate query failed — leave candidates empty; the project view stays on
       // its processing/empty state and the poller retries. Never crashes the page.
-    } finally {
-      // Marks that the workspace call has been ATTEMPTED, so an empty
-      // candidates list can be told apart from one that is still loading.
-      setWsAttempted(true)
     }
       setNetworkError(null)
     } catch (err) {
       setNetworkError(err?.message || 'Network error — check your connection.')
+    } finally {
+      // Marks that a load has been ATTEMPTED, so an empty candidates list can be
+      // told apart from one still in flight. This MUST live on the outer finally:
+      // if the project/asset queries above throw, the inner block never runs, and
+      // a draft_ready project would hold on "loading" forever.
+      setWsAttempted(true)
     }
   }, [projectId, session])
 

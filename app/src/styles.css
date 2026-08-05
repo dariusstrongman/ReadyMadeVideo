@@ -2214,9 +2214,16 @@ textarea { resize: vertical; min-height: 80px; }
 }
 
 /* Holding state while the finished edit loads — never fall back to the
-   upload screen for a project that already has a cut. */
+   upload screen for a project that already has a cut. Reads as a surface that
+   is working, not as an empty black rectangle. */
 .reveal-loading {
   aspect-ratio: 16 / 9; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: var(--sp-4);
-  color: var(--text-3); font-size: var(--text-sm);
+  color: var(--text-2); font-size: var(--text-sm);
+  background:
+    radial-gradient(120% 90% at 50% 0%, var(--cyan-glow-2), transparent 60%),
+    linear-gradient(90deg, var(--bg-1) 25%, var(--bg-2) 50%, var(--bg-1) 75%);
+  background-size: auto, 200% 100%;
+  animation: st-shimmer 1.6s linear infinite;
 }
+@media (prefers-reduced-motion: reduce) { .reveal-loading { animation: none; } }
