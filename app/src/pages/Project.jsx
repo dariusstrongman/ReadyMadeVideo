@@ -140,6 +140,8 @@ export default function Project() {
   const [analysis, setAnalysis] = useState([])
   const [networkError, setNetworkError] = useState(null)
   const [wsAttempted, setWsAttempted] = useState(false)
+  const [documents, setDocuments] = useState([])
+  const [pendingShape, setPendingShape] = useState(null)
   const [previewMeta, setPreviewMeta] = useState(null)  // {seconds,w,h} read off the <video>
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState(false)
@@ -172,6 +174,7 @@ export default function Project() {
     try {
       const ws = await editorApi(`/projects/${projectId}/workspace`, session)
       setCandidates(ws.candidates || [])
+      setDocuments(ws.documents || [])
     } catch {
       // Candidate query failed — leave candidates empty; the project view stays on
       // its processing/empty state and the poller retries. Never crashes the page.
@@ -532,25 +535,60 @@ export default function Project() {
               the analysis catalog is reused — so this is quick compared with
               starting the video over. */}
           <div className="reshape">
-            <p className="reshape-label">Need a different shape?</p>
-            <div className="reshape-row">
-              {RESHAPE.map(a => {
-                const current = (project.aspect_ratio || '16:9') === a.id
-                return (
-                  <button key={a.id}
-                    className={`np-aspect-opt ${current ? 'selected' : ''}`}
-                    disabled={recutting || current}
-                    onClick={() => recut(a.id)}>
-                    <span className={`np-aspect-box ar-${a.id.replace(':', '-')}`} aria-hidden="true" />
-                    <span className="np-aspect-name">{a.label}</span>
-                    <span className="np-aspect-note">
-                      {current ? 'Current' : recutting ? '…' : `Re-cut ${a.id}`}
-                    </span>
+            {!pendingShape ? (
+              <>
+                <p className="reshape-label">Need a different shape?</p>
+                <div className="reshape-row">
+                  {RESHAPE.map(a => {
+                    const current = (project.aspect_ratio || '16:9') === a.id
+                    return (
+                      <button key={a.id}
+                        className={`np-aspect-opt ${current ? 'selected' : ''}`}
+                        disabled={recutting || current}
+                        onClick={() => setPendingShape(a.id)}>
+                        <span className={`np-aspect-box ar-${a.id.replace(':', '-')}`} aria-hidden="true" />
+                        <span className="np-aspect-name">{a.label}</span>
+                        <span className="np-aspect-note">{current ? 'Current' : `Re-cut ${a.id}`}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            ) : (
+              /* Re-cutting starts real work and changes what this page shows, so
+                 confirm first. The copy states what actually happens: a re-cut
+                 ADDS a cut, it does not overwrite one — nothing deletes prior
+                 candidates, and they stay reachable through the version picker.
+                 The only thing that does not carry over is editor work, which is
+                 bound to the version it was made on, so that line appears only
+                 when there is editor work to lose. */
+              <div className="reshape-confirm" role="dialog" aria-live="polite"
+                aria-label="Confirm re-cut">
+                <p className="reshape-confirm-q">
+                  Re-cut this video as{' '}
+                  {RESHAPE.find(a => a.id === pendingShape)?.label.toLowerCase()} ({pendingShape})?
+                </p>
+                <ul className="reshape-confirm-list">
+                  <li>Stromation builds a new cut from your footage. It takes a few minutes.</li>
+                  <li>Your current cut is kept — switch back any time from the version picker.</li>
+                  {documents.length > 0 && (
+                    <li>Changes you made in the editor stay on the current version.
+                        The new cut starts from your original footage.</li>
+                  )}
+                </ul>
+                {recutError && <p className="start-bar-err" role="alert">{recutError}</p>}
+                <div className="reshape-confirm-row">
+                  <button className="btn btn-ghost" disabled={recutting}
+                    onClick={() => { setPendingShape(null); setRecutError('') }}>
+                    Cancel
                   </button>
-                )
-              })}
-            </div>
-            {recutError && <p className="start-bar-err" role="alert">{recutError}</p>}
+                  <button className="btn btn-primary" disabled={recutting} aria-busy={recutting}
+                    onClick={async () => { await recut(pendingShape); setPendingShape(null) }}>
+                    {recutting ? 'Starting…' : `Re-cut as ${pendingShape}`}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {candidates.length > 1 && (

@@ -2351,3 +2351,29 @@ textarea { resize: vertical; min-height: 80px; }
 /* Rename form inside the frame veil (used by hero and cards alike). */
 .st-veil-form { width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: var(--sp-2); }
 .st-veil-form .st-veil-q { margin-bottom: var(--sp-1); }
+
+/* Re-cut confirmation — states what actually happens before real work starts. */
+.reshape-confirm {
+  max-width: 520px; margin: 0 auto; text-align: left;
+  padding: var(--sp-5) var(--sp-6);
+  background: var(--bg-1); border: 1px solid var(--cyan-glow);
+  border-radius: var(--radius-lg);
+}
+.reshape-confirm-q {
+  font-size: var(--text-md); font-weight: 700; color: var(--text);
+  margin-bottom: var(--sp-3);
+}
+.reshape-confirm-list {
+  list-style: none; display: flex; flex-direction: column; gap: var(--sp-2);
+  font-size: var(--text-sm); color: var(--text-2); line-height: 1.55;
+}
+.reshape-confirm-list li { position: relative; padding-left: var(--sp-4); }
+.reshape-confirm-list li::before {
+  content: ''; position: absolute; left: 0; top: 0.55em;
+  width: 4px; height: 4px; border-radius: var(--radius-full);
+  background: var(--text-3);
+}
+.reshape-confirm-row {
+  display: flex; justify-content: flex-end; gap: var(--sp-3);
+  margin-top: var(--sp-5); flex-wrap: wrap;
+}
