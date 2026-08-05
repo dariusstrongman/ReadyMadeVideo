@@ -1430,12 +1430,21 @@ def gemini_generate(parts: list[dict], schema: dict) -> dict:
     # drops those fields even with the contract in the prompt.
     from .gemini_common import prune_schema
     import copy
-    options_light = copy.deepcopy(schema)
-    opts = options_light.get("properties", {}).get("options")
-    if opts is not None:
-        options_light["properties"]["options"] = \
+    # options-shallow: options items keep their REQUIRED KEY NAMES on the wire
+    # (presence enforced) while interiors go free — production showed that with
+    # options fully freed the model reliably omits `premise`/`payoff` no matter
+    # what the prompt says, and presence costs almost nothing in states.
+    options_shallow = copy.deepcopy(schema)
+    opts = options_shallow.get("properties", {}).get("options")
+    if opts is not None and isinstance(opts.get("items"), dict):
+        options_shallow["properties"]["options"] = \
+            {"type": "ARRAY", "items": prune_schema(opts["items"], 1)}
+    options_free = copy.deepcopy(schema)
+    if options_free.get("properties", {}).get("options") is not None:
+        options_free["properties"]["options"] = \
             {"type": "ARRAY", "items": {"type": "OBJECT"}}
-    ladder = [schema, options_light, prune_schema(options_light, 4),
-              prune_schema(schema, 2), {"type": "OBJECT"}]
+    ladder = [schema, options_shallow, options_free,
+              prune_schema(options_free, 4), prune_schema(schema, 2),
+              {"type": "OBJECT"}]
     return generate_json(model, parts, schema, api_key,
                          temperature=0.4, timeout=600, ladder=ladder)

@@ -152,10 +152,16 @@ def test_planner_ladder_sacrifices_options_first(monkeypatch):
     ladder = captured["ladder"]
     # rung 0: full schema, options intact
     assert "properties" in ladder[0]["properties"]["options"]["items"]
-    # rung 1: ONLY options is sacrificed; the load-bearing contract keeps
-    # wire enforcement (hook still fully typed)
-    assert ladder[1]["properties"]["options"] == \
-        {"type": "ARRAY", "items": {"type": "OBJECT"}}
+    # rung 1: options keep REQUIRED KEY PRESENCE on the wire (production round
+    # 5: with options fully freed the model omitted premise/viewerPromise/
+    # hook/structure/payoff wholesale), interiors free, rest fully enforced
+    r1_items = ladder[1]["properties"]["options"]["items"]
+    assert set(r1_items.get("required", [])) >= \
+        {"premise", "viewerPromise", "hook", "structure", "payoff"}
+    assert r1_items["properties"]["premise"] == {"type": "OBJECT"}
     assert "properties" in ladder[1]["properties"]["hook"]
+    # rung 2: options fully freed, everything else still enforced
+    assert ladder[2]["properties"]["options"] == \
+        {"type": "ARRAY", "items": {"type": "OBJECT"}}
     # last rung is always free-form
     assert ladder[-1] == {"type": "OBJECT"}
