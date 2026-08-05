@@ -108,9 +108,11 @@ _TOO_MANY_STATES = "too many states"
 
 
 def generate_json(model: str, parts: list[dict], schema: dict, api_key: str,
-                  temperature: float = 0.2, timeout: int = 600):
-    ladder = [schema, prune_schema(schema, 4), prune_schema(schema, 2),
-              {"type": "OBJECT"}]
+                  temperature: float = 0.2, timeout: int = 600,
+                  ladder: list[dict] | None = None):
+    if ladder is None:
+        ladder = [schema, prune_schema(schema, 4), prune_schema(schema, 2),
+                  {"type": "OBJECT"}]
     last = None
     for i, wire_schema in enumerate(ladder):
         rung_parts = list(parts)

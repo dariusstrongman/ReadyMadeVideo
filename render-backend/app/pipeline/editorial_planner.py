@@ -1421,5 +1421,21 @@ def gemini_generate(parts: list[dict], schema: dict) -> dict:
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY not configured")
     model = os.environ.get("EDITORIAL_PLANNER_MODEL", "gemini-2.5-pro")
+    # Ladder tuned to THIS schema: the deliberation subtree (`options`, three
+    # full scored alternatives) is the fattest branch and the only part the
+    # downstream engine never reads — so it is sacrificed first, keeping the
+    # load-bearing contract (hook, timeline, pacing, execution) wire-enforced
+    # for as long as the state budget allows. Production showed uniform depth
+    # pruning strips `options`' required-field enforcement and the model then
+    # drops those fields even with the contract in the prompt.
+    from .gemini_common import prune_schema
+    import copy
+    options_light = copy.deepcopy(schema)
+    opts = options_light.get("properties", {}).get("options")
+    if opts is not None:
+        options_light["properties"]["options"] = \
+            {"type": "ARRAY", "items": {"type": "OBJECT"}}
+    ladder = [schema, options_light, prune_schema(options_light, 4),
+              prune_schema(schema, 2), {"type": "OBJECT"}]
     return generate_json(model, parts, schema, api_key,
-                         temperature=0.4, timeout=600)
+                         temperature=0.4, timeout=600, ladder=ladder)

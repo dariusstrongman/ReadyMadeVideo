@@ -115,3 +115,47 @@ def test_pruned_rungs_carry_the_full_contract_in_the_prompt(monkeypatch):
     assert len(seen_parts[1]) == 2
     assert "STRICT OUTPUT CONTRACT" in seen_parts[1][1]["text"]
     assert '"required"' in seen_parts[1][1]["text"]
+
+
+def test_caller_supplied_ladder_is_used(monkeypatch):
+    tried = []
+
+    def fake_http(method, url, headers=None, body=None, raw=None, timeout=300):
+        tried.append(body["generationConfig"]["response_schema"])
+        if len(tried) < 2:
+            raise RuntimeError("400: too many states for serving")
+        return 200, {"candidates": [{"content": {"parts": [
+            {"text": "{\"ok\": true}"}]}}]}, {}
+
+    monkeypatch.setattr(gemini_common, "http", fake_http)
+    custom = [{"type": "OBJECT", "properties": {"x": {"type": "STRING"}}},
+              {"type": "OBJECT"}]
+    out = gemini_common.generate_json("m", [{"text": "p"}], _deep_schema(), "k",
+                                      ladder=custom)
+    assert out == {"ok": True}
+    assert tried == custom
+
+
+def test_planner_ladder_sacrifices_options_first(monkeypatch):
+    from app.pipeline import editorial_planner as ep
+    captured = {}
+
+    def fake_generate_json(model, parts, schema, key, temperature, timeout,
+                           ladder=None):
+        captured["ladder"] = ladder
+        return {"ok": True}
+
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    # gemini_generate imports generate_json from gemini_common at call time
+    monkeypatch.setattr(gemini_common, "generate_json", fake_generate_json)
+    ep.gemini_generate([{"text": "p"}], ep._response_schema())
+    ladder = captured["ladder"]
+    # rung 0: full schema, options intact
+    assert "properties" in ladder[0]["properties"]["options"]["items"]
+    # rung 1: ONLY options is sacrificed; the load-bearing contract keeps
+    # wire enforcement (hook still fully typed)
+    assert ladder[1]["properties"]["options"] == \
+        {"type": "ARRAY", "items": {"type": "OBJECT"}}
+    assert "properties" in ladder[1]["properties"]["hook"]
+    # last rung is always free-form
+    assert ladder[-1] == {"type": "OBJECT"}
