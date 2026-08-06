@@ -837,7 +837,8 @@ export default function Project() {
                   disabled={starting}>
                   <option value="">Let the AI decide</option>
                   <option value="10-60">10–60 seconds</option>
-                  <option value="60-300">1–5 minutes</option>
+                  <option value="60-180">1–3 minutes</option>
+                  <option value="180-300">3–5 minutes</option>
                   <option value="300-600">5–10 minutes</option>
                 </select>
               </label>
