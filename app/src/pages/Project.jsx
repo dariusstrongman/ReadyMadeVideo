@@ -1380,7 +1380,11 @@ function FootageGrid({ assets, fmtSize, fmtDur }) {
 
 // Output metadata comes ONLY from real pipeline_jobs.artifacts.output values;
 // anything missing is omitted (never fabricated).
-export function exportMeta(art = {}) {
+export function exportMeta(art) {
+  // `= {}` only defaults on undefined — a freshly QUEUED render job has
+  // artifacts: null, which sailed past the default and crashed the export
+  // screen on `null.width` the moment a real user clicked Export final MP4.
+  art = art || {}
   return [
     (art.width && art.height) ? `${art.width}×${art.height}` : null,
     Number.isFinite(art.duration) ? `${art.duration.toFixed(1)}s` : null,

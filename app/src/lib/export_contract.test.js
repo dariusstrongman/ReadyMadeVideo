@@ -30,3 +30,12 @@ describe('exportMeta — real artifacts only, never fabricated', () => {
     expect(exportMeta({ width: 1080 })).toBe('')
   })
 })
+
+
+describe('exportMeta — queued jobs have null artifacts', () => {
+  it('null artifacts render as empty meta, never a crash', () => {
+    expect(exportMeta(null)).toBe('')
+    expect(exportMeta(undefined)).toBe('')
+    expect(exportMeta({})).toBe('')
+  })
+})
