@@ -6,6 +6,7 @@ import { RENDER_API } from '../lib/config'
 import { editorApi } from '../lib/editor'
 import { UPLOAD_LIMIT_TEXT } from '../lib/config'
 import { MultipartUpload, UploadError, createRealTransport, interruptedUploads, validateFile } from '../lib/s3upload'
+import { availableDurationBands } from '../lib/duration'
 
 // A customer export is a Product Editor render: pipeline_jobs.kind === 'final_render'
 // carrying an editor_document_id. Analysis/autoedit jobs are never exports.
@@ -833,15 +834,17 @@ export default function Project() {
               </p>
               <label className="start-bar-length">
                 How long should it be?{' '}
+                {/* Bands the footage cannot support are not offered: an edit
+                    is a distillation, and requesting 20+ minutes from 24
+                    minutes of clips is barely editing. */}
                 <select value={lenRange} onChange={(e) => setLenRange(e.target.value)}
                   disabled={starting}>
                   <option value="">Let the AI decide</option>
-                  <option value="10-60">10–60 seconds</option>
-                  <option value="60-180">1–3 minutes</option>
-                  <option value="180-300">3–5 minutes</option>
-                  <option value="300-600">5–10 minutes</option>
-                  <option value="600-1200">10–20 minutes</option>
-                  <option value="1200-3600">20+ minutes</option>
+                  {availableDurationBands(
+                    assets.reduce((t, a) => t + (a.duration_seconds || 0), 0)
+                  ).map(b => (
+                    <option key={b.value} value={b.value}>{b.label}</option>
+                  ))}
                 </select>
               </label>
               {startError && (
