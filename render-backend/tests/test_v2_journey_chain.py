@@ -350,3 +350,25 @@ class TestEndpoints:
         r = self._client().post(f"/projects/{project['id']}/request-edit",
                                 headers=_auth(token))
         assert r.status_code == 409
+
+
+class TestTargetDuration:
+    def test_target_duration_becomes_binding_band(self):
+        band = jobs._plan_constraints_for(
+            {"name": "w", "target_duration_seconds": 180})
+        assert band["durationMin"] == 153 and band["durationMax"] == 207
+
+    def test_no_target_means_model_decides(self):
+        assert "durationMin" not in jobs._plan_constraints_for({"name": "w"})
+
+    def test_chain_start_carries_duration(self, monkeypatch):
+        fake = FakeSupabase()
+        install(monkeypatch, fake)
+        _flag(monkeypatch, True)
+        uid, _, project = _setup_project(fake)
+        row = _project_row(fake, project)
+        row["target_duration_seconds"] = 180
+        jobs._maybe_enqueue_customer_autoedit(row)
+        params = _jobs_of(fake, project, "editorial_plan")[0]["params"]
+        assert params["durationMin"] == 153
+        assert params["durationMax"] == 207

@@ -63,6 +63,6 @@ describe('editing starts on consent, never on upload completion', () => {
   it('the explicit Start editing action exists and calls request-analysis', () => {
     expect(project).toMatch(/Start editing/)
     const startEditing = project.slice(project.indexOf('async function startEditing'))
-    expect(startEditing.slice(0, 800)).toMatch(/request-analysis/)
+    expect(startEditing.slice(0, 2000)).toMatch(/request-analysis/)
   })
 })

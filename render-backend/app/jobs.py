@@ -318,6 +318,12 @@ def _plan_constraints_for(project: dict) -> dict:
         out["aspectRatio"] = project["aspect_ratio"]
     if project.get("target_platform"):
         out["platform"] = project["target_platform"]
+    # Requested length becomes a BINDING band (±15%) the planner must honor —
+    # or honestly report insufficient_footage if the catalog cannot fill it.
+    target = project.get("target_duration_seconds")
+    if target:
+        out["durationMin"] = max(10, round(target * 0.85))
+        out["durationMax"] = round(target * 1.15)
     return out
 
 

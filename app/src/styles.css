@@ -2462,3 +2462,15 @@ textarea { resize: vertical; min-height: 80px; }
   font-size: var(--text-sm); color: var(--text-2);
 }
 .resume-note strong { color: var(--amber); }
+
+/* Target-length picker in the start bar. */
+.start-bar-length {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  font-size: var(--text-xs); color: var(--text-2);
+}
+.start-bar-length select {
+  background: var(--bg-3); color: var(--text);
+  border: 1px solid var(--border-2); border-radius: var(--radius);
+  padding: 5px var(--sp-2); font-size: var(--text-xs);
+}

@@ -563,11 +563,12 @@ def customer_recut(project_id: str, body: RecutRequest = RecutRequest(),
                 f"&status=in.(queued,processing)&order=created_at.desc&limit=1")
             if active_plan:
                 return active_plan[0]
-            plan_params = {"source": "recut"}
+            # Same constraint derivation as the analysis chain (brief,
+            # platform, target duration), with the recut's shape override.
+            plan_params = {**jobs._plan_constraints_for(project),
+                           "source": "recut"}
             if effective_aspect:
                 plan_params["aspectRatio"] = effective_aspect
-            if project.get("name"):
-                plan_params["brief"] = project["name"]
             job = jobs.enqueue_job(project_id, user["id"],
                                    "editorial_plan", plan_params)
         else:
