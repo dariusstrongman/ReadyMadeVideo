@@ -2468,9 +2468,24 @@ textarea { resize: vertical; min-height: 80px; }
   display: inline-flex; align-items: center; gap: var(--sp-2);
   margin-top: var(--sp-3);
   font-size: var(--text-xs); color: var(--text-2);
+  white-space: nowrap; flex-wrap: wrap;
 }
 .start-bar-length select {
   background: var(--bg-3); color: var(--text);
   border: 1px solid var(--border-2); border-radius: var(--radius);
-  padding: 5px var(--sp-2); font-size: var(--text-xs);
+  padding: 6px var(--sp-3); font-size: var(--text-xs);
+  min-height: 32px; cursor: pointer;
+  transition: border-color .18s;
+}
+.start-bar-length select:hover:not(:disabled) { border-color: var(--border-3); }
+.start-bar-length select:focus-visible {
+  outline: 2px solid var(--cyan); outline-offset: 2px; border-color: var(--cyan);
+}
+.start-bar-length select:disabled { opacity: 0.5; cursor: default; }
+
+/* Small screens: the start bar stacks and the button goes full width, so the
+   primary action never ends up squeezed beside the text column. */
+@media (max-width: 640px) {
+  .start-bar { flex-direction: column; align-items: stretch; }
+  .start-bar .btn { width: 100%; }
 }
