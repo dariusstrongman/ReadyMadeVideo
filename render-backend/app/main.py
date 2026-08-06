@@ -2453,17 +2453,45 @@ def customer_candidate_preview_url(project_id: str, candidate_id: UUID,
         raise HTTPException(409, "candidate preview is not available")
     _editor_audit(user["id"], project_id, "sign_candidate_preview",
                   {"candidate": str(candidate_id)})
-    response = _hx.post(
-        f"{supa.SUPABASE_URL}/storage/v1/object/sign/{bucket}/{path}",
-        headers={"apikey": supa.SERVICE_KEY,
-                 "Authorization": f"Bearer {supa.SERVICE_KEY}",
-                 "Content-Type": "application/json"},
-        json={"expiresIn": 3600}, timeout=30,
-    )
-    if response.status_code != 200:
+
+    def _sign_supabase() -> str | None:
+        response = _hx.post(
+            f"{supa.SUPABASE_URL}/storage/v1/object/sign/{bucket}/{path}",
+            headers={"apikey": supa.SERVICE_KEY,
+                     "Authorization": f"Bearer {supa.SERVICE_KEY}",
+                     "Content-Type": "application/json"},
+            json={"expiresIn": 3600}, timeout=30,
+        )
+        if response.status_code != 200:
+            return None
+        return f"{supa.SUPABASE_URL}/storage/v1{response.json()['signedURL']}"
+
+    def _sign_s3() -> str | None:
+        if not s3store.enabled():
+            return None
+        try:
+            s3store.head_object(path)          # never sign a key that is not there
+            return s3store.presign_get(path, expires=3600)
+        except Exception:                      # noqa: BLE001 — absent/unreachable
+            return None
+
+    # The preview is written by upload_export, which routes to S3 or to Supabase
+    # storage depending on EXPORT_STORAGE_PROVIDER, so the reader must sign against
+    # the store that actually holds the object (the export-download path already
+    # does this via artifacts.export_provider). Candidates written before that
+    # provenance was recorded carry no provider: for those we VERIFY both stores
+    # rather than guessing from the deployment's current setting, which would
+    # mis-sign whichever era of rows the env does not match.
+    provider = (candidate.get("variant_config") or {}).get("previewStorageProvider")
+    if provider == "s3":
+        url = _sign_s3()
+    elif provider == "supabase":
+        url = _sign_supabase()
+    else:
+        url = _sign_supabase() or _sign_s3()
+    if not url:
         raise HTTPException(404, "candidate preview could not be signed")
-    return {"url": f"{supa.SUPABASE_URL}/storage/v1{response.json()['signedURL']}",
-            "expiresIn": 3600}
+    return {"url": url, "expiresIn": 3600}
 
 
 @app.post("/projects/{project_id}/editor/start")

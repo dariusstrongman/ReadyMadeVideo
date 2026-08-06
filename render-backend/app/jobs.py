@@ -560,7 +560,8 @@ def handle_autoedit_v2(job: dict, project: dict, tmp: str, ctx: JobContext) -> d
                 project, tl_rows[0], preview_path,
                 insert=_insert, db_select=supa.db_select,
                 upload_export=_upload_export, now=_now,
-                remove=supa.storage_remove, update=supa.db_update)
+                remove=supa.storage_remove, update=supa.db_update,
+                export_provider=EXPORT_STORAGE_PROVIDER)
             if not bridged:
                 raise RuntimeError("bridge repair produced no candidate")
             artifacts["bridgedCandidateRunId"] = bridged["id"]
@@ -613,7 +614,7 @@ def handle_autoedit_v2(job: dict, project: dict, tmp: str, ctx: JobContext) -> d
         project, tl_row, preview_path,
         insert=_insert, db_select=supa.db_select,
         upload_export=_upload_export, now=_now, remove=supa.storage_remove,
-        update=supa.db_update)
+        update=supa.db_update, export_provider=EXPORT_STORAGE_PROVIDER)
     if bridged:
         artifacts["bridgedCandidateRunId"] = bridged["id"]
     dur = time.time() - t0
@@ -749,7 +750,7 @@ def handle_autoedit(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict
             project, best_tl_row, os.path.join(run_dir, preview_files[-1]),
             insert=_insert, db_select=supa.db_select,
             upload_export=_upload_export, now=_now, remove=supa.storage_remove,
-            update=supa.db_update)
+            update=supa.db_update, export_provider=EXPORT_STORAGE_PROVIDER)
         if bridged:
             artifacts["bridgedCandidateRunId"] = bridged["id"]
 
