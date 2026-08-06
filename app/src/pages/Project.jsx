@@ -840,6 +840,8 @@ export default function Project() {
                   <option value="60-180">1–3 minutes</option>
                   <option value="180-300">3–5 minutes</option>
                   <option value="300-600">5–10 minutes</option>
+                  <option value="600-1200">10–20 minutes</option>
+                  <option value="1200-3600">20+ minutes</option>
                 </select>
               </label>
               {startError && (
