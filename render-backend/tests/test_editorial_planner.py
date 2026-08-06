@@ -234,14 +234,21 @@ def test_fact_with_no_evidence_rejected():
     _reject(plan, needle="factual claim with no evidence")
 
 
-def test_fact_evidence_must_exist_in_the_named_source():
+def test_ungrounded_caption_is_dropped_not_rendered(monkeypatch):
+    """2026-08-06: a caption whose quote is not verbatim in its cited source
+    is UNGROUNDED. It is removed from the plan rather than failing the whole
+    plan — captions are optional decoration, and the fabricated text never
+    reaches the output either way. Fabrication in load-bearing fields
+    (storySentence, premises, payoffs, invented segment ids) still rejects."""
     plan = _valid_plan()
     plan["captions"] = [{"claimType": "fact", "text": "we finished the job",
                          "evidence": [{"sourceType": "transcript",
                                        "segmentId": "seg-1",   # no transcript
                                        "quoteOrValue": "we finished the job"}],
                          "timelineStart": 8.0, "timelineEnd": 11.0}]
-    _reject(plan, needle="quote is not present in the segment's transcript")
+    result = ep.plan_editorial(_segments(), {}, music_available=False,
+                               generate=_gen(plan))
+    assert result["plan"]["captions"] == []      # dropped, never rendered
 
 
 def test_supported_claims_from_transcript_and_user_input_accepted():
@@ -733,13 +740,19 @@ def test_rejected_after_attempt_budget():
 
 
 # ------------------------------------------------- retained grounding checks
-def test_hook_out_of_range_and_unlinked_rejected():
+def test_hook_is_rebound_to_the_opening_cut():
+    """2026-08-06: the hook IS the opening cut, so a hook whose source range
+    disagrees with timeline[0] is an internal bookkeeping mismatch, not a
+    creative choice — the code binds it to the cut that will actually render.
+    Nothing about the rendered video changes; only the metadata is made true."""
     plan = _valid_plan()
     plan["hook"].update(sourceIn=8.0, sourceOut=13.0, durationSeconds=5.0)
-    _reject(plan, needle="hook")
-    plan2 = _valid_plan()
-    plan2["hook"].update(sourceIn=1.5, sourceOut=3.5)
-    _reject(plan2, needle="not linked to the first timeline cut")
+    result = ep.plan_editorial(_segments(), {}, music_available=False,
+                               generate=_gen(plan))
+    hook, first = result["plan"]["hook"], result["plan"]["timeline"][0]
+    assert hook["segmentId"] == first["segmentId"]
+    assert hook["sourceIn"] == first["sourceIn"]
+    assert hook["sourceOut"] <= first["sourceOut"]
 
 
 def test_invented_audio_segment_ids_rejected():

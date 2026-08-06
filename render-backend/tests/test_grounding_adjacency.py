@@ -145,3 +145,65 @@ class TestQuoteTokenization:
                           segs=[_seg(action="crew inspects the water damage",
                                      transcript="push through the pantry")])
         assert out == []
+
+
+class TestPlanNormalizationConsistency:
+    """Bookkeeping the code settles so a good plan is not rejected over it."""
+
+    def _segs(self):
+        return [Segment(segmentId="seg-1", assetId="a1", sourceStart=0.0,
+                        sourceEnd=20.0, action="crew flips a tire",
+                        shotType="wide", location="field",
+                        transcript="push through it"),
+                Segment(segmentId="seg-2", assetId="a1", sourceStart=20.0,
+                        sourceEnd=40.0, action="crew drags a tire",
+                        shotType="wide", location="field")]
+
+    def _raw(self, **over):
+        raw = {
+            "timeline": [
+                {"segmentId": "seg-1", "sourceIn": 2.0, "sourceOut": 6.0,
+                 "timelineIn": 0.0, "timelineOut": 4.0},
+                {"segmentId": "seg-2", "sourceIn": 22.0, "sourceOut": 26.0,
+                 "timelineIn": 4.0, "timelineOut": 8.0}],
+            "hook": {"segmentId": "seg-2", "sourceIn": 22.0, "sourceOut": 24.0,
+                     "durationSeconds": 2.0},
+            # seg-3 is REAL catalog footage the timeline did not use (dropped);
+            # seg-99 is INVENTED and must survive so the validator rejects it.
+            "audio": {"naturalSoundSegmentIds": ["seg-1", "seg-3", "seg-99"],
+                      "jCutSegmentIds": [], "lCutSegmentIds": []},
+            "plannedDurationSeconds": 99.0,
+        }
+        raw.update(over)
+        return raw
+
+    def test_hook_is_bound_to_the_first_planned_cut(self):
+        raw = self._raw()
+        ep._normalize_timeline_arithmetic(raw, self._segs())
+        assert raw["hook"]["segmentId"] == "seg-1"          # was seg-2
+        assert raw["hook"]["sourceIn"] == 2.0               # matches cut 1
+        assert raw["hook"]["durationSeconds"] == 2.0        # cap preserved
+        assert raw["hook"]["sourceOut"] == 4.0
+
+    def test_real_but_unplanned_refs_dropped_invented_kept_fatal(self):
+        raw = self._raw()
+        segs = self._segs() + [Segment(
+            segmentId="seg-3", assetId="a1", sourceStart=40.0, sourceEnd=60.0,
+            action="crew rests", shotType="wide", location="field")]
+        ep._normalize_timeline_arithmetic(raw, segs)
+        refs = raw["audio"]["naturalSoundSegmentIds"]
+        assert "seg-3" not in refs      # real but unused -> bookkeeping, dropped
+        assert "seg-99" in refs         # invented -> stays, validator rejects
+        assert refs[0] == "seg-1"
+
+    def test_ungrounded_caption_dropped_grounded_kept(self):
+        raw = self._raw(captions=[
+            {"claimType": "fact", "text": "push through it",
+             "evidence": [{"sourceType": "transcript", "segmentId": "seg-1",
+                           "quoteOrValue": "push through it"}]},
+            {"claimType": "fact", "text": "invented line",
+             "evidence": [{"sourceType": "transcript", "segmentId": "seg-1",
+                           "quoteOrValue": "this was never said"}]}])
+        ep._normalize_timeline_arithmetic(raw, self._segs())
+        assert len(raw["captions"]) == 1
+        assert raw["captions"][0]["text"] == "push through it"

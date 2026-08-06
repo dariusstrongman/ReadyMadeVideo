@@ -1511,6 +1511,67 @@ def _normalize_timeline_arithmetic(raw: dict, segments: list[Segment]) -> None:
     if isinstance(raw.get("plannedDurationSeconds"), (int, float)):
         raw["plannedDurationSeconds"] = round(cursor, 3)
 
+    # ---- consistency the validator can settle deterministically --------
+    planned_ids = [e.get("segmentId") for e in raw["timeline"]
+                   if isinstance(e, dict)]
+
+    # The hook IS the opening cut. The model kept describing a hook segment
+    # that was not timeline[0] — a bookkeeping mismatch, not a creative one:
+    # bind it to the first cut it actually planned.
+    hook = raw.get("hook")
+    first = raw["timeline"][0] if raw["timeline"] else None
+    if isinstance(hook, dict) and isinstance(first, dict):
+        if hook.get("segmentId") != first.get("segmentId"):
+            hook["segmentId"] = first.get("segmentId")
+        hook["sourceIn"] = first.get("sourceIn")
+        span = float(first.get("sourceOut", 0)) - float(first.get("sourceIn", 0))
+        cap = float(hook.get("durationSeconds") or span)
+        dur = round(min(span, cap), 3)
+        hook["sourceOut"] = round(float(hook["sourceIn"]) + dur, 3)
+        hook["durationSeconds"] = dur
+
+    # Audio references may only point at segments the timeline actually uses;
+    # dropping strays is lossless (they were unusable references), while
+    # rejecting the whole plan over them is not.
+    audio = raw.get("audio")
+    if isinstance(audio, dict):
+        for field in ("naturalSoundSegmentIds", "jCutSegmentIds",
+                      "lCutSegmentIds"):
+            refs = audio.get(field)
+            if isinstance(refs, list):
+                # Drop refs to REAL catalog segments the timeline did not use
+                # (bookkeeping). An INVENTED id is fabrication and is left in
+                # place so the validator rejects the plan.
+                audio[field] = [r for r in refs
+                                if r in planned_ids or r not in by_id]
+
+    # A caption whose quote is not verbatim in its cited segment is an
+    # UNGROUNDED caption — but captions are optional decoration, so dropping
+    # the offender is strictly better than rejecting an otherwise-good plan.
+    # The remaining captions still face the full validator unchanged.
+    caps = raw.get("captions")
+    if isinstance(caps, list) and by_id:
+        kept = []
+        for c in caps:
+            if not isinstance(c, dict) or c.get("claimType") != "fact":
+                kept.append(c)
+                continue
+            ok = False
+            for ev in (c.get("evidence") or []):
+                seg = by_id.get(ev.get("segmentId"))
+                if seg is None:
+                    continue
+                quote = str(ev.get("quoteOrValue", "")).strip().lower()
+                hay = ((seg.transcript or "").lower()
+                       if ev.get("sourceType") == "transcript"
+                       else _segment_text(seg))
+                if quote and quote in hay:
+                    ok = True
+                    break
+            if ok or not (c.get("evidence") or []):
+                kept.append(c)
+        raw["captions"] = kept
+
 
 def plan_editorial(segments: list[Segment], constraints: dict,
                    music_available: bool, generate,
