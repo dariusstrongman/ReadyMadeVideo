@@ -1586,13 +1586,52 @@ def _normalize_timeline_arithmetic(raw: dict, segments: list[Segment]) -> None:
         hook["sourceIn"] = first.get("sourceIn")
         span = float(first.get("sourceOut", 0)) - float(first.get("sourceIn", 0))
         cap = float(hook.get("durationSeconds") or span)
-        dur = round(min(span, cap), 3)
+        # 5.0 is the executor's hard hook ceiling — a hook the executor will
+        # reject must not leave the planner
+        dur = round(min(span, cap, 5.0), 3)
         hook["sourceOut"] = round(float(hook["sourceIn"]) + dur, 3)
         hook["durationSeconds"] = dur
 
     # Audio references may only point at segments the timeline actually uses;
     # dropping strays is lossless (they were unusable references), while
     # rejecting the whole plan over them is not.
+    # The pacing block's duration targets describe the SAME timeline the
+    # plan itself lays out — when they disagree, the timeline is the truth
+    # (it is what renders) and the target is stale bookkeeping. The executor
+    # hard-rejects on this exact mismatch (a real run died over a beat
+    # running 7.23s against its own plan's 5.0s target), so the planner must
+    # ship plans that are internally consistent by construction. Energy
+    # targets are creative intent and stay untouched. A pacing entry whose
+    # beat has no cuts at all describes footage that does not exist — drop
+    # it. The executor's own check remains as the backstop for genuine
+    # catalog drift between planning and execution.
+    pacing = raw.get("pacing")
+    if isinstance(pacing, list):
+        beat_actual: dict = {}
+        labelled = False
+        for e in raw["timeline"]:
+            if isinstance(e, dict) and e.get("beat") is not None:
+                labelled = True
+                beat_actual[e["beat"]] = beat_actual.get(e["beat"], 0.0) + (
+                    float(e.get("sourceOut", 0)) - float(e.get("sourceIn", 0)))
+        if labelled:
+            # duplicates too: a real plan listed 'arrival_assessment' twice
+            # with two different targets — one passed, its twin failed the
+            # whole edit downstream. One beat, one entry.
+            kept_pacing, seen_beats = [], set()
+            for pb in pacing:
+                if not isinstance(pb, dict):
+                    kept_pacing.append(pb)
+                    continue
+                beat = pb.get("beat")
+                actual = beat_actual.get(beat)
+                if actual is None or beat in seen_beats:
+                    continue           # no cuts, or a duplicate: dropped
+                seen_beats.add(beat)
+                pb["targetDurationSeconds"] = round(actual, 3)
+                kept_pacing.append(pb)
+            raw["pacing"] = kept_pacing
+
     audio = raw.get("audio")
     if isinstance(audio, dict):
         for field in ("naturalSoundSegmentIds", "jCutSegmentIds",

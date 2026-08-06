@@ -265,3 +265,56 @@ class TestWarningNormalization:
         assert "speech says push through it" in texts      # verified -> kept
         assert "camera reports 4k capture" not in texts    # fabricated -> gone
         assert "no evidence list" in texts                 # validator's call
+
+
+class TestPacingTimelineConsistency:
+    """The plan's pacing targets describe its OWN timeline; when they
+    disagree the timeline is the truth (2026-08-06: a real run died at the
+    picture-edit stage over a beat running 7.23s against its own plan's 5.0s
+    target — an internally inconsistent plan the planner had approved)."""
+
+    _segs = TestPlanNormalizationConsistency._segs
+
+    def _raw(self):
+        raw = TestPlanNormalizationConsistency._raw(self)
+        for e, beat in zip(raw["timeline"], ("hook_beat", "build_beat"),
+                           strict=True):
+            e["beat"] = beat
+        raw["pacing"] = [
+            {"beat": "hook_beat", "targetDurationSeconds": 9.0, "energy": 0.8},
+            {"beat": "build_beat", "targetDurationSeconds": 2.0, "energy": 0.4},
+            # a real plan listed the same beat twice with conflicting targets
+            {"beat": "hook_beat", "targetDurationSeconds": 5.0, "energy": 0.8},
+            {"beat": "ghost_beat", "targetDurationSeconds": 5.0, "energy": 0.5},
+        ]
+        return raw
+
+    def test_targets_synced_to_timeline_energy_untouched_ghosts_dropped(self):
+        raw = self._raw()
+        ep._normalize_timeline_arithmetic(raw, self._segs())
+        by_beat = {p["beat"]: p for p in raw["pacing"]}
+        # each cut is 4.0s in the fixture — targets now say what renders
+        assert by_beat["hook_beat"]["targetDurationSeconds"] == 4.0
+        assert by_beat["build_beat"]["targetDurationSeconds"] == 4.0
+        assert by_beat["hook_beat"]["energy"] == 0.8         # creative: kept
+        assert "ghost_beat" not in by_beat    # target for footage that isn't
+        assert len(raw["pacing"]) == 2        # duplicate hook_beat collapsed
+
+    def test_unlabelled_timeline_leaves_pacing_alone(self):
+        raw = self._raw()
+        for e in raw["timeline"]:
+            del e["beat"]
+        ep._normalize_timeline_arithmetic(raw, self._segs())
+        assert [p["beat"] for p in raw["pacing"]] == \
+            ["hook_beat", "build_beat", "hook_beat", "ghost_beat"]
+
+    def test_hook_is_capped_at_the_executor_ceiling(self):
+        raw = self._raw()
+        # first cut spans 12s and the model asked for all of it as the hook
+        raw["timeline"][0].update(sourceIn=2.0, sourceOut=14.0,
+                                  timelineOut=12.0)
+        raw["hook"].update(segmentId="seg-1", sourceIn=2.0, sourceOut=14.0,
+                           durationSeconds=12.0)
+        ep._normalize_timeline_arithmetic(raw, self._segs())
+        assert raw["hook"]["durationSeconds"] == 5.0
+        assert raw["hook"]["sourceOut"] == 7.0
