@@ -170,7 +170,7 @@ export default function Project() {
   const [uploadInfo, setUploadInfo] = useState(null)  // {bytesUploaded,totalBytes,speedBps,etaSeconds,state}
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState('')
-  const [targetLen, setTargetLen] = useState('')   // '' = let the AI decide
+  const [lenRange, setLenRange] = useState('')     // '' = let the AI decide
   const [recutting, setRecutting] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [recutError, setRecutError] = useState('')
@@ -388,20 +388,19 @@ export default function Project() {
     if (starting) return
     setStarting(true); setStartError('')
     try {
-      // Persist the requested length FIRST — the planning chain derives its
-      // binding duration constraints from the project row. Tolerant of the
-      // column not existing yet (migration 0026 not applied): length is a
-      // preference, never a reason to block starting.
-      const want = Number(targetLen) || Number(project?.target_duration_seconds) || null
-      if (Number(targetLen)) {
+      // Persist the requested length RANGE first — the planning chain reads
+      // it off the project row and the planner recommends the ideal duration
+      // within it. Tolerant of the migration not being applied: a length
+      // preference is never a reason to block starting.
+      if (lenRange) {
+        const [lo, hi] = lenRange.split('-').map(Number)
         const { error: te } = await supabase.from('projects')
-          .update({ target_duration_seconds: Number(targetLen) })
+          .update({ duration_min_seconds: lo, duration_max_seconds: hi })
           .eq('id', projectId)
-        if (te && !/column|target_duration/i.test(te.message || '')) {
+        if (te && !/column|duration_/i.test(te.message || '')) {
           throw new Error(te.message)
         }
       }
-      void want
       // Idempotent server-side: returns the existing active job if one exists.
       const r = await fetch(`${RENDER_API}/projects/${projectId}/request-analysis`, {
         method: 'POST',
@@ -833,15 +832,13 @@ export default function Project() {
                 Start the edit and Stromation builds your first cut. You can close this page.
               </p>
               <label className="start-bar-length">
-                Target length{' '}
-                <select value={targetLen || project?.target_duration_seconds || ''}
-                  onChange={(e) => setTargetLen(e.target.value)} disabled={starting}>
+                How long should it be?{' '}
+                <select value={lenRange} onChange={(e) => setLenRange(e.target.value)}
+                  disabled={starting}>
                   <option value="">Let the AI decide</option>
-                  <option value="30">~30 seconds</option>
-                  <option value="60">~1 minute</option>
-                  <option value="120">~2 minutes</option>
-                  <option value="180">~3 minutes</option>
-                  <option value="300">~5 minutes</option>
+                  <option value="10-60">10–60 seconds</option>
+                  <option value="60-300">1–5 minutes</option>
+                  <option value="300-600">5–10 minutes</option>
                 </select>
               </label>
               {startError && (

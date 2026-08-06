@@ -353,7 +353,13 @@ class TestEndpoints:
 
 
 class TestTargetDuration:
-    def test_target_duration_becomes_binding_band(self):
+    def test_range_passes_straight_through(self):
+        band = jobs._plan_constraints_for(
+            {"name": "w", "duration_min_seconds": 60,
+             "duration_max_seconds": 300})
+        assert band["durationMin"] == 60 and band["durationMax"] == 300
+
+    def test_legacy_point_target_still_maps(self):
         band = jobs._plan_constraints_for(
             {"name": "w", "target_duration_seconds": 180})
         assert band["durationMin"] == 153 and band["durationMax"] == 207
@@ -361,14 +367,15 @@ class TestTargetDuration:
     def test_no_target_means_model_decides(self):
         assert "durationMin" not in jobs._plan_constraints_for({"name": "w"})
 
-    def test_chain_start_carries_duration(self, monkeypatch):
+    def test_chain_start_carries_range(self, monkeypatch):
         fake = FakeSupabase()
         install(monkeypatch, fake)
         _flag(monkeypatch, True)
         uid, _, project = _setup_project(fake)
         row = _project_row(fake, project)
-        row["target_duration_seconds"] = 180
+        row["duration_min_seconds"] = 60
+        row["duration_max_seconds"] = 300
         jobs._maybe_enqueue_customer_autoedit(row)
         params = _jobs_of(fake, project, "editorial_plan")[0]["params"]
-        assert params["durationMin"] == 153
-        assert params["durationMax"] == 207
+        assert params["durationMin"] == 60
+        assert params["durationMax"] == 300

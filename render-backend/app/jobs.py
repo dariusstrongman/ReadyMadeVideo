@@ -318,10 +318,15 @@ def _plan_constraints_for(project: dict) -> dict:
         out["aspectRatio"] = project["aspect_ratio"]
     if project.get("target_platform"):
         out["platform"] = project["target_platform"]
-    # Requested length becomes a BINDING band (±15%) the planner must honor —
-    # or honestly report insufficient_footage if the catalog cannot fill it.
-    target = project.get("target_duration_seconds")
-    if target:
+    # Requested length is a RANGE the planner must honor (recommending the
+    # ideal duration within it from the footage) — or honestly report
+    # insufficient_footage. Falls back to 0026's point target (±15%) for rows
+    # written before the range columns existed.
+    lo, hi = project.get("duration_min_seconds"), project.get("duration_max_seconds")
+    if lo and hi:
+        out["durationMin"], out["durationMax"] = int(lo), int(hi)
+    elif project.get("target_duration_seconds"):
+        target = project["target_duration_seconds"]
         out["durationMin"] = max(10, round(target * 0.85))
         out["durationMax"] = round(target * 1.15)
     return out
