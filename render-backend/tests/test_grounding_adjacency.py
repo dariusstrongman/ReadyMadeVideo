@@ -135,3 +135,13 @@ class TestTimelineArithmeticNormalization:
         ep._normalize_timeline_arithmetic(raw, self._segs())
         assert (raw["timeline"][0]["timelineIn"],
                 raw["timeline"][0]["timelineOut"]) == (0.0, 2.0)
+
+
+class TestQuoteTokenization:
+    def test_leading_apostrophe_from_quoted_speech_matches(self):
+        # catalog says "push"; caption text quotes "'push through'"
+        out = _violations(_fact("crew inspects the water damage 'push through'",
+                                quote="crew inspects the water damage"),
+                          segs=[_seg(action="crew inspects the water damage",
+                                     transcript="push through the pantry")])
+        assert out == []

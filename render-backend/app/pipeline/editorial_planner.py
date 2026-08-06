@@ -552,12 +552,24 @@ def _stem(token: str) -> str:
     return t
 
 
+def _strip_quotes(t: str) -> str:
+    """Leading/trailing apostrophes ride along with _WORD's contraction
+    support: a caption quoting speech ("'push through'") tokenized as 'push
+    and failed to match catalog push. Punctuation is not vocabulary."""
+    return t.strip("'\u2019\u2018-")
+
+
 def _allowed_token_sets(allowed_text: str) -> tuple[set, set]:
-    toks = {m.group(0).lower() for m in _WORD.finditer(allowed_text)}
+    toks = {_strip_quotes(m.group(0).lower())
+            for m in _WORD.finditer(allowed_text)}
+    toks.discard("")
     return toks, {_stem(t) for t in toks} | toks
 
 
 def _word_supported(low: str, toks: set, stems: set) -> bool:
+    low = _strip_quotes(low)
+    if not low:
+        return True
     if low in toks or low in _MEDIA_META_WORDS:
         return True
     st = _stem(low)
