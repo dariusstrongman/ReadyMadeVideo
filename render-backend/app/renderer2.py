@@ -63,7 +63,9 @@ def compile_timeline(timeline: dict, sources: dict[str, str], out_path: str,
     """timeline: validated timeline dict. sources: assetId -> local file path."""
     prof = PREVIEW if profile == "preview" else FINAL
     W, H = _dims(timeline, prof)
-    fps = int(timeline.get("fps", 30))
+    # never int(): truncating 23.976 -> 23 runs 4% slow. ffmpeg's fps/r
+    # filters take decimals directly.
+    fps = round(float(timeline.get("fps", 30)), 3)
 
     vclips = [c for t in timeline["tracks"] if t["type"] == "video"
               for c in t["clips"]]

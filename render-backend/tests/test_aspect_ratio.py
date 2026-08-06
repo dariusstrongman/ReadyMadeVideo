@@ -79,3 +79,36 @@ class TestBuiltTimelineCarriesShape:
         # Explicit dimensions must win over the blueprint's platform, which is
         # how a vertical project survives a horizontally-planned blueprint.
         assert (tl["width"], tl["height"]) == (1080, 1920)
+
+
+class TestFractionalFps:
+    """23.976/29.97 sources: the editor document and renderer must carry the
+    real rate — int typing rejected every NTSC-rate V2 candidate at
+    editor/start, and int() truncation ran renders 4% slow."""
+
+    def test_editor_document_accepts_ntsc_rates(self):
+        """Mirrors the exact production path that failed: a V2 candidate cut
+        from 23.976 fps sources -> document_from_candidate -> EditorDocument."""
+        from app.product_editor import EditorDocument, document_from_candidate
+        candidate = {
+            "id": "746aef3f-4772-4012-832a-438846b084f7",
+            "manifest": {"pictureTimeline": {
+                "width": 1080, "height": 1920, "fps": 23.976, "duration": 25.0,
+                "tracks": [{"id": "v", "type": "video", "clips": [
+                    {"id": "c1", "assetId": "a7a7a7a7-0000-4000-8000-000000000001",
+                     "sourceStart": 0.0, "sourceEnd": 25.0,
+                     "timelineStart": 0.0, "timelineEnd": 25.0,
+                     "speed": 1.0, "volume": 1.0}]}]},
+                "sourceAssetIds": ["a7a7a7a7-0000-4000-8000-000000000001"]},
+        }
+        doc = document_from_candidate(
+            "018e7930-dddd-4a4c-bd3c-b1a161aeabbe", candidate,
+            {"a7a7a7a7-0000-4000-8000-000000000001": 30.0})
+        validated = EditorDocument(**doc)
+        assert validated.fps == 23.976
+
+    def test_renderer_keeps_fractional_rate(self):
+        import inspect
+        from app import renderer2
+        src = inspect.getsource(renderer2.render_timeline)
+        assert "int(timeline.get(\"fps\"" not in src

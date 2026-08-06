@@ -28,7 +28,10 @@ class EditorDocument(BaseModel):
     candidateRunId: UUID
     width: int = Field(ge=16, le=7680)
     height: int = Field(ge=16, le=4320)
-    fps: int = Field(ge=1, le=120)
+    # float: real footage runs at fractional rates (23.976, 29.97). Declaring
+    # int made editor/start reject every V2 candidate cut from NTSC-rate
+    # sources while the engine itself handled them fine.
+    fps: float = Field(ge=1, le=120)
     duration: float = Field(gt=0, le=MAX_DURATION_SECONDS)
     tracks: list[dict]
     sourceAssetIds: list[UUID] = Field(min_length=1)
