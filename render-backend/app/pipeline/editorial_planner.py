@@ -1193,6 +1193,10 @@ Think before you cut:
    makes it a factual claim requiring evidence.
    storySentence, viewerPromise, premise, payoff, hook.text, captions,
    graphics and technicalWarnings all use this grounded structure.
+   hook.text especially: it describes REAL footage, so it must be claimType
+   "fact" with verbatim evidence — never an editorial_label containing words
+   from the footage (a label like "Outdoor Training" is rejected; either
+   quote evidence as a fact, or use a purely structural label).
 5a-geometry. A transition of duration D needs D/2 seconds of UNUSED source
    footage (handles) on BOTH sides of the cut: if a clip is used to its
    sourceStart/sourceEnd boundary, its handle there is 0.0s and any
