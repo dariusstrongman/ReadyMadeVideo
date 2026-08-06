@@ -310,6 +310,16 @@ class Beat(BaseModel):
     purpose: str
 
 
+class LoopPlan(BaseModel):
+    """One curiosity loop: a question the edit opens and must answer.
+    Phase 2 (PHASE2_HOOK) — optional; ignored entirely when the flag is off."""
+    question: str = Field(min_length=5, max_length=200)
+    openedAtSeconds: float = Field(ge=0)
+    openedBySegmentId: str
+    closedAtSeconds: float = Field(gt=0)
+    closedBySegmentId: str
+
+
 class EditorialPlan(BaseModel):
     schemaVersion: Literal[1]
     storySentence: GroundedText
@@ -340,6 +350,9 @@ class EditorialPlan(BaseModel):
     missingFootage: list[MissingFootage] = Field(default_factory=list)
     render: RenderInstructions
     status: str  # "approved" | "insufficient_footage"
+    # Phase 2 (all optional — a Phase 1 plan validates unchanged)
+    loops: list[LoopPlan] = Field(default_factory=list)
+    dialogueAdjustments: list[dict] = Field(default_factory=list)  # system-written
 
 
 # ----------------------------------------------------- structured user policies
@@ -1138,6 +1151,13 @@ def validate_plan(plan: EditorialPlan, segments: list[Segment],
         v.extend(_grounded_text_violations(w, by_id, pool, constraints,
                                            f"technicalWarnings[{i}]",
                                            extra_vocab=_WARNING_VOCAB))
+
+    # -- Phase 2 editorial-intelligence checks (flag-gated, additive; joining
+    # this list makes them hard by construction — violations force a revise).
+    # They can only ADD violations, never remove or weaken a truth ruling.
+    from . import editorial_phase2
+    if editorial_phase2.any_enabled():
+        v.extend(editorial_phase2.phase2_violations(plan, segments))
     return v
 
 
@@ -1319,6 +1339,8 @@ MECHANICAL RULES (validated, violations are rejected):
 
 def _response_schema() -> dict:
     """Gemini structured-output schema (OpenAPI subset, uppercase types)."""
+    from . import editorial_phase2 as _phase2
+
     def s(t, **kw):
         return {"type": t, **kw}
     evidence = s("OBJECT", properties={
@@ -1474,7 +1496,13 @@ def _response_schema() -> dict:
             "width": s("INTEGER"), "height": s("INTEGER"), "fps": s("NUMBER"),
             "aspect": s("STRING")},
             required=["width", "height", "fps", "aspect"]),
-        "status": s("STRING", enum=["approved", "insufficient_footage"])},
+        "status": s("STRING", enum=["approved", "insufficient_footage"]),
+        # Phase 2: the loops subtree rides in the CORE call only when the
+        # flag asks for it — small (~5 flat fields), but the schema state
+        # budget is a real, measured constraint (see gemini_generate), so
+        # dormant flags must not spend it
+        **({"loops": _phase2.loops_schema_fragment()}
+           if _phase2.enabled(_phase2.HOOK_FLAG) else {})},
         required=["schemaVersion", "storySentence", "footageSummary",
                   "intendedAudience", "viewerPromise", "options", "chosenOption",
                   "hook", "beats", "timeline", "pacing", "pacingRationale",
@@ -1483,6 +1511,7 @@ def _response_schema() -> dict:
 
 
 def _catalog_json(segments: list[Segment]) -> str:
+    from . import editorial_phase2
     return json.dumps([{
         "segmentId": s.segmentId, "assetId": s.assetId,
         "sourceStart": s.sourceStart, "sourceEnd": s.sourceEnd,
@@ -1492,6 +1521,7 @@ def _catalog_json(segments: list[Segment]) -> str:
         "emotion": s.emotion, "motionIntensity": s.motionIntensity,
         "focusScore": s.focusScore, "stabilityScore": s.stabilityScore,
         "audioScore": s.audioScore, "problems": s.problems,
+        **editorial_phase2.catalog_extras(s),
     } for s in segments], indent=None)
 
 
@@ -1542,6 +1572,12 @@ def _normalize_timeline_arithmetic(raw: dict, segments: list[Segment]) -> None:
     """
     if not isinstance(raw, dict) or not isinstance(raw.get("timeline"), list):
         return
+    # Phase 2 dialogue integrity: snap speech-severing cuts to safe
+    # boundaries FIRST, so the arithmetic below is rebuilt from the snapped
+    # trims. Flag-gated inside; a no-op when PHASE2_DIALOGUE is off.
+    from . import editorial_phase2
+    if editorial_phase2.enabled(editorial_phase2.DIALOGUE_FLAG):
+        editorial_phase2.snap_timeline_speech(raw, segments)
     by_id = {s.segmentId: s for s in segments}
     cursor = 0.0
     for entry in raw["timeline"]:
@@ -1714,6 +1750,10 @@ def plan_editorial(segments: list[Segment], constraints: dict,
                  "video/clip/footage. Synonyms are treated as fabrication:\n"
                  + " ".join(vocab)},
     ]
+    # Phase 2: for every flag that is ON, tell the model exactly the rules
+    # the validator will enforce (empty list when all flags are off).
+    from . import editorial_phase2
+    base_parts += editorial_phase2.prompt_parts(segments)
     schema = _response_schema()
     history: list[list[str]] = []
     feedback: list[dict] = []
@@ -1766,28 +1806,53 @@ def plan_editorial(segments: list[Segment], constraints: dict,
                     f"(threshold {APPROVAL_THRESHOLD}); the model's "
                     "self-assessment does not decide approval"]
             if not violations:
-                return {"plan": plan.model_dump(), "attempts": _attempt,
-                        "qualityScore": gate["score"], "status": plan.status,
-                        "deterministicGate": gate,
-                        "violationsHistory": history}
+                result = {"plan": plan.model_dump(), "attempts": _attempt,
+                          "qualityScore": gate["score"], "status": plan.status,
+                          "deterministicGate": gate,
+                          "violationsHistory": history}
+                # Phase 2 interest gate: a scored FLOOR beside (never above)
+                # the truth gate — evaluated only for plans that already
+                # passed every truth rule, so interest can only ever choose
+                # among honest plans, not rescue a dishonest one.
+                if editorial_phase2.enabled(editorial_phase2.INTEREST_FLAG) \
+                        and plan.status == "approved":
+                    ig = editorial_phase2.interest_gate(plan, segments)
+                    result["interestGate"] = ig
+                    if not ig["passed"]:
+                        violations = [
+                            f"interest: {r['rule']} failed — {r['detail']}"
+                            for r in ig["rules"] if not r["passed"]] + [
+                            f"interest gate score {ig['score']} is below the "
+                            f"floor {ig['threshold']} — the plan is legal but "
+                            "not yet worth watching; revise the WEAKEST rules "
+                            "above without breaking any grounding rule"]
+                        history.append(violations)
+                        feedback = _revise_feedback(raw, violations)
+                        continue
+                return result
         history.append(violations)
-        # Hand back the EXACT plan that was rejected, not just the
-        # violations. Without it the model regenerates all ~30 constrained
-        # fields from scratch every attempt, so fixing a caption can break
-        # the timeline — progress never accumulates and the pass rate stays
-        # a dice roll. With it, a repair is a targeted edit.
-        feedback = [{"text":
-                     "YOUR PREVIOUS PLAN WAS REJECTED. Here it is verbatim:\n"
-                     + json.dumps(raw)
-                     + "\n\nRule-level violations:\n- "
-                     + "\n- ".join(violations)
-                     + "\n\nReturn THE SAME PLAN with ONLY these violations "
-                       "fixed. Keep every other field byte-identical — do not "
-                       "re-plan, re-order, re-time or re-word anything that "
-                       "was not named above. Do not invent footage, claims, "
-                       "evidence or music to fix them — report "
-                       "insufficient_footage honestly if needed."}]
+        feedback = _revise_feedback(raw, violations)
     raise PlanRejected(history)
+
+
+def _revise_feedback(raw: dict, violations: list[str]) -> list[dict]:
+    """Hand back the EXACT plan that was rejected, not just the violations.
+
+    Without it the model regenerates all ~30 constrained fields from scratch
+    every attempt, so fixing a caption can break the timeline — progress
+    never accumulates and the pass rate stays a dice roll. With it, a repair
+    is a targeted edit."""
+    return [{"text":
+             "YOUR PREVIOUS PLAN WAS REJECTED. Here it is verbatim:\n"
+             + json.dumps(raw)
+             + "\n\nRule-level violations:\n- "
+             + "\n- ".join(violations)
+             + "\n\nReturn THE SAME PLAN with ONLY these violations "
+               "fixed. Keep every other field byte-identical — do not "
+               "re-plan, re-order, re-time or re-word anything that "
+               "was not named above. Do not invent footage, claims, "
+               "evidence or music to fix them — report "
+               "insufficient_footage honestly if needed."}]
 
 
 def gemini_generate(parts: list[dict], schema: dict) -> dict:

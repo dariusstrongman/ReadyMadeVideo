@@ -10,7 +10,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = 2
+# v3 (2026-08-07): narrative substrate — Segment gains speechSpans/wordTimings/
+# speechFreeRanges/motionPeaks/stationaryRanges/composition/continuity/
+# naturalSoundValue/shotSize. All optional with defaults: v2 rows load unchanged.
+SCHEMA_VERSION = 3
 
 
 # ---------- probe ----------
@@ -157,6 +160,14 @@ class MotionArtifact(BaseModel):
 
 
 # ---------- canonical segment (catalog) ----------
+class SpeechSpan(BaseModel):
+    """One sentence-aligned speech interval, in ABSOLUTE asset time (it may
+    extend past the segment's own range — consumers clamp, the truth doesn't)."""
+    start: float
+    end: float
+    text: str = ""
+
+
 class Segment(BaseModel):
     schemaVersion: int = SCHEMA_VERSION
     segmentId: str
@@ -181,3 +192,14 @@ class Segment(BaseModel):
     duplicateGroupId: str | None = None
     problems: list[str] = []
     searchText: str = ""
+    # ---- narrative substrate (schema v3, all optional — v2 rows load
+    # unchanged; every field is DERIVED from stored artifacts, never invented)
+    speechSpans: list[SpeechSpan] = []       # sentences overlapping the segment
+    wordTimings: list[Word] = []             # word-level ASR timings, absolute
+    speechFreeRanges: list[SpeechSpan] = []  # in-segment gaps with no speech
+    motionPeaks: list[float] = []            # motion local maxima (timestamps)
+    stationaryRanges: list[list[float]] = []
+    composition: str = ""                    # from the semantic provider
+    continuity: str = ""                     # clothing/lighting/environment
+    naturalSoundValue: float = 0
+    shotSize: str = ""                       # normalized: close|medium|wide|""

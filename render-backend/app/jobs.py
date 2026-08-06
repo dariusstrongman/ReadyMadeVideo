@@ -764,7 +764,11 @@ def handle_editorial_plan(job: dict, project: dict, tmp: str, ctx: JobContext) -
         "quality_score": result["qualityScore"], "attempts": result["attempts"],
         "request": params, "plan": result["plan"],
         "validation": {"violationsHistory": result["violationsHistory"],
-                       "deterministicGate": result["deterministicGate"]},
+                       "deterministicGate": result["deterministicGate"],
+                       # Phase 2 (flag-gated): present only when the interest
+                       # gate ran; additive key, absent = Phase 1 behavior
+                       **({"interestGate": result["interestGate"]}
+                          if result.get("interestGate") else {})},
     })
     row.raise_for_status()
     plan_id = row.json()[0]["id"]

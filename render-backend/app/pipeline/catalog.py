@@ -9,6 +9,7 @@ from .schemas import (
     ScenesArtifact,
     Segment,
     SemanticArtifact,
+    SpeechSpan,
     TranscriptArtifact,
 )
 
@@ -18,6 +19,50 @@ def _transcript_in(tr: TranscriptArtifact | None, start: float, end: float) -> s
         return None
     hits = [s.text for s in tr.sentences if s.start < end and s.end > start]
     return " ".join(hits) or None
+
+
+def _speech_spans(tr: TranscriptArtifact | None, start: float,
+                  end: float) -> list[SpeechSpan]:
+    """Sentence spans overlapping the segment, UNCLAMPED (absolute times are
+    the truth; a sentence may begin before the segment or end after it)."""
+    if not tr:
+        return []
+    return [SpeechSpan(start=s.start, end=s.end, text=s.text)
+            for s in tr.sentences if s.start < end and s.end > start]
+
+
+def _words_in(tr: TranscriptArtifact | None, start: float, end: float) -> list:
+    if not tr:
+        return []
+    return [w for w in tr.words if w.start < end and w.end > start]
+
+
+def _speech_free(spans: list[SpeechSpan], start: float,
+                 end: float) -> list[SpeechSpan]:
+    """In-segment gaps not covered by any speech span (merged intervals)."""
+    covered = sorted((max(start, s.start), min(end, s.end)) for s in spans)
+    gaps, cursor = [], start
+    for lo, hi in covered:
+        if lo > cursor:
+            gaps.append(SpeechSpan(start=round(cursor, 3), end=round(lo, 3)))
+        cursor = max(cursor, hi)
+    if cursor < end:
+        gaps.append(SpeechSpan(start=round(cursor, 3), end=round(end, 3)))
+    return [g for g in gaps if g.end - g.start >= 0.2]
+
+
+def _shot_size(shot_type: str) -> str:
+    """Normalize the provider's free-text shot type into a closed vocabulary.
+    (Production carried 8 spellings for 3 categories, silently inflating the
+    variety gate — the raw string is preserved in shotType.)"""
+    s = (shot_type or "").lower()
+    if "close" in s or "ecu" in s or "extreme" in s:
+        return "close"
+    if "medium" in s or "mid" in s:
+        return "medium"
+    if "wide" in s or "establish" in s or "long shot" in s:
+        return "wide"
+    return ""
 
 
 def _audio_score(audio: AudioArtifact | None, start: float, end: float) -> float:
@@ -75,6 +120,8 @@ def build_catalog(asset_id: str,
         motion_intensity = mot.motion_intensity if mot else \
             (min(1.0, m.motion_energy_mean / 18.0) if m else 0.0)
 
+        spans = _speech_spans(transcript, start, end)
+
         search_bits = []
         if sem:
             search_bits.append(sem.search_description)
@@ -111,5 +158,19 @@ def build_catalog(asset_id: str,
             duplicateGroupId=(f"dup_{m.duplicate_group}"
                               if m and m.duplicate_group is not None else None),
             problems=problems,
-            searchText=" ".join(b for b in search_bits if b).strip()))
+            searchText=" ".join(b for b in search_bits if b).strip(),
+            # narrative substrate (schema v3) — recovered from artifacts that
+            # were previously discarded at this merge; nothing is invented
+            speechSpans=spans,
+            wordTimings=_words_in(transcript, start, end),
+            speechFreeRanges=_speech_free(spans, start, end),
+            motionPeaks=[round(p, 3) for p in (mot.peak_moments if mot else [])
+                         if start <= p <= end],
+            stationaryRanges=[[round(a, 3), round(b, 3)]
+                              for a, b in (mot.stationary_ranges if mot else [])
+                              if a < end and b > start],
+            composition=sem.composition if sem else "",
+            continuity=sem.continuity if sem else "",
+            naturalSoundValue=sem.natural_sound_value if sem else 0,
+            shotSize=_shot_size(sem.shot_type if sem else "")))
     return segments
