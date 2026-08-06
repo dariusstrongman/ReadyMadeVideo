@@ -39,6 +39,10 @@ EXPORT_STORAGE_PROVIDER = os.environ.get("EXPORT_STORAGE_PROVIDER", "supabase")
 
 WORKER_CONCURRENCY = int(os.environ.get("WORKER_CONCURRENCY", "1"))
 STALE_AFTER_S = int(os.environ.get("JOB_STALE_AFTER_S", "900"))
+# Whole-plan retries after a PlanRejected in the customer journey. Each job
+# already makes MAX_ATTEMPTS internal repair passes, so this is the outer
+# bound on total planning effort before the customer is told honestly.
+MAX_PLAN_RETRIES = int(os.environ.get("MAX_PLAN_RETRIES", "3"))
 POLL_INTERVAL_S = float(os.environ.get("JOB_POLL_INTERVAL_S", "3"))
 MAX_ACTIVE_JOBS_PER_USER = int(os.environ.get("MAX_ACTIVE_JOBS_PER_USER", "4"))
 
@@ -1095,6 +1099,30 @@ def _run_job(job: dict) -> None:
         if job["kind"] == "editorial_plan"                 and (job.get("params") or {}).get("source") in (
                     "customer_journey", "recut"):
             fail_status = "analysis_failed"
+        # AUTO-RESUME the customer journey. A rejected plan is a generative
+        # miss, not a broken system: the repair loop converges but any one of
+        # ~30 constraints can still slip. Rather than dead-ending on a human
+        # clicking Try again, re-enqueue the planning stage with fresh
+        # randomness, bounded so it can never loop or burn budget forever.
+        # Everything else (crashes, quota, missing catalog) fails through
+        # normally on the first try.
+        params = job.get("params") or {}
+        if (job["kind"] == "editorial_plan"
+                and params.get("source") in ("customer_journey", "recut")
+                and err.startswith("PlanRejected")
+                and int(params.get("plan_retry", 0)) < MAX_PLAN_RETRIES):
+            nxt = int(params.get("plan_retry", 0)) + 1
+            try:
+                enqueue_job(job["project_id"], job["user_id"],
+                            "editorial_plan", {**params, "plan_retry": nxt})
+                set_project_status(
+                    job["project_id"], "analyzing",
+                    f"refining your edit (pass {nxt + 1})")
+                log_event("PLAN-AUTO-RETRY", job_id=job["id"], attempt=nxt)
+                return
+            except ConcurrencyLimit:
+                pass          # at the cap — fall through and surface honestly
+
         if fail_status:
             try:
                 set_project_status(job["project_id"], fail_status,

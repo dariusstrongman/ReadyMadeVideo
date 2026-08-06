@@ -379,3 +379,74 @@ class TestTargetDuration:
         params = _jobs_of(fake, project, "editorial_plan")[0]["params"]
         assert params["durationMin"] == 60
         assert params["durationMax"] == 300
+
+
+class TestPlanAutoResume:
+    """A rejected plan is a generative miss, not a broken system: the journey
+    resumes itself, bounded, instead of dead-ending on a human click."""
+
+    def _fail_plan(self, monkeypatch, exc):
+        def boom(*a, **k):
+            raise exc
+        monkeypatch.setattr(ep, "plan_editorial", boom)
+
+    def test_plan_rejection_auto_retries_with_incrementing_counter(self, monkeypatch):
+        fake = FakeSupabase()
+        install(monkeypatch, fake)
+        _flag(monkeypatch, True)
+        uid, _, project = _setup_project(fake, status="ready")
+        self._fail_plan(monkeypatch, ep.PlanRejected([["nope"]]))
+
+        jobs.enqueue_job(project["id"], uid, "editorial_plan",
+                         {"source": "customer_journey"})
+        jobs._run_job(jobs._claim_next())
+
+        plans = _jobs_of(fake, project, "editorial_plan")
+        assert len(plans) == 2                       # a fresh attempt exists
+        assert plans[1]["params"]["plan_retry"] == 1
+        assert plans[1]["params"]["source"] == "customer_journey"
+        # the customer sees progress, not failure
+        assert _project_row(fake, project)["status"] == "analyzing"
+
+    def test_auto_retry_is_bounded_then_surfaces_honestly(self, monkeypatch):
+        fake = FakeSupabase()
+        install(monkeypatch, fake)
+        _flag(monkeypatch, True)
+        uid, _, project = _setup_project(fake, status="ready")
+        self._fail_plan(monkeypatch, ep.PlanRejected([["nope"]]))
+
+        jobs.enqueue_job(project["id"], uid, "editorial_plan",
+                         {"source": "customer_journey",
+                          "plan_retry": jobs.MAX_PLAN_RETRIES})
+        jobs._run_job(jobs._claim_next())
+
+        assert len(_jobs_of(fake, project, "editorial_plan")) == 1   # no more
+        row = _project_row(fake, project)
+        assert row["status"] == "analysis_failed"
+        assert "PlanRejected" in row["status_reason"]
+
+    def test_real_crashes_do_not_auto_retry(self, monkeypatch):
+        """Quota, missing catalog, bugs: fail on the first try, loudly."""
+        fake = FakeSupabase()
+        install(monkeypatch, fake)
+        _flag(monkeypatch, True)
+        uid, _, project = _setup_project(fake, status="ready")
+        self._fail_plan(monkeypatch, RuntimeError("Gemini API 429 quota"))
+
+        jobs.enqueue_job(project["id"], uid, "editorial_plan",
+                         {"source": "customer_journey"})
+        jobs._run_job(jobs._claim_next())
+
+        assert len(_jobs_of(fake, project, "editorial_plan")) == 1
+        assert _project_row(fake, project)["status"] == "analysis_failed"
+
+    def test_operator_plans_never_auto_retry(self, monkeypatch):
+        fake = FakeSupabase()
+        install(monkeypatch, fake)
+        _flag(monkeypatch, True)
+        uid, _, project = _setup_project(fake, status="ready")
+        self._fail_plan(monkeypatch, ep.PlanRejected([["nope"]]))
+
+        jobs.enqueue_job(project["id"], uid, "editorial_plan", {})   # no source
+        jobs._run_job(jobs._claim_next())
+        assert len(_jobs_of(fake, project, "editorial_plan")) == 1
