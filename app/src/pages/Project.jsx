@@ -363,17 +363,10 @@ export default function Project() {
       bytesBefore += file.size
       setUploadPct(Math.round((done / total) * 100))
     }
-    // finalize already set the project to `ready`; trigger analysis
-    // (idempotent: backend returns the existing job if one is already active).
-    try {
-      await fetch(`${RENDER_API}/projects/${projectId}/request-analysis`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      })
-    } catch (analyzeErr) {
-      // Non-fatal: the stall-detection UI will surface this after 5 minutes
-      console.warn('[Stromation] Could not trigger analysis:', analyzeErr)
-    }
+    // Upload complete — deliberately NO auto-start (user decision 2026-08-06):
+    // editing begins on the explicit "Start editing" button, so more clips can
+    // be added first and the edit never kicks off without consent. The
+    // reloaded page shows the "N clips ready" start bar.
     setPendingFiles([])
     setUploading(false)
     setUploadInfo(null)

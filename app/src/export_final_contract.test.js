@@ -51,3 +51,18 @@ describe('failed edits offer an explicit retry', () => {
     expect(project).toMatch(/request-analysis/)
   })
 })
+
+
+describe('editing starts on consent, never on upload completion', () => {
+  it('startUpload does not call request-analysis', () => {
+    const startUpload = project.slice(project.indexOf('async function startUpload'),
+                                      project.indexOf('async function startEditing'))
+    expect(startUpload).not.toMatch(/request-analysis/)
+  })
+
+  it('the explicit Start editing action exists and calls request-analysis', () => {
+    expect(project).toMatch(/Start editing/)
+    const startEditing = project.slice(project.indexOf('async function startEditing'))
+    expect(startEditing.slice(0, 800)).toMatch(/request-analysis/)
+  })
+})
