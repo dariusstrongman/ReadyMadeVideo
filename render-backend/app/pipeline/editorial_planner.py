@@ -1209,6 +1209,15 @@ Think before you cut:
    "fact" with verbatim evidence — never an editorial_label containing words
    from the footage (a label like "Outdoor Training" is rejected; either
    quote evidence as a fact, or use a purely structural label).
+5-duration. THE RECOMMENDED LENGTH IS THE FULL STORY. When the request
+   gives no duration range, plannedDurationSeconds must be derived from the
+   footage itself: exactly long enough to tell the COMPLETE story the catalog
+   supports — every distinct activity, phase or scene that advances it,
+   nothing padded, nothing dropped for brevity's sake. "Short because the
+   format is vertical" is NOT a rationale; platform idiom never overrides the
+   story. A 25-minute training session with four distinct exercises and
+   spoken context is not a 25-second story. When the request DOES give a
+   range, recommend the length within it that tells the most complete story.
 5a-geometry. A transition of duration D needs D/2 seconds of UNUSED source
    footage (handles) on BOTH sides of the cut: if a clip is used to its
    sourceStart/sourceEnd boundary, its handle there is 0.0s and any
@@ -1641,7 +1650,12 @@ def gemini_generate(parts: list[dict], schema: dict) -> dict:
         + "\n\nNow produce ONLY the remaining sections for this exact plan:"
           " exactly 3 creative options that were considered (each fully"
           " scored, grounded in the same segment catalog) with chosenOption ="
-          " the index the core plan implements; the captions; the graphics;"
+          " the index the core plan implements — the options must be"
+          " GENUINELY DIFFERENT story approaches (e.g. a single-highlight"
+          " short, the full-session story, an instructional cut), each with"
+          " its own idealDurationSeconds derived from how long THAT story"
+          " needs; three lengths of one idea is not deliberation. Then the"
+          " captions; the graphics;"
           " and the technical warnings. Every claim needs REAL evidence"
           " entries (sourceType + quoteOrValue from the catalog) — an empty"
           " evidence object is a rejection. quoteOrValue must be COPIED"
