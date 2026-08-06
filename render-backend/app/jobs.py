@@ -843,7 +843,9 @@ def handle_final_render(job: dict, project: dict, tmp: str, ctx: JobContext) -> 
     ctx.checkpoint("before_render")
     t0 = time.time()
     result = render_timeline(tl, sources, out, profile="final",
-                             cancel_check=lambda: ctx.cancelled())
+                             cancel_check=lambda: ctx.cancelled(),
+        tick=lambda secs: update_job(job["id"], {"current_stage":
+            f"rendering — {int(secs // 60)}m {int(secs % 60):02d}s elapsed"}))
     ctx.checkpoint("before_upload")               # never upload a partial export
     path = _upload_export(project, f"renders/{job['id']}.mp4", out)
     dur = time.time() - t0
@@ -875,8 +877,11 @@ def _render_bridged_editor(job: dict, project: dict, tmp: str, ctx: JobContext,
                            "progress": 40})
     ctx.checkpoint("before_editor_render")
     out = os.path.join(tmp, "product-editor-bridged.mp4")
-    result = render_timeline(renderer_timeline(document), sources, out,
-                             profile="final", cancel_check=lambda: ctx.cancelled())
+    result = render_timeline(
+        renderer_timeline(document), sources, out, profile="final",
+        cancel_check=lambda: ctx.cancelled(),
+        tick=lambda secs: update_job(job["id"], {"current_stage":
+            f"rendering — {int(secs // 60)}m {int(secs % 60):02d}s elapsed"}))
     ctx.checkpoint("before_editor_upload")
     path = _upload_export(
         project, f"renders/{job['id']}-editor-v{doc_row['version']}.mp4", out)

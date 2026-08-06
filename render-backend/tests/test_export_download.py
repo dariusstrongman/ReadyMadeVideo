@@ -205,3 +205,34 @@ def test_every_final_render_return_records_its_provider():
     assert len(returns) >= 3
     for r in returns:
         assert "export_provider" in r, f"return lacks export_provider: {r[:80]}"
+
+
+def test_long_renders_heartbeat_so_the_watchdog_cannot_kill_them():
+    """A 10-minute encode is ONE opaque step. Without a periodic tick the job
+    emits no heartbeat, the UI freezes on a stale percent (a real user read
+    40% as 'stuck'), and recover_stale() can requeue a healthy render."""
+    import inspect
+    from app import jobs, renderer2
+
+    # every final render passes a tick: check the 8 lines following each call
+    lines = inspect.getsource(jobs).split("\n")
+    starts = [i for i, ln in enumerate(lines) if "render_timeline(" in ln]
+    assert starts, "no render_timeline calls found"
+    for i in starts:
+        block = "\n".join(lines[i:i + 8])
+        assert "tick=" in block, f"render without heartbeat tick near: {lines[i].strip()}"
+
+    # and the runner actually invokes it on a schedule
+    src = inspect.getsource(renderer2._run_interruptible)
+    assert "tick_every" in src and "tick(" in src
+
+
+def test_tick_fires_during_a_long_run(monkeypatch):
+    from app import renderer2
+    ticks = []
+    # a command that outlives several tick intervals
+    rc, _ = renderer2._run_interruptible(
+        ["sleep", "1"], timeout=30, tick=lambda s: ticks.append(s),
+        tick_every=0.2)
+    assert rc == 0
+    assert len(ticks) >= 3          # ~0.2s cadence across ~1s

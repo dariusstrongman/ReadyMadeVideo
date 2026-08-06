@@ -1659,12 +1659,22 @@ def plan_editorial(segments: list[Segment], constraints: dict,
                         "deterministicGate": gate,
                         "violationsHistory": history}
         history.append(violations)
-        feedback = [{"text": "YOUR PREVIOUS PLAN WAS REJECTED. Rule-level "
-                             "violations:\n- " + "\n- ".join(violations)
-                             + "\nRevise the plan to fix EVERY violation. Do "
-                               "not invent footage, claims, evidence or music "
-                               "to fix them — report insufficient_footage "
-                               "honestly if needed."}]
+        # Hand back the EXACT plan that was rejected, not just the
+        # violations. Without it the model regenerates all ~30 constrained
+        # fields from scratch every attempt, so fixing a caption can break
+        # the timeline — progress never accumulates and the pass rate stays
+        # a dice roll. With it, a repair is a targeted edit.
+        feedback = [{"text":
+                     "YOUR PREVIOUS PLAN WAS REJECTED. Here it is verbatim:\n"
+                     + json.dumps(raw)
+                     + "\n\nRule-level violations:\n- "
+                     + "\n- ".join(violations)
+                     + "\n\nReturn THE SAME PLAN with ONLY these violations "
+                       "fixed. Keep every other field byte-identical — do not "
+                       "re-plan, re-order, re-time or re-word anything that "
+                       "was not named above. Do not invent footage, claims, "
+                       "evidence or music to fix them — report "
+                       "insufficient_footage honestly if needed."}]
     raise PlanRejected(history)
 
 

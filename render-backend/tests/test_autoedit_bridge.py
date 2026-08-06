@@ -182,7 +182,8 @@ def test_product_editor_opens_bridged_and_versions(monkeypatch, tmp_path):
 def _stub_render(monkeypatch):
     import app.renderer2 as r2
 
-    def fake_render(tl, sources, out, profile="final", cancel_check=None):
+    def fake_render(tl, sources, out, profile="final", cancel_check=None,
+                    tick=None):
         with open(out, "wb") as fh:
             fh.write(b"MP4BYTES")
         return {"duration": 8.0, "width": 1080, "height": 1920, "size_bytes": 8}

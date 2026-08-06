@@ -123,7 +123,8 @@ def test_full_customer_journey(monkeypatch, tmp_path):
     # 7) Worker renders the exact bound revision (bridged -> original audio).
     import app.renderer2 as r2mod
 
-    def fake_render(tl, sources, out, profile="final", cancel_check=None):
+    def fake_render(tl, sources, out, profile="final", cancel_check=None,
+                    tick=None):
         with open(out, "wb") as fh:
             fh.write(b"MP4")
         return {"duration": 8.0, "width": 1080, "height": 1920, "size_bytes": 3}

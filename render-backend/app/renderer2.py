@@ -192,14 +192,26 @@ class RenderCancelled(Exception):
 
 
 def _run_interruptible(cmd: list[str], timeout: int, cancel_check=None,
-                       out_path: str | None = None):
+                       out_path: str | None = None, tick=None,
+                       tick_every: float = 20.0):
     """Run ffmpeg with polling so an operator cancellation terminates the
     subprocess promptly (checked every 0.5 s) and partial output is deleted.
     Fixed argument lists only — never shell=True."""
     import time as _time
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     t0 = _time.time()
+    last_tick = t0
     while True:
+        # A long encode is ONE opaque step: without a periodic tick the job
+        # emits no heartbeat for its whole duration, the UI freezes on a stale
+        # percentage, and the stale-job watchdog can requeue a render that is
+        # actually healthy.
+        if tick and _time.time() - last_tick >= tick_every:
+            last_tick = _time.time()
+            try:
+                tick(_time.time() - t0)
+            except Exception:  # noqa: BLE001 — telemetry never breaks a render
+                pass
         rc = proc.poll()
         if rc is not None:
             _, stderr = proc.communicate()
@@ -222,9 +234,10 @@ def _run_interruptible(cmd: list[str], timeout: int, cancel_check=None,
 
 def render_timeline(timeline: dict, sources: dict[str, str], out_path: str,
                     profile: str = "preview", music_path: str | None = None,
-                    timeout: int = 900, cancel_check=None):
+                    timeout: int = 900, cancel_check=None, tick=None):
     compiled = compile_timeline(timeline, sources, out_path, profile, music_path)
-    rc, stderr = _run_interruptible(compiled.cmd, timeout, cancel_check, out_path)
+    rc, stderr = _run_interruptible(compiled.cmd, timeout, cancel_check,
+                                    out_path, tick=tick)
     if rc != 0:
         raise RenderError(f"ffmpeg failed: {stderr.decode(errors='replace')[-600:]}")
     if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
