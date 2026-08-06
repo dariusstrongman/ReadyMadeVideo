@@ -866,6 +866,11 @@ export default function Project() {
               {assets.map(a => (
                 <div key={a.id} className="list-item">
                   <span style={{ flex: 1, fontSize: '0.85rem' }}>{a.filename}</span>
+                  {a.duration_seconds > 0 && (
+                    <span className="small" style={{ marginRight: 12 }}>
+                      {Math.floor(a.duration_seconds / 60)}m {Math.round(a.duration_seconds % 60)}s
+                    </span>
+                  )}
                   <span className="small">{a.size_bytes ? fmtSize(a.size_bytes) : ''}</span>
                 </div>
               ))}

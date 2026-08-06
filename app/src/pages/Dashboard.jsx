@@ -280,7 +280,7 @@ export default function Dashboard() {
           {/* The hero is a project like any other — it needs the same controls. */}
           <ProjectTools project={hero} onChanged={load} onDeleted={load}
             onOpenChange={setHeroTools} pinned />
-          {heroStatus.intent === 'ready' && (
+          {heroStatus.intent === 'ready' && posters[hero.id] && (
             <span className="st-play" aria-hidden="true">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
             </span>
