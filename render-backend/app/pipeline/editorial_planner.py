@@ -532,8 +532,62 @@ _MEDIA_META_WORDS = frozenset({
     "end", "ends", "ending", "open", "opens", "opening", "close", "closes",
     "feature", "features", "capture", "captures", "captured"})
 
-_SUFFIXES = ("'s", "ies", "ing", "ions", "tion", "ion", "ers", "ment",
-             "ness", "edly", "ed", "es", "ly", "er", "s", "d")
+# "tions" before "ions"/"tion": without it "inspections" strips to
+# "inspect" while "inspection" strips to "inspec" — same word, two roots.
+_SUFFIXES = ("'s", "ies", "ing", "tions", "ions", "tion", "ion", "ers",
+             "ment", "ness", "edly", "ed", "es", "ly", "er", "s", "d")
+
+# Irregular English inflection the suffix-stripper cannot reach: a claim
+# saying "finding" against footage that says "found" is the same catalog
+# word, not fabrication ("found" suffix-strips to "foun" and never meets
+# "find"). Each group's first form is the lemma; EVERY form maps to it, base
+# included, so both sides of a comparison land on the same lemma and so the
+# stripper can't later mangle a base ("find" would strip its 'd' to "fin").
+# An invented word is in no group and still fails.
+_IRREGULAR_GROUPS = [
+    ("find", "finds", "found", "finding"),
+    ("take", "takes", "took", "taken", "taking"),
+    ("get", "gets", "got", "gotten", "getting"),
+    ("give", "gives", "gave", "given", "giving"),
+    ("make", "makes", "made", "making"),
+    ("go", "goes", "went", "gone", "going"),
+    ("do", "does", "did", "done", "doing"),
+    ("see", "sees", "saw", "seen", "seeing"),
+    ("come", "comes", "came", "coming"),
+    ("run", "runs", "ran", "running"),
+    ("begin", "begins", "began", "begun", "beginning"),
+    ("break", "breaks", "broke", "broken", "breaking"),
+    ("bring", "brings", "brought", "bringing"),
+    ("build", "builds", "built", "building"),
+    ("buy", "buys", "bought", "buying"),
+    ("catch", "catches", "caught", "catching"),
+    ("choose", "chooses", "chose", "chosen", "choosing"),
+    ("fall", "falls", "fell", "fallen", "falling"),
+    ("feel", "feels", "felt", "feeling"),
+    ("hold", "holds", "held", "holding"),
+    ("keep", "keeps", "kept", "keeping"),
+    ("know", "knows", "knew", "known", "knowing"),
+    ("leave", "leaves", "left", "leaving"),
+    ("lose", "loses", "lost", "losing"),
+    ("mean", "means", "meant", "meaning"),
+    ("meet", "meets", "met", "meeting"),
+    ("pay", "pays", "paid", "paying"),
+    ("rise", "rises", "rose", "risen", "rising"),
+    ("say", "says", "said", "saying"),
+    ("sell", "sells", "sold", "selling"),
+    ("send", "sends", "sent", "sending"),
+    ("sit", "sits", "sat", "sitting"),
+    ("speak", "speaks", "spoke", "spoken", "speaking"),
+    ("stand", "stands", "stood", "standing"),
+    ("teach", "teaches", "taught", "teaching"),
+    ("tell", "tells", "told", "telling"),
+    ("think", "thinks", "thought", "thinking"),
+    ("wear", "wears", "wore", "worn", "wearing"),
+    ("win", "wins", "won", "winning"),
+    ("write", "writes", "wrote", "written", "writing"),
+]
+_IRREGULAR = {form: group[0]
+              for group in _IRREGULAR_GROUPS for form in group}
 
 
 def _stem(token: str) -> str:
@@ -545,6 +599,8 @@ def _stem(token: str) -> str:
     stays absent no matter the suffix.
     """
     t = token.lower()
+    if t in _IRREGULAR:
+        return _IRREGULAR[t]
     for suf in _SUFFIXES:
         if t.endswith(suf) and len(t) - len(suf) >= 3:
             t = t[: len(t) - len(suf)]
@@ -573,8 +629,12 @@ def _word_supported(low: str, toks: set, stems: set) -> bool:
     if low in toks or low in _MEDIA_META_WORDS:
         return True
     st = _stem(low)
-    # st+"e" recovers e-dropping inflection: damaged->damag(+e)=damage
-    return st in stems or (st + "e") in toks or _stem(low) in _MEDIA_META_WORDS
+    # st+"e" recovers e-dropping inflection: damaged->damag(+e)=damage.
+    # The symmetric case needs the reverse drop: claim "complete" against
+    # catalog "completed" (whose stem is "complet") never met until now.
+    return (st in stems or (st + "e") in toks
+            or (st.endswith("e") and st[:-1] in stems)
+            or st in _MEDIA_META_WORDS)
 
 
 def _token_supported(token: str, toks: set, stems: set) -> bool:
@@ -1549,28 +1609,41 @@ def _normalize_timeline_arithmetic(raw: dict, segments: list[Segment]) -> None:
     # UNGROUNDED caption — but captions are optional decoration, so dropping
     # the offender is strictly better than rejecting an otherwise-good plan.
     # The remaining captions still face the full validator unchanged.
-    caps = raw.get("captions")
-    if isinstance(caps, list) and by_id:
-        kept = []
-        for c in caps:
-            if not isinstance(c, dict) or c.get("claimType") != "fact":
-                kept.append(c)
+    def _fact_verifiable(item: dict) -> bool:
+        """True unless the item is a factual claim whose every evidence quote
+        fails verbatim lookup in its cited segment. Items with no evidence
+        list pass through — the validator owns that ruling."""
+        if not isinstance(item, dict) or item.get("claimType") != "fact":
+            return True
+        evidence = item.get("evidence") or []
+        if not evidence:
+            return True
+        for ev in evidence:
+            seg = by_id.get(ev.get("segmentId"))
+            if seg is None:
                 continue
-            ok = False
-            for ev in (c.get("evidence") or []):
-                seg = by_id.get(ev.get("segmentId"))
-                if seg is None:
-                    continue
-                quote = str(ev.get("quoteOrValue", "")).strip().lower()
-                hay = ((seg.transcript or "").lower()
-                       if ev.get("sourceType") == "transcript"
-                       else _segment_text(seg))
-                if quote and quote in hay:
-                    ok = True
-                    break
-            if ok or not (c.get("evidence") or []):
-                kept.append(c)
-        raw["captions"] = kept
+            quote = str(ev.get("quoteOrValue", "")).strip().lower()
+            hay = ((seg.transcript or "").lower()
+                   if ev.get("sourceType") == "transcript"
+                   else _segment_text(seg))
+            if quote and quote in hay:
+                return True
+        return False
+
+    if by_id:
+        caps = raw.get("captions")
+        if isinstance(caps, list):
+            raw["captions"] = [c for c in caps if _fact_verifiable(c)]
+        # Same ruling for technicalWarnings: they are advisory metadata that
+        # never reaches the rendered video, and an advisory whose evidence
+        # cannot be verified is exactly the advisory we must not surface.
+        # If a policy REQUIRES a warning (e.g. music requested but none
+        # licensed), dropping a bad one re-raises that policy violation and
+        # the repair loop regenerates it with real evidence.
+        warns = raw.get("technicalWarnings")
+        if isinstance(warns, list):
+            raw["technicalWarnings"] = [w for w in warns
+                                        if _fact_verifiable(w)]
 
 
 def plan_editorial(segments: list[Segment], constraints: dict,

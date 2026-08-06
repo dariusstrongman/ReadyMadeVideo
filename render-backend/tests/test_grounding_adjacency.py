@@ -207,3 +207,61 @@ class TestPlanNormalizationConsistency:
         ep._normalize_timeline_arithmetic(raw, self._segs())
         assert len(raw["captions"]) == 1
         assert raw["captions"][0]["text"] == "push through it"
+
+
+class TestIrregularMorphologyGrounding:
+    """Inflection of a catalog word is not fabrication (2026-08-06): the real
+    pov run rejected 'finding' against footage that said 'found' — same verb,
+    unreachable by suffix-stripping. Inventions must still fail."""
+
+    def _sets(self, text):
+        return ep._allowed_token_sets(text)
+
+    def test_irregular_verb_grounds_in_both_directions(self):
+        toks, stems = self._sets("we found water damage here")
+        assert ep._token_supported("finding", toks, stems)
+        assert ep._token_supported("find", toks, stems)
+        toks2, stems2 = self._sets("you will find water damage")
+        assert ep._token_supported("found", toks2, stems2)
+
+    def test_tion_family_lands_on_one_root(self):
+        toks, stems = self._sets("during the inspection we saw rot")
+        assert ep._token_supported("inspections", toks, stems)
+        toks2, stems2 = self._sets("several inspections happened")
+        assert ep._token_supported("inspection", toks2, stems2)
+
+    def test_trailing_e_base_meets_stripped_catalog_stem(self):
+        toks, stems = self._sets("the job was completed on time")
+        assert ep._token_supported("complete", toks, stems)
+
+    def test_inventions_still_fail(self):
+        toks, stems = self._sets("we found water damage during the inspection")
+        for bad in ("zorblax", "warranty", "certified"):
+            assert not ep._token_supported(bad, toks, stems), bad
+
+
+class TestWarningNormalization:
+    """technicalWarnings are advisory metadata that never reaches the video:
+    one with unverifiable evidence is dropped, not fatal (2026-08-06)."""
+
+    _segs = TestPlanNormalizationConsistency._segs
+    _raw = TestPlanNormalizationConsistency._raw
+
+    def test_ungrounded_warning_dropped_grounded_and_evidence_free_kept(self):
+        raw = self._raw()
+        raw["technicalWarnings"] = [
+            {"claimType": "fact", "text": "speech says push through it",
+             "evidence": [{"sourceType": "transcript", "segmentId": "seg-1",
+                           "quoteOrValue": "push through it"}]},
+            {"claimType": "fact", "text": "camera reports 4k capture",
+             "evidence": [{"sourceType": "segment_metadata",
+                           "segmentId": "seg-1",
+                           "quoteOrValue": "this metadata does not exist"}]},
+            {"claimType": "fact", "text": "no evidence list",
+             "evidence": []},
+        ]
+        ep._normalize_timeline_arithmetic(raw, self._segs())
+        texts = [w["text"] for w in raw["technicalWarnings"]]
+        assert "speech says push through it" in texts      # verified -> kept
+        assert "camera reports 4k capture" not in texts    # fabricated -> gone
+        assert "no evidence list" in texts                 # validator's call
