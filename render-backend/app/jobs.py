@@ -886,7 +886,8 @@ def _render_bridged_editor(job: dict, project: dict, tmp: str, ctx: JobContext,
                          if track["type"] == "captions")
     set_project_status(project["id"], "completed",
                        f"Product Editor revision {doc_row['version']} export completed")
-    return {"output": path, "editor_document_id": doc_row["id"],
+    return {"output": path, "export_provider": EXPORT_STORAGE_PROVIDER,
+            "editor_document_id": doc_row["id"],
             "editor_document_version": doc_row["version"],
             "duration": result["duration"], "width": result["width"],
             "height": result["height"], "size_bytes": size,

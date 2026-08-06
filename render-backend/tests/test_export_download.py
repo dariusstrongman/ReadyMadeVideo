@@ -190,3 +190,18 @@ def test_m6_export_does_not_take_bridged_path(monkeypatch, tmp_path):
     with pytest.raises(Exception) as exc:   # fails later in the M4/M5 path, NOT the bridged one
         jobs.handle_product_editor_render(job, project, str(tmp_path), jobs.JobContext(job))
     assert "bridged path used" not in str(exc.value)
+
+
+def test_every_final_render_return_records_its_provider():
+    """A completed export whose artifacts lack export_provider gets signed
+    against the WRONG storage when the deployment default changes — a real
+    172 MB export was stranded in S3 while the sign route looked in Supabase.
+    Every final_render return path must self-describe."""
+    import inspect
+    import re
+    from app import jobs
+    src = inspect.getsource(jobs)
+    returns = re.findall(r'return \{"output": path[^}]+', src)
+    assert len(returns) >= 3
+    for r in returns:
+        assert "export_provider" in r, f"return lacks export_provider: {r[:80]}"
