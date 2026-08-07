@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Pause length="1"/>
-    <Say voice="Google.en-US-Neural2-J">Hey, you've reached Stromation. We handle everything through text so we can get back to you faster. Go ahead and shoot a text to this number with what you're looking to automate and we'll hit you right back.</Say>
-    <Pause length="2"/>
-    <Say voice="Google.en-US-Neural2-J">Again, just text this number. Talk soon.</Say>
-</Response>
