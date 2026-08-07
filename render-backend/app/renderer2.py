@@ -81,14 +81,22 @@ def compile_timeline(timeline: dict, sources: dict[str, str], out_path: str,
     input_files: list[str] = []
     input_idx: dict[str, int] = {}
     probes: dict[str, ProbeInfo] = {}
-    for c in vclips:
-        aid = c["assetId"]
+    def _register(aid: str) -> None:
         if aid not in input_idx:
             if aid not in sources:
                 raise RenderError(f"no source file for asset {aid}")
             input_idx[aid] = len(input_files)
             input_files.append(sources[aid])
             probes[aid] = probe(sources[aid])
+
+    for c in vclips:
+        _register(c["assetId"])
+        # audio-under b-roll: the donor asset must be an ffmpeg input even
+        # when no remaining picture clip references it — otherwise the
+        # audioFrom branch below silently falls back and the speech is lost
+        donor_aid = (c.get("audioFrom") or {}).get("assetId")
+        if donor_aid:
+            _register(donor_aid)
 
     parts: list[str] = []
     seg_labels: list[tuple[str, str]] = []
@@ -128,7 +136,30 @@ def compile_timeline(timeline: dict, sources: dict[str, str], out_path: str,
               f"scale={W}:{H}:force_original_aspect_ratio=decrease,"
               f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,fps={fps},format=yuv420p,setsar=1[v{k}]")
         parts.append(vf)
-        if info.has_audio and vol > 0:
+        # Phase 3 audio-under b-roll: the clip's PICTURE comes from this
+        # asset while the audio continues from the DONOR clip (audioFrom) —
+        # preview and final render identically, by design (no divergence).
+        donor = c.get("audioFrom")
+        if donor and donor.get("assetId") in input_idx:
+            d_idx = input_idx[donor["assetId"]]
+            d_info = probes.get(donor["assetId"])
+            d_speed = float(donor.get("speed") or 1.0)
+            d_s = float(donor["sourceStart"])
+            # clamp to the donor's real length, then pad/trim to EXACTLY the
+            # clip's output duration — the a/v concat pairs each segment, so
+            # any donor-window drift would push every later clip out of sync
+            d_e = min(float(donor["sourceEnd"]),
+                      getattr(d_info, "duration", None) or 1e18)
+            if getattr(d_info, "has_audio", False) and d_e > d_s:
+                parts.append(
+                    f"[{d_idx}:a]atrim=start={d_s:.3f}:end={d_e:.3f},"
+                    f"asetpts=PTS-STARTPTS,{_atempo_chain(d_speed)},"
+                    f"aresample=48000,aformat=channel_layouts=stereo,"
+                    f"apad,atrim=duration={out_dur:.3f}[a{k}]")
+            else:
+                parts.append(f"anullsrc=channel_layout=stereo:sample_rate=48000,"
+                             f"atrim=duration={out_dur:.3f}[a{k}]")
+        elif info.has_audio and vol > 0:
             parts.append(f"[{idx}:a]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS,"
                          f"{_atempo_chain(speed)},volume={vol:.2f},"
                          f"aresample=48000,aformat=channel_layouts=stereo[a{k}]")

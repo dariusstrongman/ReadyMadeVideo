@@ -78,14 +78,23 @@ def render_picture_edit(result: dict, sources: dict[str, str], out_path: str,
     input_files: list[str] = []
     input_idx: dict[str, int] = {}
     probes: dict[str, object] = {}
-    for c in clips:
-        aid = c["assetId"]
+
+    def _register(aid: str) -> None:
         if aid not in input_idx:
             if aid not in sources:
                 raise RenderError(f"no source file for asset {aid}")
             input_idx[aid] = len(input_files)
             input_files.append(sources[aid])
             probes[aid] = probe(sources[aid])
+
+    for c in clips:
+        _register(c["assetId"])
+        # audio-under b-roll: the donor asset must be an ffmpeg input even
+        # when no remaining picture clip references it (audit: deleting the
+        # host clips around a b-roll clip silently dropped the speech)
+        donor_aid = (c.get("audioFrom") or {}).get("assetId")
+        if donor_aid:
+            _register(donor_aid)
 
     parts: list[str] = []
     orig: list[float] = []          # per-clip original output durations
@@ -100,17 +109,50 @@ def render_picture_edit(result: dict, sources: dict[str, str], out_path: str,
             raise RenderError(f"clip {c['id']} empty after trim")
         out_dur = (e - s) / speed
         orig.append(out_dur)
-        seg_id = mappings[k]["segmentId"] if k < len(mappings) else None
+        # splice-safe: clips carry their segmentId since 2.3.0; the
+        # mappings[k] positional fallback only serves older blueprints
+        seg_id = c.get("segmentId") or (
+            mappings[k]["segmentId"] if k < len(mappings) else None)
         crop = ""
         if seg_id and seg_id in crops:
             crop = _crop_filter(crops[seg_id], out_dur) + ","
+        # settb=AVTB: concat outputs tb 1/1000000 while fps leaves 1/fps —
+        # without a uniform timebase, an xfade AFTER any concat in the chain
+        # fails outright ("timebase ... do not match"). Every [vk] is
+        # normalized so concat and xfade compose in any order.
         parts.append(
             f"[{input_idx[aid]}:v]trim=start={s:.3f}:end={e_ext:.3f},"
             f"setpts=(PTS-STARTPTS)/{speed:.4f},{crop}"
             f"scale={W}:{H}:force_original_aspect_ratio=decrease,"
             f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,fps={fps},format=yuv420p,"
-            f"setsar=1[v{k}]")
-        if getattr(info, "has_audio", False):
+            f"setsar=1,settb=AVTB[v{k}]")
+        # Phase 3 audio-under: a b-roll clip carries audioFrom — the HOST
+        # clip's speech continues under the covering picture. The donor
+        # window is clamped to the donor's real length, then padded/trimmed
+        # to EXACTLY this clip's output duration so the audio concat can
+        # never drift out of sync with the picture, whatever an editor did
+        # to the geometry upstream.
+        donor = c.get("audioFrom")
+        if donor and donor.get("assetId") in input_idx:
+            d_idx = input_idx[donor["assetId"]]
+            d_info = probes.get(donor["assetId"])
+            d_speed = float(donor.get("speed") or 1.0)
+            d_s = float(donor["sourceStart"])
+            d_e = min(float(donor["sourceEnd"]),
+                      getattr(d_info, "duration", None) or 1e18)
+            if getattr(d_info, "has_audio", False) and d_e > d_s:
+                parts.append(
+                    f"[{d_idx}:a]atrim=start={d_s:.3f}:end={d_e:.3f},"
+                    f"asetpts=PTS-STARTPTS,{_atempo_chain(d_speed)},"
+                    f"aresample=48000,aformat=channel_layouts=stereo,"
+                    f"apad,atrim=duration={out_dur:.3f}[a{k}]")
+            else:
+                parts.append(f"anullsrc=channel_layout=stereo:sample_rate=48000,"
+                             f"atrim=duration={out_dur:.3f}[a{k}]")
+        elif getattr(info, "has_audio", False) \
+                and float(c.get("volume", 1.0)) > 0:
+            # volume=0 must mean silence here exactly as it does in the
+            # final renderer — previously a muted clip leaked its raw audio
             parts.append(f"[{input_idx[aid]}:a]atrim=start={s:.3f}:end={e:.3f},"
                          f"asetpts=PTS-STARTPTS,{_atempo_chain(speed)},"
                          f"aresample=48000,aformat=channel_layouts=stereo[a{k}]")

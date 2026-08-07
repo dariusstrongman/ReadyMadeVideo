@@ -527,6 +527,7 @@ def test_flags_off_deterministic_serialized_identity_vs_pre_phase2():
     plan = dict(result["plan"])
     assert plan.pop("loops") == []                       # documented delta 1
     assert plan.pop("dialogueAdjustments") == []         # documented delta 2
+    assert plan.pop("brollInsertions") == []             # documented delta 3 (Phase 3)
     got = {**result, "plan": plan}
     assert _json.dumps(got, sort_keys=True, default=str) \
         == _json.dumps(golden["result"], sort_keys=True, default=str)

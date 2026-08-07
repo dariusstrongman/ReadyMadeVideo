@@ -51,6 +51,16 @@ class EditorDocument(BaseModel):
         ancestry = {str(value) for value in self.sourceAssetIds}
         if {str(item.get("assetId")) for item in pictures} - ancestry:
             raise ValueError("picture clip is outside source asset ancestry")
+        # audio-under donors must obey the same ancestry rule — a forged
+        # donor assetId otherwise persisted an immutable timeline that only
+        # failed at export time (render-side ownership checks still stand)
+        donors = {str((item.get("audioFrom") or {}).get("assetId"))
+                  for item in pictures
+                  if isinstance(item.get("audioFrom"), dict)
+                  and (item.get("audioFrom") or {}).get("assetId")}
+        if donors - ancestry:
+            raise ValueError("audio-under donor is outside source asset "
+                             "ancestry")
         return self
 
 
@@ -164,15 +174,22 @@ def apply_operation(document: dict, operation: EditorOperation) -> dict:
         asset_duration = float(clip.get("assetDuration", clip["sourceEnd"]))
         if operation.sourceEnd > asset_duration:
             raise EditorError("trim exceeds source asset duration")
+        old_start = float(clip["sourceStart"])
         clip["sourceStart"], clip["sourceEnd"] = operation.sourceStart, operation.sourceEnd
+        _sync_audio_from(clip, old_start,
+                         operation.sourceStart, operation.sourceEnd)
     elif isinstance(operation, SplitClip):
         items, index, clip = _find(result, "picture", operation.targetId)
         if not float(clip["sourceStart"]) < operation.sourceTime < float(clip["sourceEnd"]):
             raise EditorError("split point is outside the clip")
         right = copy.deepcopy(clip)
         right["id"] = f"{clip['id']}-split-{str(operation.operationId)[:8]}"
+        old_start = float(clip["sourceStart"])
         right["sourceStart"] = operation.sourceTime
         clip["sourceEnd"] = operation.sourceTime
+        _sync_audio_from(clip, old_start, old_start, operation.sourceTime)
+        _sync_audio_from(right, old_start, operation.sourceTime,
+                         float(right["sourceEnd"]))
         items.insert(index + 1, right)
     elif isinstance(operation, DeleteClip):
         items, index, _ = _find(result, "picture", operation.targetId)
@@ -278,6 +295,25 @@ def document_from_candidate(project_id: str, candidate: dict,
     }
     _reflow(doc)
     return EditorDocument(**doc).model_dump(mode="json")
+
+
+def _sync_audio_from(clip: dict, old_start: float, new_start: float,
+                     new_end: float) -> None:
+    """Phase 3 audio-under b-roll: a clip carrying `audioFrom` plays the
+    DONOR clip's audio under its own picture. When the picture range moves
+    (trim/split), the donor window must move in lockstep or the export's
+    speech desyncs from what the customer saw. Donor time advances at
+    donor.speed per PICTURE-timeline second; picture timeline seconds are
+    picture-source seconds / clip speed."""
+    donor = clip.get("audioFrom")
+    if not isinstance(donor, dict):
+        return
+    clip_speed = float(clip.get("speed") or 1.0) or 1.0
+    d_speed = float(donor.get("speed") or 1.0)
+    rate = d_speed / clip_speed
+    base = float(donor.get("sourceStart") or 0.0)
+    donor["sourceStart"] = round(base + (new_start - old_start) * rate, 3)
+    donor["sourceEnd"] = round(base + (new_end - old_start) * rate, 3)
 
 
 def renderer_timeline(document: dict) -> dict:

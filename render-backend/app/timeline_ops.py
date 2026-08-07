@@ -12,6 +12,8 @@ from typing import Literal, Union
 
 from pydantic import BaseModel, Field, ValidationError
 
+from .product_editor import _sync_audio_from
+
 Actor = Literal["user", "editor_agent", "critic", "revision_agent", "system_rule"]
 
 
@@ -111,6 +113,21 @@ class OpResult(BaseModel):
 
 class OpError(Exception):
     pass
+
+
+def _lock_donor_duration(c: dict) -> None:
+    """Phase 3 audio-under: keep the donor audio window exactly as long as
+    the clip's output duration, in donor time. Called after any op that
+    changes the picture's output length without moving its source range
+    (speed change, wholesale replace) — otherwise the a/v concat drifts."""
+    donor = c.get("audioFrom")
+    if not isinstance(donor, dict):
+        return
+    out_dur = (float(c["sourceEnd"]) - float(c["sourceStart"])) \
+        / float(c.get("speed") or 1.0)
+    d_speed = float(donor.get("speed") or 1.0)
+    donor["sourceEnd"] = round(
+        float(donor.get("sourceStart") or 0.0) + out_dur * d_speed, 3)
 
 
 def _find_clip(tl: dict, clip_id: str):
@@ -231,25 +248,32 @@ def apply_operations(timeline: dict, ops: list[Operation], actor: Actor,
                     raise OpError("sourceEnd must exceed sourceStart")
                 c.update({"assetId": op.assetId, "sourceStart": op.sourceStart,
                           "sourceEnd": op.sourceEnd})
+                _lock_donor_duration(c)
             elif isinstance(op, MoveClip):
                 track, i, c = _find_clip(tl, op.clipId)
                 track["clips"].pop(i)
                 track["clips"].insert(min(op.newIndex, len(track["clips"])), c)
             elif isinstance(op, TrimClip):
                 _, _, c = _find_clip(tl, op.clipId)
+                old_start = c["sourceStart"]
                 s = op.sourceStart if op.sourceStart is not None else c["sourceStart"]
                 e = op.sourceEnd if op.sourceEnd is not None else c["sourceEnd"]
                 if e <= s or s < 0:
                     raise OpError("invalid trim range")
                 c["sourceStart"], c["sourceEnd"] = s, e
+                _sync_audio_from(c, old_start, s, e)
             elif isinstance(op, SplitClip):
                 track, i, c = _find_clip(tl, op.clipId)
                 if not (c["sourceStart"] < op.atSourceTime < c["sourceEnd"]):
                     raise OpError("split point outside clip source range")
+                old_start = c["sourceStart"]
                 right = copy.deepcopy(c)
                 right["id"] = c["id"] + "_b"
                 right["sourceStart"] = op.atSourceTime
                 c["sourceEnd"] = op.atSourceTime
+                _sync_audio_from(c, old_start, old_start, op.atSourceTime)
+                _sync_audio_from(right, old_start, op.atSourceTime,
+                                 right["sourceEnd"])
                 track["clips"].insert(i + 1, right)
             elif isinstance(op, DeleteClip):
                 track, i, _ = _find_clip(tl, op.clipId)
@@ -259,6 +283,7 @@ def apply_operations(timeline: dict, ops: list[Operation], actor: Actor,
             elif isinstance(op, ChangeSpeed):
                 _, _, c = _find_clip(tl, op.clipId)
                 c["speed"] = op.speed
+                _lock_donor_duration(c)
             elif isinstance(op, ChangeVolume):
                 _, _, c = _find_clip(tl, op.clipId)
                 c["volume"] = op.volume

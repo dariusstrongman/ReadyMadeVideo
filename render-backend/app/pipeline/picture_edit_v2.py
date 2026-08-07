@@ -43,7 +43,9 @@ SCHEMA_VERSION = 1
 # or previously persisted results would collide/miss across engine revisions.
 # 2.1.0: added actualDuration/requestedDuration canonical fields and measured
 #        actualEnergy/energyDeviation pacing metrics (payload change).
-ENGINE_VERSION = "2.1.0"
+ENGINE_VERSION = "2.3.0"   # 2.3.0: clips carry segmentId; transition
+# instructions carry planBoundaryIndex + splice-remapped boundaryIndex
+# (2.2.0: b-roll execution, audio-under clips)
 DURATION_TOLERANCE = 0.1
 RAMP_CONSISTENCY_TOLERANCE = 0.25
 # a beat's actual duration may deviate this much from the approved pacing
@@ -177,6 +179,7 @@ def build_picture_edit(plan_row: dict, segments: list[Segment], *,
         planned_cuts.setdefault(seg.segmentId, []).append(
             (s_in, s_out, seg.playbackSpeed))
         clips.append({"id": f"pe2-{i:03d}-{seg.segmentId}",
+                      "segmentId": seg.segmentId,
                       "assetId": seg.assetId,
                       "sourceStart": round(s_in, 3), "sourceEnd": round(s_out, 3),
                       "timelineStart": round(seg.timelineIn, 3),
@@ -192,6 +195,71 @@ def build_picture_edit(plan_row: dict, segments: list[Segment], *,
         cursor = seg.timelineOut
 
     actual_duration = round(cursor, 3)
+
+    # ---- Phase 3 b-roll execution (plan-driven, no env check: presence of
+    # system-authored brollInsertions in the APPROVED plan decides). The
+    # b-roll COVERS the host picture while the host clip's speech continues
+    # underneath (audioFrom) — total duration is unchanged; the covered
+    # stretch of host picture is simply never shown. Payload change ->
+    # ENGINE_VERSION bumped per the bump-on-change rule.
+    broll_applied: list[dict] = []
+    # descending target order: splicing 1 clip into 3 shifts later indices,
+    # so higher indices are consumed first and every targetIndex stays valid
+    for b in sorted(getattr(plan, "brollInsertions", []) or [],
+                    key=lambda x: -x.targetIndex):
+        if not 0 <= b.targetIndex < len(clips):
+            reasons.append(f"broll {b.id}: target entry {b.targetIndex} "
+                           "does not exist in the built timeline")
+            continue
+        host = clips[b.targetIndex]
+        src = by_id.get(b.brollSegmentId)
+        if src is None:
+            reasons.append(f"broll {b.id}: segment {b.brollSegmentId!r} is "
+                           "absent from the current source catalog")
+            continue
+        if not (src.sourceStart - TIME_EPSILON <= b.sourceStart
+                and b.sourceEnd <= src.sourceEnd + TIME_EPSILON):
+            reasons.append(f"broll {b.id}: trims outside its segment's real "
+                           "range in the current catalog")
+            continue
+        sp = float(host.get("speed") or 1.0)
+        host_dur = host["timelineEnd"] - host["timelineStart"]
+        o, d = b.offsetSeconds, b.durationSeconds
+        if o <= 0 or o + d >= host_dur:
+            reasons.append(f"broll {b.id}: does not fit inside its host clip")
+            continue
+        t0 = host["timelineStart"]
+        a1 = dict(host,
+                  sourceEnd=round(host["sourceStart"] + o * sp, 3),
+                  timelineEnd=round(t0 + o, 3))
+        bclip = {"id": f"pe2b-{b.targetIndex:03d}-{b.brollSegmentId}",
+                 "segmentId": b.brollSegmentId,
+                 "assetId": b.assetId,
+                 "sourceStart": round(b.sourceStart, 3),
+                 "sourceEnd": round(b.sourceStart + d, 3),
+                 "timelineStart": round(t0 + o, 3),
+                 "timelineEnd": round(t0 + o + d, 3),
+                 "speed": 1.0, "volume": 0.0,
+                 # the host's voice continues under the b-roll picture
+                 "audioFrom": {"assetId": host["assetId"],
+                               "sourceStart": round(
+                                   host["sourceStart"] + o * sp, 3),
+                               "sourceEnd": round(
+                                   host["sourceStart"] + (o + d) * sp, 3),
+                               "speed": sp}}
+        a2 = dict(host,
+                  id=host["id"] + "-post",
+                  sourceStart=round(host["sourceStart"] + (o + d) * sp, 3),
+                  timelineStart=round(t0 + o + d, 3))
+        clips[b.targetIndex:b.targetIndex + 1] = [a1, bclip, a2]
+        broll_applied.append({
+            "id": b.id, "hostClipId": host["id"],
+            "brollSegmentId": b.brollSegmentId, "assetId": b.assetId,
+            "timelineStart": bclip["timelineStart"],
+            "timelineEnd": bclip["timelineEnd"],
+            "motivation": b.motivation, "confidence": b.confidence,
+            "origin": b.origin, "matchedTokens": b.matchedTokens,
+            "audioUnder": True})
 
     # ---- hook execution: timeline zero IS the planned hook
     if plan.timeline:
@@ -303,9 +371,24 @@ def build_picture_edit(plan_row: dict, segments: list[Segment], *,
             reasons.append(f"transitions[{i}] {tr.fromSegmentId}->"
                            f"{tr.toSegmentId} does not join adjacent segments")
             continue
+        # boundaryIndex is the FINAL-clip-list boundary the renderer keys
+        # xfade on. B-roll splices expand one plan entry into three clips,
+        # so the plan-entry index (`join`) and the final index diverge —
+        # remap to the LAST final clip that originates from plan entry
+        # `join` (clip ids embed the plan index: pe2-### / pe2b-###).
+        # Audit blocker repro: a dissolve at plan boundary 1 rendered at
+        # final boundary 1 (host->b-roll) instead of 3 (host->next).
+        final_boundary = join
+        for f_idx, c in enumerate(clips):
+            try:
+                if int(str(c["id"]).split("-")[1]) == join:
+                    final_boundary = f_idx
+            except (IndexError, ValueError):
+                continue
         inst = {"fromSegmentId": tr.fromSegmentId, "toSegmentId": tr.toSegmentId,
                 "type": tr.type, "durationSeconds": tr.durationSeconds,
-                "purpose": tr.purpose, "boundaryIndex": join}
+                "purpose": tr.purpose, "boundaryIndex": final_boundary,
+                "planBoundaryIndex": join}
         if tr.type in EXECUTABLE_TRANSITIONS:
             if tr.type != "hard_cut":
                 out_m, in_m = mappings[join], mappings[join + 1]
@@ -431,5 +514,6 @@ def build_picture_edit(plan_row: dict, segments: list[Segment], *,
             "continuityFindings": continuity,
             "technicalWarnings": warnings,
             "unsupportedExecution": unsupported,
-            "trimAdjustments": trim_adjustments}
+            "trimAdjustments": trim_adjustments,
+            "brollApplied": broll_applied}
     return {**core, "deterministicHash": _hash(core), "createdAt": now}

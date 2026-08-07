@@ -942,6 +942,12 @@ def handle_final_render(job: dict, project: dict, tmp: str, ctx: JobContext) -> 
                 if c["assetId"] not in assets:
                     raise RuntimeError(f"timeline references foreign asset "
                                        f"{c['assetId']}")
+                # Phase 3 audio-under b-roll: the donor audio asset gets the
+                # SAME ownership check as the picture asset
+                donor = (c.get("audioFrom") or {}).get("assetId")
+                if donor and donor not in assets:
+                    raise RuntimeError("timeline audioFrom references "
+                                       f"foreign asset {donor}")
     set_project_status(project["id"], "rendering",
                        f"final render job {job['id'][:8]}")
     sources, _ = _download_sources(project, tmp, ctx)
@@ -976,7 +982,10 @@ def _render_bridged_editor(job: dict, project: dict, tmp: str, ctx: JobContext,
                          if track["type"] == "picture")
     sources, assets = _download_sources(project, tmp, ctx)
     allowed = {item["id"] for item in assets}
-    if {str(clip["assetId"]) for clip in picture_items} - allowed:
+    referenced = {str(clip["assetId"]) for clip in picture_items} | {
+        str((clip.get("audioFrom") or {}).get("assetId"))
+        for clip in picture_items if clip.get("audioFrom")}
+    if referenced - allowed:
         raise RuntimeError("editor picture references a foreign source asset")
     set_project_status(project["id"], "rendering",
                        f"Product Editor revision {doc_row['version']} render (bridged)")
@@ -1095,7 +1104,10 @@ def handle_product_editor_render(job: dict, project: dict, tmp: str,
 
     sources, assets = _download_sources(project, tmp, ctx)
     allowed_assets = {item["id"] for item in assets}
-    if {str(clip["assetId"]) for clip in picture_items} - allowed_assets:
+    referenced = {str(clip["assetId"]) for clip in picture_items} | {
+        str((clip.get("audioFrom") or {}).get("assetId"))
+        for clip in picture_items if clip.get("audioFrom")}
+    if referenced - allowed_assets:
         raise RuntimeError("editor picture references a foreign source asset")
     music_path = os.path.join(tmp, "licensed-music" + os.path.splitext(
         licensed_rows[0]["filename"])[1])

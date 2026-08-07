@@ -785,7 +785,10 @@ def test_engine_output_contract_fields():
                   "technicalWarnings", "unsupportedExecution",
                   "trimAdjustments", "deterministicHash", "createdAt"):
         assert field in out, field
-    assert out["schemaVersion"] == 1 and out["engineVersion"] == "2.1.0"
+    # pin the constant, and pin the VALUE so a bump is always a conscious act
+    # (2.3.0: splice-remapped transition boundaries + per-clip segmentId)
+    assert out["schemaVersion"] == 1
+    assert out["engineVersion"] == pe2.ENGINE_VERSION == "2.3.0"
     # canonical fields + documented compatibility aliases carry equal values
     assert out["actualDuration"] == out["actualDurationSeconds"] == 12.0
     assert out["requestedDuration"] == {"min": None, "max": None}

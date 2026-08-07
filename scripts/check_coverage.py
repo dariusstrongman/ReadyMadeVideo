@@ -12,6 +12,7 @@ THRESHOLDS = {          # module filename -> minimum percent
     "editorial_intelligence.py": 80.0,
     "editorial_planner.py": 85.0,
     "editorial_phase2.py": 85.0,
+    "creative_phase3.py": 85.0,
     "picture_edit_v2.py": 85.0,
     "product_editor.py": 85.0,
     "ingestion.py": 90.0,
