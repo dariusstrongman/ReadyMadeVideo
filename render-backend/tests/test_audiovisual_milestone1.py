@@ -187,5 +187,7 @@ def test_preproduction_package_does_not_select_or_render(rich_catalog):
 
 def test_canonical_segment_schema_preserves_camera_angle():
     segment = seg("angle", uses=["hook"], angle="low angle")
-    assert segment.schemaVersion == SCHEMA_VERSION == 2
+    # v3 = Phase 2 narrative substrate (all additive; see schemas.py header).
+    # This pin exists so a schema bump is always a CONSCIOUS act.
+    assert segment.schemaVersion == SCHEMA_VERSION == 3
     assert segment.model_dump()["cameraAngle"] == "low angle"

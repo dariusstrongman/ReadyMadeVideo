@@ -1,0 +1,1486 @@
+{
+ "parts": [
+  "You are Stromation's Senior Story Editor and Creative Director.\nTransform the REAL segment catalog below into one intentionally-directed edit.\nA technically valid but random, boring, confusing or padded edit is a failure.\n\nThink before you cut:\n1. UNDERSTAND every segment; STATE the real story in one sentence; GENERATE at\n   least three scored story options; choose the one THE FOOTAGE SUPPORTS.\n2. The hook IS the first timeline cut (same segment, same sourceIn), starts at\n   0, max 5 seconds, honest promise.\n3. The USER CONSTRAINTS and CREATIVE POLICIES below are BINDING and validated\n   against the ORIGINAL request: duration range, platform/aspect, transition/\n   speed-ramp/graphics/caption/music policies, required and excluded moments.\n   You cannot restate, weaken or ignore them.\n4. HONEST SHORTFALL: if the footage cannot honor the duration range, set\n   status \"insufficient_footage\"; achievableDurationSeconds MUST equal your\n   timeline's actual computed length and be below the requested minimum; give\n   SPECIFIC missing shots {beat, shotType, recommendedDurationSeconds, why}.\n   Never report a shortfall while usable catalog footage remains unused.\n5. EVERY factual statement \u2014 anything describing a person, group, location,\n   action, reaction, emotion, result, quantity, comparison, outcome or\n   attribution, in ANY capitalization \u2014 must be claimType \"fact\" with\n   structured evidence:\n   {sourceType: transcript|segment_metadata|user_input, segmentId, quoteOrValue}\n   where the quote is literally present in that source and every content word\n   of the text traces to it. quoteOrValue must be COPIED VERBATIM,\n   CHARACTER-FOR-CHARACTER, from the cited segment's transcript or metadata \u2014\n   a paraphrase, summary or re-wording is rejected as fabricated evidence.\n   Write factual text using the CATALOG'S OWN VOCABULARY (words from the\n   cited segments; simple morphological variants like inspect/inspection are\n   fine); words about the video artifact itself (video, clip, footage) are\n   allowed. audio.musicAvailable must EXACTLY equal the value given in the\n   constraints \u2014 planning music that is not available is fabrication. When no\n   licensed music exists, audio.musicPlan must be null (NOT the words \"no\n   music\") and no audio field may mention music at all. editorial_label / cta text is limited to a\n   STRICTLY CLOSED structural vocabulary (e.g. \"The Setup\", \"Step 2\",\n   \"The Final Push\", \"Watch Until the End\", \"Key Takeaway\", \"Quick Tip\",\n   \"Bonus\") \u2014 ANY other word, including words from the footage itself,\n   makes it a factual claim requiring evidence.\n   storySentence, viewerPromise, premise, payoff, hook.text, captions,\n   graphics and technicalWarnings all use this grounded structure.\n   hook.text especially: it describes REAL footage, so it must be claimType\n   \"fact\" with verbatim evidence \u2014 never an editorial_label containing words\n   from the footage (a label like \"Outdoor Training\" is rejected; either\n   quote evidence as a fact, or use a purely structural label).\n5-duration. THE RECOMMENDED LENGTH IS THE FULL STORY. When the request\n   gives no duration range, plannedDurationSeconds must be derived from the\n   footage itself: exactly long enough to tell the COMPLETE story the catalog\n   supports \u2014 every distinct activity, phase or scene that advances it,\n   nothing padded, nothing dropped for brevity's sake. \"Short because the\n   format is vertical\" is NOT a rationale; platform idiom never overrides the\n   story. A 25-minute training session with four distinct exercises and\n   spoken context is not a 25-second story. When the request DOES give a\n   range, recommend the length within it that tells the most complete story.\n5a-geometry. A transition of duration D needs D/2 seconds of UNUSED source\n   footage (handles) on BOTH sides of the cut: if a clip is used to its\n   sourceStart/sourceEnd boundary, its handle there is 0.0s and any\n   transition across that cut is rejected. Prefer cuts, and only add a\n   transition where both adjacent timeline entries leave enough unused\n   source. The final beat must be the payoff \u2014 the timeline may not end on\n   any other beat.\n5b. The STRUCTURED CREATIVE POLICIES include a binding tone profile parsed\n   from the user's tone/style. A low-energy tone forbids aggressive\n   transitions (whip/push/slide/zoom), speed ramps above 2x, more than one\n   graphic, and pacing beats above 0.6 energy. A high-energy tone must be\n   DELIVERED: at least one pacing beat at 0.7+ and average energy 0.5+.\n   Tone words that could not be\n   parsed appear in unresolvedToneDirectives \u2014 you must NOT ignore them.\n6. EXECUTION-VALID geometry only:\n   - speed ramps: sourceStart < sourceEnd, inside the planned cut, speeds in\n     (0, 8], no overlapping ramps on one segment\n   - crops: normalized, x+width <= 1, y+height <= 1, startCrop/endCrop keep\n     the same shape (no distortion)\n   - transitions: type is EXACTLY one of hard_cut, dissolve, dip_to_black,\n     dip_to_white, whip, push, slide, zoom, match_cut, masked_reveal,\n     audio_led_cut; they join ADJACENT cuts with AT MOST ONE transition per\n     boundary; hard_cut has duration 0; other types need a positive duration\n     that fits inside both segments' unused source handles\n7. SOUND: J/L cuts by planned segment id; audio.musicAvailable EXACTLY as\n   given; with no licensed music, musicPlan MUST be null and nothing\n   music-related may be described (no tracks, BPM, beat grids, licenses).\n8. modelSelfAssessment is ADVISORY ONLY \u2014 a deterministic gate decides\n   approval from verifiable properties. Score honestly anyway.\n\nMECHANICAL RULES (validated, violations are rejected):\n- only catalog segmentIds, trimmed inside their real ranges; timeline\n  contiguous from 0; plannedDurationSeconds equals the final timelineOut;\n  the hook is timeline[0]; never repeat an identical source range\n- schemaVersion is exactly 1\n- output structured data only \u2014 NO ffmpeg, filter strings or shell commands\n",
+  "USER CONSTRAINTS (BINDING \u2014 validated against the ORIGINAL request; you cannot redefine them):\nSTRUCTURED CREATIVE POLICIES (parsed from the request, BINDING): {\"transitionPolicy\": \"expressive\", \"allowedTransitionTypes\": [], \"forbiddenTransitionTypes\": [], \"speedRampPolicy\": \"allowed\", \"graphicsPolicy\": \"standard\", \"captionPolicy\": \"selective\", \"musicPolicy\": \"optional\", \"pacingProfile\": \"moderate\", \"toneTags\": [], \"toneProfile\": {\"energy\": \"medium\", \"emotionalTone\": [], \"cutDensity\": \"medium\", \"motionIntensity\": \"moderate\", \"musicEnergy\": \"moderate\", \"graphicsIntensity\": \"standard\"}, \"toneConflicts\": {}, \"unresolvedToneDirectives\": [], \"toneAdvisoryOnly\": false}\n- licensed music available for this project: False (set audio.musicAvailable to exactly this value)",
+  "SEGMENT CATALOG (the ONLY footage that exists):\n[{\"segmentId\": \"seg-1\", \"assetId\": \"asset-1\", \"sourceStart\": 0.0, \"sourceEnd\": 10.0, \"action\": \"crew works on step 1\", \"shotType\": \"wide\", \"cameraMovement\": \"\", \"location\": \"Dallas backyard\", \"transcript\": null, \"storyUses\": [], \"emotion\": \"\", \"motionIntensity\": 0, \"focusScore\": 0, \"stabilityScore\": 0, \"audioScore\": 0, \"problems\": []}, {\"segmentId\": \"seg-2\", \"assetId\": \"asset-1\", \"sourceStart\": 0.0, \"sourceEnd\": 10.0, \"action\": \"crew works on step 2\", \"shotType\": \"medium\", \"cameraMovement\": \"\", \"location\": \"\", \"transcript\": null, \"storyUses\": [], \"emotion\": \"\", \"motionIntensity\": 0, \"focusScore\": 0, \"stabilityScore\": 0, \"audioScore\": 0, \"problems\": []}, {\"segmentId\": \"seg-3\", \"assetId\": \"asset-1\", \"sourceStart\": 0.0, \"sourceEnd\": 10.0, \"action\": \"crew works on step 3\", \"shotType\": \"close\", \"cameraMovement\": \"\", \"location\": \"\", \"transcript\": \"we finished the job\", \"storyUses\": [], \"emotion\": \"\", \"motionIntensity\": 0, \"focusScore\": 0, \"stabilityScore\": 0, \"audioScore\": 0, \"problems\": []}]",
+  "ALLOWED FACTUAL VOCABULARY \u2014 factual text (storySentence, viewerPromise, premises, payoffs, captions, warnings) may use ONLY these catalog words, their simple grammatical variants, structural connectives, and media words like video/clip/footage. Synonyms are treated as fabrication:\nbackyard close crew dallas finished job medium step wide works"
+ ],
+ "result": {
+  "attempts": 1,
+  "deterministicGate": {
+   "hardFailures": [],
+   "passed": true,
+   "rules": [
+    {
+     "detail": "hook exists, in range, first and immediate",
+     "hard": true,
+     "passed": true,
+     "rule": "hook_grounded",
+     "weight": 10
+    },
+    {
+     "detail": "every cut is real, in range and contiguous from 0",
+     "hard": true,
+     "passed": true,
+     "rule": "timeline_contiguous",
+     "weight": 10
+    },
+    {
+     "detail": "every factual claim carries verified structured evidence",
+     "hard": true,
+     "passed": true,
+     "rule": "claims_grounded",
+     "weight": 10
+    },
+    {
+     "detail": "duration honors the REQUEST; any shortfall is computed and honest",
+     "hard": true,
+     "passed": true,
+     "rule": "duration_compliant",
+     "weight": 10
+    },
+    {
+     "detail": ">=3 scored options, chosen concept, beat arc, one-sentence story",
+     "hard": true,
+     "passed": true,
+     "rule": "story_structure",
+     "weight": 10
+    },
+    {
+     "detail": "the edit ends on a payoff beat, not an accidental stop",
+     "hard": true,
+     "passed": true,
+     "rule": "payoff_present",
+     "weight": 10
+    },
+    {
+     "detail": "the request's structured creative policies are honored exactly",
+     "hard": true,
+     "passed": true,
+     "rule": "creative_policy_honored",
+     "weight": 10
+    },
+    {
+     "detail": "ramps, crops and transitions are executable as specified",
+     "hard": true,
+     "passed": true,
+     "rule": "execution_geometry",
+     "weight": 10
+    },
+    {
+     "detail": "music availability and licensing are real, never fabricated",
+     "hard": true,
+     "passed": true,
+     "rule": "music_grounded",
+     "weight": 5
+    },
+    {
+     "detail": "every audio reference points at a planned segment",
+     "hard": false,
+     "passed": true,
+     "rule": "audio_refs_valid",
+     "weight": 5
+    },
+    {
+     "detail": "no segment used more than 3x, no duplicate ranges",
+     "hard": false,
+     "passed": true,
+     "rule": "no_redundant_reuse",
+     "weight": 2
+    },
+    {
+     "detail": "multiple distinct segments / shot types where the catalog offers them",
+     "hard": false,
+     "passed": true,
+     "rule": "visual_variety",
+     "weight": 2
+    },
+    {
+     "detail": "known segment problems surface as technical warnings",
+     "hard": false,
+     "passed": true,
+     "rule": "technical_warnings_surfaced",
+     "weight": 3
+    },
+    {
+     "detail": "every tone/style directive maps to enforceable structured policy",
+     "hard": false,
+     "passed": true,
+     "rule": "tone_fully_resolved",
+     "weight": 3
+    }
+   ],
+   "score": 100
+  },
+  "plan": {
+   "achievableDurationSeconds": null,
+   "audio": {
+    "jCutSegmentIds": [],
+    "lCutSegmentIds": [],
+    "musicAvailable": false,
+    "musicPlan": null,
+    "naturalSoundSegmentIds": [
+     "seg-3"
+    ],
+    "soundEffects": []
+   },
+   "audioTreatments": [
+    {
+     "denoise": false,
+     "ducking": false,
+     "gainDb": 0.0,
+     "jCutFromSegmentId": null,
+     "lCutIntoSegmentId": null,
+     "preserveNaturalSound": true,
+     "segmentId": "seg-3"
+    }
+   ],
+   "beats": [
+    {
+     "key": "hook",
+     "purpose": "stop the scroll"
+    },
+    {
+     "key": "process",
+     "purpose": "advance"
+    },
+    {
+     "key": "payoff",
+     "purpose": "deliver"
+    }
+   ],
+   "captions": [],
+   "chosenOption": 0,
+   "colorStabilization": [
+    {
+     "colorPreset": "identity",
+     "cropAllowance": 0,
+     "segmentId": "seg-1",
+     "stabilizationMode": "none"
+    }
+   ],
+   "footageSummary": "three usable segments",
+   "graphics": [],
+   "hook": {
+    "audioCue": "natural sound",
+    "curiosityCreated": "how did it get here",
+    "durationSeconds": 2.0,
+    "firstFrame": "reveal",
+    "promiseToFulfill": "show the process",
+    "segmentId": "seg-1",
+    "sourceIn": 0.0,
+    "sourceOut": 2.0,
+    "text": null,
+    "transitionOut": "cut"
+   },
+   "intendedAudience": "local",
+   "missingFootage": [],
+   "modelSelfAssessment": {
+    "clipSelection": 8,
+    "creativeTreatment": 8,
+    "durationCompliance": 4,
+    "flowContinuity": 8,
+    "hardFailures": [],
+    "hook": 12,
+    "pacing": 8,
+    "payoff": 8,
+    "platformFit": 4,
+    "soundDesign": 4,
+    "storyClarity": 12,
+    "visualVariety": 4
+   },
+   "options": [
+    {
+     "footageCoverage": "full",
+     "hook": "reveal first",
+     "idealDurationSeconds": 12.0,
+     "payoff": {
+      "claimType": "editorial_label",
+      "evidence": [],
+      "text": "the final reveal"
+     },
+     "premise": {
+      "claimType": "editorial_label",
+      "evidence": [],
+      "text": "the work process"
+     },
+     "retentionRisks": [
+      "r"
+     ],
+     "scores": {
+      "durationFit": 80,
+      "emotionalInterest": 80,
+      "footageSupport": 80,
+      "hookStrength": 80,
+      "originality": 80,
+      "payoffStrength": 80,
+      "platformFit": 80,
+      "storyClarity": 80,
+      "visualVariety": 80
+     },
+     "strengths": [
+      "s"
+     ],
+     "structure": "results_first",
+     "viewerPromise": "see the finished work",
+     "weaknesses": [
+      "w"
+     ]
+    },
+    {
+     "footageCoverage": "full",
+     "hook": "reveal first",
+     "idealDurationSeconds": 12.0,
+     "payoff": {
+      "claimType": "editorial_label",
+      "evidence": [],
+      "text": "the final reveal"
+     },
+     "premise": {
+      "claimType": "editorial_label",
+      "evidence": [],
+      "text": "the work process"
+     },
+     "retentionRisks": [
+      "r"
+     ],
+     "scores": {
+      "durationFit": 80,
+      "emotionalInterest": 80,
+      "footageSupport": 80,
+      "hookStrength": 80,
+      "originality": 80,
+      "payoffStrength": 80,
+      "platformFit": 80,
+      "storyClarity": 80,
+      "visualVariety": 80
+     },
+     "strengths": [
+      "s"
+     ],
+     "structure": "results_first",
+     "viewerPromise": "see the finished work",
+     "weaknesses": [
+      "w"
+     ]
+    },
+    {
+     "footageCoverage": "full",
+     "hook": "reveal first",
+     "idealDurationSeconds": 12.0,
+     "payoff": {
+      "claimType": "editorial_label",
+      "evidence": [],
+      "text": "the final reveal"
+     },
+     "premise": {
+      "claimType": "editorial_label",
+      "evidence": [],
+      "text": "the work process"
+     },
+     "retentionRisks": [
+      "r"
+     ],
+     "scores": {
+      "durationFit": 80,
+      "emotionalInterest": 80,
+      "footageSupport": 80,
+      "hookStrength": 80,
+      "originality": 80,
+      "payoffStrength": 80,
+      "platformFit": 80,
+      "storyClarity": 80,
+      "visualVariety": 80
+     },
+     "strengths": [
+      "s"
+     ],
+     "structure": "results_first",
+     "viewerPromise": "see the finished work",
+     "weaknesses": [
+      "w"
+     ]
+    }
+   ],
+   "pacing": [
+    {
+     "beat": "hook",
+     "energy": 0.9,
+     "targetDurationSeconds": 4.0
+    },
+    {
+     "beat": "process",
+     "energy": 0.6,
+     "targetDurationSeconds": 4.0
+    },
+    {
+     "beat": "payoff",
+     "energy": 0.8,
+     "targetDurationSeconds": 4.0
+    }
+   ],
+   "pacingRationale": "fast hook, steady middle, held payoff",
+   "plannedDurationSeconds": 12.0,
+   "reframes": [],
+   "render": {
+    "aspect": "9:16",
+    "fps": 30.0,
+    "height": 1920,
+    "width": 1080
+   },
+   "retentionReview": [
+    {
+     "mitigation": "vary shot size",
+     "position": "mid",
+     "risk": "repetition"
+    }
+   ],
+   "schemaVersion": 1,
+   "speedRamps": [],
+   "status": "approved",
+   "storySentence": {
+    "claimType": "fact",
+    "evidence": [
+     {
+      "quoteOrValue": "crew works on step 1",
+      "segmentId": "seg-1",
+      "sourceType": "segment_metadata"
+     },
+     {
+      "quoteOrValue": "we finished the job",
+      "segmentId": "seg-3",
+      "sourceType": "transcript"
+     }
+    ],
+    "text": "This is a story about the crew at work, leading to the finished job."
+   },
+   "technicalWarnings": [],
+   "timeline": [
+    {
+     "addsNew": "new info",
+     "assetId": "asset-1",
+     "beat": "hook",
+     "expectedViewerEffect": "curiosity",
+     "playbackSpeed": 1.0,
+     "reason": "advances the story",
+     "segmentId": "seg-1",
+     "sourceIn": 0.0,
+     "sourceOut": 4.0,
+     "timelineIn": 0.0,
+     "timelineOut": 4.0
+    },
+    {
+     "addsNew": "new info",
+     "assetId": "asset-1",
+     "beat": "process",
+     "expectedViewerEffect": "curiosity",
+     "playbackSpeed": 1.0,
+     "reason": "advances the story",
+     "segmentId": "seg-2",
+     "sourceIn": 0.0,
+     "sourceOut": 4.0,
+     "timelineIn": 4.0,
+     "timelineOut": 8.0
+    },
+    {
+     "addsNew": "new info",
+     "assetId": "asset-1",
+     "beat": "payoff",
+     "expectedViewerEffect": "curiosity",
+     "playbackSpeed": 1.0,
+     "reason": "advances the story",
+     "segmentId": "seg-3",
+     "sourceIn": 0.0,
+     "sourceOut": 4.0,
+     "timelineIn": 8.0,
+     "timelineOut": 12.0
+    }
+   ],
+   "transitions": [
+    {
+     "durationSeconds": 0.0,
+     "fromSegmentId": "seg-1",
+     "purpose": "action match",
+     "toSegmentId": "seg-2",
+     "type": "hard_cut"
+    },
+    {
+     "durationSeconds": 0.0,
+     "fromSegmentId": "seg-2",
+     "purpose": "into the payoff",
+     "toSegmentId": "seg-3",
+     "type": "hard_cut"
+    }
+   ],
+   "transitionsRationale": "hard cuts on action",
+   "viewerPromise": {
+    "claimType": "editorial_label",
+    "evidence": [],
+    "text": "watch until the end"
+   }
+  },
+  "qualityScore": 100,
+  "status": "approved",
+  "violationsHistory": []
+ },
+ "schema": {
+  "properties": {
+   "achievableDurationSeconds": {
+    "type": "NUMBER"
+   },
+   "audio": {
+    "properties": {
+     "jCutSegmentIds": {
+      "items": {
+       "type": "STRING"
+      },
+      "type": "ARRAY"
+     },
+     "lCutSegmentIds": {
+      "items": {
+       "type": "STRING"
+      },
+      "type": "ARRAY"
+     },
+     "musicAvailable": {
+      "type": "BOOLEAN"
+     },
+     "musicPlan": {
+      "type": "STRING"
+     },
+     "naturalSoundSegmentIds": {
+      "items": {
+       "type": "STRING"
+      },
+      "type": "ARRAY"
+     },
+     "soundEffects": {
+      "items": {
+       "properties": {
+        "effect": {
+         "type": "STRING"
+        },
+        "reinforces": {
+         "type": "STRING"
+        },
+        "segmentId": {
+         "type": "STRING"
+        }
+       },
+       "required": [
+        "segmentId",
+        "effect",
+        "reinforces"
+       ],
+       "type": "OBJECT"
+      },
+      "type": "ARRAY"
+     }
+    },
+    "required": [
+     "musicAvailable"
+    ],
+    "type": "OBJECT"
+   },
+   "audioTreatments": {
+    "items": {
+     "properties": {
+      "denoise": {
+       "type": "BOOLEAN"
+      },
+      "ducking": {
+       "type": "BOOLEAN"
+      },
+      "gainDb": {
+       "type": "NUMBER"
+      },
+      "jCutFromSegmentId": {
+       "type": "STRING"
+      },
+      "lCutIntoSegmentId": {
+       "type": "STRING"
+      },
+      "preserveNaturalSound": {
+       "type": "BOOLEAN"
+      },
+      "segmentId": {
+       "type": "STRING"
+      }
+     },
+     "required": [
+      "segmentId"
+     ],
+     "type": "OBJECT"
+    },
+    "type": "ARRAY"
+   },
+   "beats": {
+    "items": {
+     "properties": {
+      "key": {
+       "type": "STRING"
+      },
+      "purpose": {
+       "type": "STRING"
+      }
+     },
+     "required": [
+      "key",
+      "purpose"
+     ],
+     "type": "OBJECT"
+    },
+    "type": "ARRAY"
+   },
+   "captions": {
+    "items": {
+     "properties": {
+      "claimType": {
+       "type": "STRING"
+      },
+      "evidence": {
+       "items": {
+        "properties": {
+         "quoteOrValue": {
+          "type": "STRING"
+         },
+         "segmentId": {
+          "type": "STRING"
+         },
+         "sourceType": {
+          "type": "STRING"
+         }
+        },
+        "required": [
+         "sourceType",
+         "quoteOrValue"
+        ],
+        "type": "OBJECT"
+       },
+       "type": "ARRAY"
+      },
+      "safeArea": {
+       "type": "STRING"
+      },
+      "styleTemplate": {
+       "type": "STRING"
+      },
+      "text": {
+       "maxLength": 90,
+       "type": "STRING"
+      },
+      "timelineEnd": {
+       "type": "NUMBER"
+      },
+      "timelineStart": {
+       "type": "NUMBER"
+      }
+     },
+     "required": [
+      "claimType",
+      "text",
+      "timelineStart",
+      "timelineEnd"
+     ],
+     "type": "OBJECT"
+    },
+    "type": "ARRAY"
+   },
+   "chosenOption": {
+    "type": "INTEGER"
+   },
+   "colorStabilization": {
+    "items": {
+     "properties": {
+      "colorPreset": {
+       "type": "STRING"
+      },
+      "cropAllowance": {
+       "type": "NUMBER"
+      },
+      "segmentId": {
+       "type": "STRING"
+      },
+      "stabilizationMode": {
+       "type": "STRING"
+      }
+     },
+     "required": [
+      "segmentId"
+     ],
+     "type": "OBJECT"
+    },
+    "type": "ARRAY"
+   },
+   "footageSummary": {
+    "type": "STRING"
+   },
+   "graphics": {
+    "items": {
+     "properties": {
+      "anchor": {
+       "type": "STRING"
+      },
+      "animation": {
+       "type": "STRING"
+      },
+      "claimType": {
+       "type": "STRING"
+      },
+      "durationSeconds": {
+       "type": "NUMBER"
+      },
+      "evidence": {
+       "items": {
+        "properties": {
+         "quoteOrValue": {
+          "type": "STRING"
+         },
+         "segmentId": {
+          "type": "STRING"
+         },
+         "sourceType": {
+          "type": "STRING"
+         }
+        },
+        "required": [
+         "sourceType",
+         "quoteOrValue"
+        ],
+        "type": "OBJECT"
+       },
+       "type": "ARRAY"
+      },
+      "graphicType": {
+       "type": "STRING"
+      },
+      "text": {
+       "type": "STRING"
+      },
+      "timelineEnd": {
+       "type": "NUMBER"
+      },
+      "timelineStart": {
+       "type": "NUMBER"
+      }
+     },
+     "required": [
+      "graphicType",
+      "claimType",
+      "text",
+      "timelineStart",
+      "timelineEnd",
+      "durationSeconds"
+     ],
+     "type": "OBJECT"
+    },
+    "type": "ARRAY"
+   },
+   "hook": {
+    "properties": {
+     "audioCue": {
+      "type": "STRING"
+     },
+     "curiosityCreated": {
+      "type": "STRING"
+     },
+     "durationSeconds": {
+      "type": "NUMBER"
+     },
+     "firstFrame": {
+      "type": "STRING"
+     },
+     "promiseToFulfill": {
+      "type": "STRING"
+     },
+     "segmentId": {
+      "type": "STRING"
+     },
+     "sourceIn": {
+      "type": "NUMBER"
+     },
+     "sourceOut": {
+      "type": "NUMBER"
+     },
+     "text": {
+      "properties": {
+       "claimType": {
+        "enum": [
+         "fact",
+         "editorial_label",
+         "cta"
+        ],
+        "type": "STRING"
+       },
+       "evidence": {
+        "items": {
+         "properties": {
+          "quoteOrValue": {
+           "type": "STRING"
+          },
+          "segmentId": {
+           "type": "STRING"
+          },
+          "sourceType": {
+           "type": "STRING"
+          }
+         },
+         "required": [
+          "sourceType",
+          "quoteOrValue"
+         ],
+         "type": "OBJECT"
+        },
+        "type": "ARRAY"
+       },
+       "text": {
+        "type": "STRING"
+       }
+      },
+      "required": [
+       "text",
+       "claimType"
+      ],
+      "type": "OBJECT"
+     },
+     "transitionOut": {
+      "type": "STRING"
+     }
+    },
+    "required": [
+     "segmentId",
+     "sourceIn",
+     "sourceOut",
+     "firstFrame",
+     "audioCue",
+     "durationSeconds",
+     "transitionOut",
+     "curiosityCreated",
+     "promiseToFulfill"
+    ],
+    "type": "OBJECT"
+   },
+   "intendedAudience": {
+    "type": "STRING"
+   },
+   "missingFootage": {
+    "items": {
+     "properties": {
+      "beat": {
+       "type": "STRING"
+      },
+      "recommendedDurationSeconds": {
+       "type": "NUMBER"
+      },
+      "shotType": {
+       "type": "STRING"
+      },
+      "why": {
+       "type": "STRING"
+      }
+     },
+     "required": [
+      "beat",
+      "shotType",
+      "recommendedDurationSeconds",
+      "why"
+     ],
+     "type": "OBJECT"
+    },
+    "type": "ARRAY"
+   },
+   "modelSelfAssessment": {
+    "properties": {
+     "clipSelection": {
+      "maximum": 10,
+      "minimum": 0,
+      "type": "INTEGER"
+     },
+     "creativeTreatment": {
+      "maximum": 10,
+      "minimum": 0,
+      "type": "INTEGER"
+     },
+     "durationCompliance": {
+      "maximum": 5,
+      "minimum": 0,
+      "type": "INTEGER"
+     },
+     "flowContinuity": {
+      "maximum": 10,
+      "minimum": 0,
+      "type": "INTEGER"
+     },
+     "hardFailures": {
+      "items": {
+       "type": "STRING"
+      },
+      "type": "ARRAY"
+     },
+     "hook": {
+      "maximum": 15,
+      "minimum": 0,
+      "type": "INTEGER"
+     },
+     "pacing": {
+      "maximum": 10,
+      "minimum": 0,
+      "type": "INTEGER"
+     },
+     "payoff": {
+      "maximum": 10,
+      "minimum": 0,
+      "type": "INTEGER"
+     },
+     "platformFit": {
+      "maximum": 5,
+      "minimum": 0,
+      "type": "INTEGER"
+     },
+     "soundDesign": {
+      "maximum": 5,
+      "minimum": 0,
+      "type": "INTEGER"
+     },
+     "storyClarity": {
+      "maximum": 15,
+      "minimum": 0,
+      "type": "INTEGER"
+     },
+     "visualVariety": {
+      "maximum": 5,
+      "minimum": 0,
+      "type": "INTEGER"
+     }
+    },
+    "required": [
+     "hook",
+     "storyClarity",
+     "flowContinuity",
+     "pacing",
+     "clipSelection",
+     "payoff",
+     "visualVariety",
+     "creativeTreatment",
+     "soundDesign",
+     "platformFit",
+     "durationCompliance"
+    ],
+    "type": "OBJECT"
+   },
+   "options": {
+    "items": {
+     "properties": {
+      "footageCoverage": {
+       "type": "STRING"
+      },
+      "hook": {
+       "type": "STRING"
+      },
+      "idealDurationSeconds": {
+       "type": "NUMBER"
+      },
+      "payoff": {
+       "properties": {
+        "claimType": {
+         "enum": [
+          "fact",
+          "editorial_label",
+          "cta"
+         ],
+         "type": "STRING"
+        },
+        "evidence": {
+         "items": {
+          "properties": {
+           "quoteOrValue": {
+            "type": "STRING"
+           },
+           "segmentId": {
+            "type": "STRING"
+           },
+           "sourceType": {
+            "type": "STRING"
+           }
+          },
+          "required": [
+           "sourceType",
+           "quoteOrValue"
+          ],
+          "type": "OBJECT"
+         },
+         "type": "ARRAY"
+        },
+        "text": {
+         "type": "STRING"
+        }
+       },
+       "required": [
+        "text",
+        "claimType"
+       ],
+       "type": "OBJECT"
+      },
+      "premise": {
+       "properties": {
+        "claimType": {
+         "enum": [
+          "fact",
+          "editorial_label",
+          "cta"
+         ],
+         "type": "STRING"
+        },
+        "evidence": {
+         "items": {
+          "properties": {
+           "quoteOrValue": {
+            "type": "STRING"
+           },
+           "segmentId": {
+            "type": "STRING"
+           },
+           "sourceType": {
+            "type": "STRING"
+           }
+          },
+          "required": [
+           "sourceType",
+           "quoteOrValue"
+          ],
+          "type": "OBJECT"
+         },
+         "type": "ARRAY"
+        },
+        "text": {
+         "type": "STRING"
+        }
+       },
+       "required": [
+        "text",
+        "claimType"
+       ],
+       "type": "OBJECT"
+      },
+      "retentionRisks": {
+       "items": {
+        "type": "STRING"
+       },
+       "type": "ARRAY"
+      },
+      "scores": {
+       "properties": {
+        "durationFit": {
+         "type": "INTEGER"
+        },
+        "emotionalInterest": {
+         "type": "INTEGER"
+        },
+        "footageSupport": {
+         "type": "INTEGER"
+        },
+        "hookStrength": {
+         "type": "INTEGER"
+        },
+        "originality": {
+         "type": "INTEGER"
+        },
+        "payoffStrength": {
+         "type": "INTEGER"
+        },
+        "platformFit": {
+         "type": "INTEGER"
+        },
+        "storyClarity": {
+         "type": "INTEGER"
+        },
+        "visualVariety": {
+         "type": "INTEGER"
+        }
+       },
+       "required": [
+        "hookStrength",
+        "storyClarity",
+        "payoffStrength",
+        "footageSupport",
+        "emotionalInterest",
+        "visualVariety",
+        "platformFit",
+        "durationFit",
+        "originality"
+       ],
+       "type": "OBJECT"
+      },
+      "strengths": {
+       "items": {
+        "type": "STRING"
+       },
+       "type": "ARRAY"
+      },
+      "structure": {
+       "type": "STRING"
+      },
+      "viewerPromise": {
+       "type": "STRING"
+      },
+      "weaknesses": {
+       "items": {
+        "type": "STRING"
+       },
+       "type": "ARRAY"
+      }
+     },
+     "required": [
+      "premise",
+      "viewerPromise",
+      "hook",
+      "structure",
+      "payoff",
+      "idealDurationSeconds",
+      "strengths",
+      "weaknesses",
+      "footageCoverage",
+      "retentionRisks",
+      "scores"
+     ],
+     "type": "OBJECT"
+    },
+    "type": "ARRAY"
+   },
+   "pacing": {
+    "items": {
+     "properties": {
+      "beat": {
+       "type": "STRING"
+      },
+      "energy": {
+       "type": "NUMBER"
+      },
+      "targetDurationSeconds": {
+       "type": "NUMBER"
+      }
+     },
+     "required": [
+      "beat",
+      "targetDurationSeconds",
+      "energy"
+     ],
+     "type": "OBJECT"
+    },
+    "type": "ARRAY"
+   },
+   "pacingRationale": {
+    "type": "STRING"
+   },
+   "plannedDurationSeconds": {
+    "type": "NUMBER"
+   },
+   "reframes": {
+    "items": {
+     "properties": {
+      "endCrop": {
+       "properties": {
+        "height": {
+         "type": "NUMBER"
+        },
+        "width": {
+         "type": "NUMBER"
+        },
+        "x": {
+         "type": "NUMBER"
+        },
+        "y": {
+         "type": "NUMBER"
+        }
+       },
+       "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+       ],
+       "type": "OBJECT"
+      },
+      "outputAspectRatio": {
+       "type": "STRING"
+      },
+      "safeArea": {
+       "type": "STRING"
+      },
+      "segmentId": {
+       "type": "STRING"
+      },
+      "startCrop": {
+       "properties": {
+        "height": {
+         "type": "NUMBER"
+        },
+        "width": {
+         "type": "NUMBER"
+        },
+        "x": {
+         "type": "NUMBER"
+        },
+        "y": {
+         "type": "NUMBER"
+        }
+       },
+       "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+       ],
+       "type": "OBJECT"
+      },
+      "subjectTarget": {
+       "type": "STRING"
+      },
+      "trackingMode": {
+       "type": "STRING"
+      }
+     },
+     "required": [
+      "segmentId",
+      "outputAspectRatio",
+      "subjectTarget",
+      "startCrop",
+      "endCrop"
+     ],
+     "type": "OBJECT"
+    },
+    "type": "ARRAY"
+   },
+   "render": {
+    "properties": {
+     "aspect": {
+      "type": "STRING"
+     },
+     "fps": {
+      "type": "NUMBER"
+     },
+     "height": {
+      "type": "INTEGER"
+     },
+     "width": {
+      "type": "INTEGER"
+     }
+    },
+    "required": [
+     "width",
+     "height",
+     "fps",
+     "aspect"
+    ],
+    "type": "OBJECT"
+   },
+   "retentionReview": {
+    "items": {
+     "properties": {
+      "mitigation": {
+       "type": "STRING"
+      },
+      "position": {
+       "type": "STRING"
+      },
+      "risk": {
+       "type": "STRING"
+      }
+     },
+     "required": [
+      "position",
+      "risk",
+      "mitigation"
+     ],
+     "type": "OBJECT"
+    },
+    "type": "ARRAY"
+   },
+   "schemaVersion": {
+    "type": "INTEGER"
+   },
+   "speedRamps": {
+    "items": {
+     "properties": {
+      "easing": {
+       "type": "STRING"
+      },
+      "entrySpeed": {
+       "type": "NUMBER"
+      },
+      "exitSpeed": {
+       "type": "NUMBER"
+      },
+      "narrativePurpose": {
+       "type": "STRING"
+      },
+      "peakSpeed": {
+       "type": "NUMBER"
+      },
+      "segmentId": {
+       "type": "STRING"
+      },
+      "sourceEnd": {
+       "type": "NUMBER"
+      },
+      "sourceStart": {
+       "type": "NUMBER"
+      }
+     },
+     "required": [
+      "segmentId",
+      "sourceStart",
+      "sourceEnd",
+      "entrySpeed",
+      "peakSpeed",
+      "exitSpeed",
+      "easing",
+      "narrativePurpose"
+     ],
+     "type": "OBJECT"
+    },
+    "type": "ARRAY"
+   },
+   "status": {
+    "enum": [
+     "approved",
+     "insufficient_footage"
+    ],
+    "type": "STRING"
+   },
+   "storySentence": {
+    "properties": {
+     "claimType": {
+      "enum": [
+       "fact",
+       "editorial_label",
+       "cta"
+      ],
+      "type": "STRING"
+     },
+     "evidence": {
+      "items": {
+       "properties": {
+        "quoteOrValue": {
+         "type": "STRING"
+        },
+        "segmentId": {
+         "type": "STRING"
+        },
+        "sourceType": {
+         "type": "STRING"
+        }
+       },
+       "required": [
+        "sourceType",
+        "quoteOrValue"
+       ],
+       "type": "OBJECT"
+      },
+      "type": "ARRAY"
+     },
+     "text": {
+      "type": "STRING"
+     }
+    },
+    "required": [
+     "text",
+     "claimType"
+    ],
+    "type": "OBJECT"
+   },
+   "technicalWarnings": {
+    "items": {
+     "properties": {
+      "claimType": {
+       "enum": [
+        "fact",
+        "editorial_label",
+        "cta"
+       ],
+       "type": "STRING"
+      },
+      "evidence": {
+       "items": {
+        "properties": {
+         "quoteOrValue": {
+          "type": "STRING"
+         },
+         "segmentId": {
+          "type": "STRING"
+         },
+         "sourceType": {
+          "type": "STRING"
+         }
+        },
+        "required": [
+         "sourceType",
+         "quoteOrValue"
+        ],
+        "type": "OBJECT"
+       },
+       "type": "ARRAY"
+      },
+      "text": {
+       "type": "STRING"
+      }
+     },
+     "required": [
+      "text",
+      "claimType"
+     ],
+     "type": "OBJECT"
+    },
+    "type": "ARRAY"
+   },
+   "timeline": {
+    "items": {
+     "properties": {
+      "addsNew": {
+       "type": "STRING"
+      },
+      "assetId": {
+       "type": "STRING"
+      },
+      "beat": {
+       "type": "STRING"
+      },
+      "expectedViewerEffect": {
+       "type": "STRING"
+      },
+      "playbackSpeed": {
+       "type": "NUMBER"
+      },
+      "reason": {
+       "type": "STRING"
+      },
+      "segmentId": {
+       "type": "STRING"
+      },
+      "sourceIn": {
+       "type": "NUMBER"
+      },
+      "sourceOut": {
+       "type": "NUMBER"
+      },
+      "timelineIn": {
+       "type": "NUMBER"
+      },
+      "timelineOut": {
+       "type": "NUMBER"
+      }
+     },
+     "required": [
+      "segmentId",
+      "assetId",
+      "sourceIn",
+      "sourceOut",
+      "timelineIn",
+      "timelineOut",
+      "beat",
+      "reason",
+      "addsNew",
+      "expectedViewerEffect"
+     ],
+     "type": "OBJECT"
+    },
+    "type": "ARRAY"
+   },
+   "transitions": {
+    "items": {
+     "properties": {
+      "durationSeconds": {
+       "type": "NUMBER"
+      },
+      "fromSegmentId": {
+       "type": "STRING"
+      },
+      "purpose": {
+       "type": "STRING"
+      },
+      "toSegmentId": {
+       "type": "STRING"
+      },
+      "type": {
+       "type": "STRING"
+      }
+     },
+     "required": [
+      "fromSegmentId",
+      "toSegmentId",
+      "type",
+      "durationSeconds",
+      "purpose"
+     ],
+     "type": "OBJECT"
+    },
+    "type": "ARRAY"
+   },
+   "transitionsRationale": {
+    "type": "STRING"
+   },
+   "viewerPromise": {
+    "properties": {
+     "claimType": {
+      "enum": [
+       "fact",
+       "editorial_label",
+       "cta"
+      ],
+      "type": "STRING"
+     },
+     "evidence": {
+      "items": {
+       "properties": {
+        "quoteOrValue": {
+         "type": "STRING"
+        },
+        "segmentId": {
+         "type": "STRING"
+        },
+        "sourceType": {
+         "type": "STRING"
+        }
+       },
+       "required": [
+        "sourceType",
+        "quoteOrValue"
+       ],
+       "type": "OBJECT"
+      },
+      "type": "ARRAY"
+     },
+     "text": {
+      "type": "STRING"
+     }
+    },
+    "required": [
+     "text",
+     "claimType"
+    ],
+    "type": "OBJECT"
+   }
+  },
+  "required": [
+   "schemaVersion",
+   "storySentence",
+   "footageSummary",
+   "intendedAudience",
+   "viewerPromise",
+   "options",
+   "chosenOption",
+   "hook",
+   "beats",
+   "timeline",
+   "pacing",
+   "pacingRationale",
+   "transitionsRationale",
+   "audio",
+   "plannedDurationSeconds",
+   "modelSelfAssessment",
+   "render",
+   "status"
+  ],
+  "type": "OBJECT"
+ }
+}
