@@ -121,9 +121,9 @@ function TopNav() {
 
   return (
     <nav className="nav" role="navigation" aria-label="Main navigation">
-      <a href="https://www.stromation.com" className="nav-logo">
+      <a href="https://www.readymadevideo.com" className="nav-logo">
         <img src={iconUrl} alt="" aria-hidden="true" />
-        STROMATION
+        READYMADEVIDEO
       </a>
       <span className="spacer" />
       <Link to="/project/new" className="btn btn-primary btn-sm">+ New video</Link>
@@ -144,14 +144,14 @@ function TopNav() {
             <div className="avatar-email">{session?.user?.email}</div>
             <div className="avatar-menu-sep" />
             <a
-              href="https://www.stromation.com"
+              href="https://www.readymadevideo.com"
               className="avatar-menu-item"
               role="menuitem"
               tabIndex={0}
               ref={el => { itemRefs.current[0] = el }}
               onClick={closeMenu}
             >
-              ← Back to stromation.com
+              ← Back to readymadevideo.com
             </a>
             <button
               className="avatar-menu-item"

@@ -265,7 +265,7 @@ def build_graphics_package(
 ) -> GraphicsPackage:
     preset = PRESETS[aspect]
     template = template or BrandTemplate(templateId="stromation-social-v1",
-                                         name="Stromation Social")
+                                         name="ReadyMadeVideo Social")
     clips = candidate.timeline["tracks"][0]["clips"]
     segment_by_id = {item.segmentId: item for item in (segments or [])}
     duration = candidate.durationSeconds

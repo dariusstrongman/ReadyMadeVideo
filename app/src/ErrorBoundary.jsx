@@ -26,7 +26,7 @@ export default class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     // Keep the component stack in the console for anyone with devtools open.
-    console.error('[Stromation] render error', error, info?.componentStack)
+    console.error('[ReadyMadeVideo] render error', error, info?.componentStack)
   }
 
   render() {

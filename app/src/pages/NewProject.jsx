@@ -71,9 +71,9 @@ export default function NewProject() {
   return (
     <div className="new-project-page">
       <div className="new-project-card">
-        <a href="https://www.stromation.com" className="nav-logo" style={{ marginBottom: 24, justifyContent: 'center' }}>
+        <a href="https://www.readymadevideo.com" className="nav-logo" style={{ marginBottom: 24, justifyContent: 'center' }}>
           <img src={iconUrl} alt="" aria-hidden="true" />
-          STROMATION
+          READYMADEVIDEO
         </a>
 
         {step === 1 && (

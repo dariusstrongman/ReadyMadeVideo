@@ -42,8 +42,11 @@ from .renderer import RenderError, render
 # the S3 bucket too (raw footage always uses S3 once AWS_S3_BUCKET is set).
 EXPORT_STORAGE_PROVIDER = os.environ.get("EXPORT_STORAGE_PROVIDER", "supabase")
 
-app = FastAPI(title="Stromation Render Backend", version="0.1.0")
+app = FastAPI(title="ReadyMadeVideo Render Backend", version="0.1.0")
 
+# ReadyMadeVideo migration (2026-08-07): production ALLOWED_ORIGINS on
+# Railway must list BOTH https://app.readymadevideo.com and
+# https://app.stromation.com until the old app domain is retired.
 ALLOWED_ORIGINS = os.environ.get(
     "ALLOWED_ORIGINS",
     "http://localhost:5173,http://127.0.0.1:5173").split(",")
@@ -1830,7 +1833,7 @@ def op_audio_render(project_id: str, body: AudioRenderBody,
 
 class BrandTemplateBody(BaseModel):
     templateId: str = Field(default="stromation-social-v1", min_length=2, max_length=80)
-    name: str = Field(default="Stromation Social", min_length=2, max_length=120)
+    name: str = Field(default="ReadyMadeVideo Social", min_length=2, max_length=120)
     fontFamily: Literal["DejaVu Sans", "DejaVu Sans Condensed"] = "DejaVu Sans"
     primary: str = "#FFFFFF"
     secondary: str = "#101820"
@@ -2784,7 +2787,7 @@ def customer_editor_render_sign(project_id: str, job_id: UUID,
     provider = (job.get("artifacts") or {}).get("export_provider") or "supabase"
     if provider == "s3":
         url = s3store.presign_get(path, expires=3600,
-                                  download_name=f"stromation-{str(job_id)[:8]}.mp4")
+                                  download_name=f"readymadevideo-{str(job_id)[:8]}.mp4")
         return {"url": url, "expiresIn": 3600}
     response = _hx.post(
         f"{supa.SUPABASE_URL}/storage/v1/object/sign/exports/{path}",

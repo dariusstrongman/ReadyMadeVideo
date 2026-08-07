@@ -636,7 +636,7 @@ export default function Project() {
                   {RESHAPE.find(a => a.id === pendingShape)?.label.toLowerCase()} ({pendingShape})?
                 </p>
                 <ul className="reshape-confirm-list">
-                  <li>Stromation builds a new cut from your footage. It takes a few minutes.</li>
+                  <li>ReadyMadeVideo builds a new cut from your footage. It takes a few minutes.</li>
                   <li>Your current cut is kept — switch back any time from the version picker.</li>
                   {documents.length > 0 && (
                     <li>Changes you made in the editor stay on the current version.
@@ -830,7 +830,7 @@ export default function Project() {
                 {assets.length} {assets.length === 1 ? 'clip' : 'clips'} ready
               </p>
               <p className="start-bar-sub">
-                Start the edit and Stromation builds your first cut. You can close this page.
+                Start the edit and ReadyMadeVideo builds your first cut. You can close this page.
               </p>
               <label className="start-bar-length">
                 How long should it be?{' '}
@@ -1100,7 +1100,7 @@ function ProcessingWorkspace({ project, assets, analysis, jobs, networkError, se
           <h2 className="proc-error-title">Your footage is ready.</h2>
           <p className="proc-error-sub">
             {assets.length} {assets.length === 1 ? 'clip' : 'clips'} uploaded. Start the edit and
-            Stromation builds your first cut. You can leave this page while it works.
+            ReadyMadeVideo builds your first cut. You can leave this page while it works.
           </p>
           {retryError && (
             <p className="proc-error-detail" role="alert" aria-live="assertive">{retryError}</p>
@@ -1401,7 +1401,7 @@ async function downloadExport(projectId, job, session, projectName) {
     { method: 'POST', body: JSON.stringify({}) })
   const a = window.document.createElement('a')
   a.href = url
-  a.download = `stromation-${(projectName || 'edit').replace(/[^\w.-]+/g, '_')}.mp4`
+  a.download = `readymadevideo-${(projectName || 'edit').replace(/[^\w.-]+/g, '_')}.mp4`
   a.rel = 'noopener'
   window.document.body.appendChild(a); a.click(); a.remove()
 }
@@ -1445,7 +1445,7 @@ function ExportView({ job, project, projectId, session, onRetry }) {
         </div>
         {error && <div className="err" role="alert">{error}</div>}
         <p className="export-feedback">
-          <a href="mailto:hello@stromation.com">Send feedback on this edit</a>
+          <a href="mailto:hello@readymadevideo.com">Send feedback on this edit</a>
         </p>
       </div>
     )

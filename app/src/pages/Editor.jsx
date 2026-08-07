@@ -203,9 +203,9 @@ export default function Editor() {
   return (
     <div className="editor-page">
       <div className="editor-topbar">
-        <a href="https://www.stromation.com" className="nav-logo" style={{ flexShrink: 0 }}>
+        <a href="https://www.readymadevideo.com" className="nav-logo" style={{ flexShrink: 0 }}>
           <img src={iconUrl} alt="" aria-hidden="true" />
-          STROMATION
+          READYMADEVIDEO
         </a>
         <span style={{ color: 'var(--border-2)' }}>/</span>
         <Link to={`/project/${projectId}`} style={{ color: 'var(--text-3)', fontSize: '0.78rem' }}>Project</Link>

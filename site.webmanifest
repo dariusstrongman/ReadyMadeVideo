@@ -1,7 +1,7 @@
 {
-  "name": "Stromation — AI Automation Studio",
-  "short_name": "Stromation",
-  "description": "AI automation studio for solopreneurs. Build a business that runs itself.",
+  "name": "ReadyMadeVideo — AI Video Editing",
+  "short_name": "ReadyMadeVideo",
+  "description": "Upload your raw footage and ReadyMadeVideo builds the complete first edit.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#08090b",

@@ -1,13 +1,13 @@
-# Stromation
+# ReadyMadeVideo
 
 **AI-powered lead-response and business-automation systems for North Texas service companies.**
-Live site: [www.stromation.com](https://www.stromation.com)
+Live site: [www.readymadevideo.com](https://www.readymadevideo.com)
 
 Every missed call answered. Every lead followed up.
 
 ## What this repository is
 
-The public website and workflow-template library for Stromation:
+The public website and workflow-template library for ReadyMadeVideo:
 
 - **Website** — static HTML/CSS/JS served by GitHub Pages (no build step). Agency pages
   (home, solutions, lead-recovery, pricing, book-a-call) plus the DIY Library
@@ -34,6 +34,6 @@ The public website and workflow-template library for Stromation:
 
 ## License
 
-Website content and brand: (c) Stromation. Workflow templates in `automations/n8n/`:
+Website content and brand: (c) ReadyMadeVideo. Workflow templates in `automations/n8n/`:
 free to use in your own business and client work; do not resell or redistribute the
 files themselves as a product (see `product-license.html`).

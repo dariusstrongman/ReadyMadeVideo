@@ -101,6 +101,10 @@ function localStore() {
 // same user still collide — inherent to metadata fingerprints; a full fix needs
 // content hashing, which is impractical for 2 GB files.)
 const fingerprint = (userId, projectId, file) =>
+  // COMPAT (ReadyMadeVideo migration, 2026-08-07): this localStorage key
+  // prefix is a storage identifier, not customer-visible copy. Renaming it
+  // would orphan every customer's in-progress resumable upload state at the
+  // moment of the rebrand. It stays until a versioned key migration exists.
   `stromation_upload_${userId || 'anon'}_${projectId}_${file.name}_${file.size}_${file.lastModified || 0}`
 
 /** Clear any resume records for a user (call on logout to avoid cross-user reuse). */

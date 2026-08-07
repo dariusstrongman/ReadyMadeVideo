@@ -5,7 +5,7 @@ export const SUPABASE_ANON_KEY =
   'sb_publishable_8qa-nssfdtEkCz-42wOSWQ_2P7S4Zj7'
 export const RENDER_API =
   import.meta.env.VITE_RENDER_API ||
-  (import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.stromation.com')
+  (import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.readymadevideo.com')
 
 // One shared upload ceiling, mirrored by the backend (raw_uploads.MAX_UPLOAD_BYTES).
 export const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024 // 2 GiB (Internal Alpha)

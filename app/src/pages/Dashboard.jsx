@@ -8,7 +8,7 @@ import { isExportJob } from './Project'
 /* Status vocabulary ─────────────────────────────────────────────────────
    Four intents, in the order footage actually travels through the studio:
      idle  → waiting on you for footage      (neutral)
-     work  → Stromation is cutting           (cyan — the brand at work)
+     work  → ReadyMadeVideo is cutting           (cyan — the brand at work)
      ready → your eyes are needed            (violet)
      done  → exported                        (green)
      error → something stopped               (red)
@@ -42,8 +42,8 @@ const HERO_RANK = { draft_ready: 0, analysis_failed: 1, render_failed: 1, draft:
 
 const HERO_COPY = {
   ready: { eyebrow: 'Ready to watch', line: 'Your first cut is finished. Watch it, then download it or ask for changes.' },
-  start: { eyebrow: 'Ready to edit',  line: 'Your footage is uploaded. Start the edit and Stromation builds your first cut.' },
-  work:  { eyebrow: 'In the bay',     line: 'Stromation is cutting this now. You can leave — it keeps working.' },
+  start: { eyebrow: 'Ready to edit',  line: 'Your footage is uploaded. Start the edit and ReadyMadeVideo builds your first cut.' },
+  work:  { eyebrow: 'In the bay',     line: 'ReadyMadeVideo is cutting this now. You can leave — it keeps working.' },
   idle:  { eyebrow: 'Needs footage',  line: 'Drop in your raw clips and the edit starts on its own.' },
   error: { eyebrow: 'Stopped',        line: 'This one did not finish. Open it to see what happened.' },
   done:  { eyebrow: 'Exported',       line: 'This video is finished and downloaded.' },
@@ -207,17 +207,17 @@ export default function Dashboard() {
     const steps = [
       { n: '01', title: 'Name your video', desc: 'Give your project a name.' },
       { n: '02', title: 'Drop in footage', desc: 'Raw clips from your phone, camera, or drone.' },
-      { n: '03', title: 'AI builds the edit', desc: 'Stromation assembles a complete first cut.' },
+      { n: '03', title: 'AI builds the edit', desc: 'ReadyMadeVideo assembles a complete first cut.' },
       { n: '04', title: 'Watch and download', desc: 'Approve the edit, then export your MP4.' },
     ]
     return (
       <div className="dashboard-empty">
         <div className="empty-icon-wrap"><FilmIcon size={32} /></div>
         <h1 className="empty-title">Your studio is ready.</h1>
-        <p className="empty-sub">Upload raw footage. Stromation builds your first edit.</p>
+        <p className="empty-sub">Upload raw footage. ReadyMadeVideo builds your first edit.</p>
         <div className="empty-actions">
           <Link to="/project/new" className="btn btn-primary btn-lg">+ Create your first video</Link>
-          <a href="https://www.stromation.com/showcase.html" className="empty-example-link"
+          <a href="https://www.readymadevideo.com/showcase.html" className="empty-example-link"
             target="_blank" rel="noopener noreferrer">See Project Zero — a real example →</a>
         </div>
         <div className="empty-steps">

@@ -46,7 +46,7 @@ export default function Login() {
           <div className="login-brand-icon">
             <img src={iconUrl} alt="" aria-hidden="true" style={{ width: 26, height: 26 }} />
           </div>
-          <span className="login-brand-name">STROMATION</span>
+          <span className="login-brand-name">READYMADEVIDEO</span>
           <span className="login-tagline">Raw footage in. Finished video out.</span>
         </div>
         <p className="login-title">{headings[mode]}</p>
