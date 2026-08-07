@@ -497,7 +497,32 @@ def test_flags_off_deterministic_serialized_identity_vs_pre_phase2():
         return copy.deepcopy(_valid_plan())
 
     result = ep.plan_editorial(_segments(), {}, False, generate)
-    assert captured["parts"] == golden["parts"]          # prompt: identical
+
+    def _normalize_vocab(parts):
+        """Batch B7 (merged after the golden was cut) intentionally adds
+        digit tokens to the ALLOWED FACTUAL VOCABULARY — numbers are now
+        groundable content. Strip standalone digits from the vocab part on
+        BOTH sides and assert the delta is EXACTLY that, so any other prompt
+        drift still fails this test."""
+        out = []
+        for p_ in parts:
+            if p_.startswith("ALLOWED FACTUAL VOCABULARY"):
+                head, _, words = p_.partition(":\n")
+                kept = " ".join(w for w in words.split()
+                                if not any(c.isdigit() for c in w))
+                out.append(head + ":\n" + kept)
+            else:
+                out.append(p_)
+        return out
+
+    assert _normalize_vocab(captured["parts"]) \
+        == _normalize_vocab(golden["parts"])             # prompt: identical
+    vocab_now = next(p_ for p_ in captured["parts"]
+                     if p_.startswith("ALLOWED FACTUAL VOCABULARY"))
+    vocab_then = next(p_ for p_ in golden["parts"]
+                      if p_.startswith("ALLOWED FACTUAL VOCABULARY"))
+    delta = set(vocab_now.split()) - set(vocab_then.split())
+    assert delta == {"1", "2", "3"}                      # the documented B7 delta
     assert captured["schema"] == golden["schema"]        # wire: identical
     plan = dict(result["plan"])
     assert plan.pop("loops") == []                       # documented delta 1

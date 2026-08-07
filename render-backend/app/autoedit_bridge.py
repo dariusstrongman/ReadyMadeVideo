@@ -199,7 +199,8 @@ def find_bridged_candidate(db_select, project_id: str, timeline_id: str):
 
 def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: str,
                          *, insert, db_select, upload_export, now,
-                         remove=None, update=None, json_loads=None) -> dict | None:
+                         remove=None, update=None, json_loads=None,
+                         export_provider: str = "supabase") -> dict | None:
     """Create (idempotently) a bridged candidate_runs from a basic-autoedit timeline.
 
     Idempotent PER (project, timeline): repeated bridges of the same timeline
@@ -300,7 +301,13 @@ def bridge_from_autoedit(project: dict, timeline_row: dict, preview_local_path: 
         "candidate_key": "bridged", "candidate_index": 1,
         "generation_kind": "bridged",
         "source_picture_candidate_id": picture_candidate_id,
-        "variant_config": {"origin": "basic_autoedit"},
+        # Self-describing preview provenance: upload_export routes to S3 or to
+        # Supabase storage depending on EXPORT_STORAGE_PROVIDER, and the reader
+        # must sign against the store the object was actually written to. Recorded
+        # per row (never inferred from the deployment's current setting) so
+        # flipping the env can never mis-sign an older candidate's preview.
+        "variant_config": {"origin": "basic_autoedit",
+                           "previewStorageProvider": export_provider},
         "manifest": manifest,
         "render_qc": {"origin": "basic_autoedit", "checks": "picture+original_audio"},
         "preview_storage_bucket": "exports", "preview_storage_path": preview_path,

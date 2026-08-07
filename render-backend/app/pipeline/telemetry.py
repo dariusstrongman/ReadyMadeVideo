@@ -50,6 +50,16 @@ def estimate_cost(units: dict) -> float:
     cost += units.get("gemini_video_seconds", 0) * p.get("gemini_flash_per_video_second", 0)
     cost += units.get("gemini_requests", 0) * p.get("gemini_flash_per_request", 0)
     cost += units.get("cpu_hours", 0) * p.get("compute_per_cpu_hour", 0)
+    # B9: token-based lines computed from PROVIDER-REPORTED usage — the
+    # per-request flat rate above is a legacy estimate for stages that do not
+    # yet report tokens; token units always take precedence where recorded.
+    for family in ("gemini_pro", "gemini_flash"):
+        cost += units.get(f"{family}_input_tokens", 0) / 1e6 \
+            * p.get(f"{family}_per_1m_input", 0)
+        cost += units.get(f"{family}_output_tokens", 0) / 1e6 \
+            * p.get(f"{family}_per_1m_output", 0)
+        cost += units.get(f"{family}_cached_tokens", 0) / 1e6 \
+            * p.get(f"{family}_per_1m_cached", 0)
     return round(cost, 5)
 
 

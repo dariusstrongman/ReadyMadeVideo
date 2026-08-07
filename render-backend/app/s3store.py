@@ -147,6 +147,24 @@ def delete_object(key: str) -> None:
     client().delete_object(Bucket=bucket(), Key=key)
 
 
+def list_keys(prefix: str, max_keys: int = 10_000) -> list[str]:
+    """Every object key under ``prefix`` (paginated; bounded so a runaway
+    prefix cannot spin forever). Needed for truthful project deletion —
+    enumerate-then-delete, never assume."""
+    keys: list[str] = []
+    token = None
+    while len(keys) < max_keys:
+        kwargs = {"Bucket": bucket(), "Prefix": prefix, "MaxKeys": 1000}
+        if token:
+            kwargs["ContinuationToken"] = token
+        resp = client().list_objects_v2(**kwargs)
+        keys += [o["Key"] for o in resp.get("Contents", [])]
+        if not resp.get("IsTruncated"):
+            break
+        token = resp.get("NextContinuationToken")
+    return keys
+
+
 def check_connectivity() -> dict:
     """Shallow, non-secret readiness probe: can we reach the configured bucket?
     Never raises and never returns credentials."""

@@ -47,7 +47,8 @@ def _setup(monkeypatch, tmp_path, with_candidate=True):
         preview.write_bytes(b"PREVIEW")
         cand = autoedit_bridge.bridge_from_autoedit(
             project, tl_row, str(preview), insert=jobs._insert,
-            db_select=supa.db_select, upload_export=jobs._upload_export, now=jobs._now)
+            db_select=supa.db_select, upload_export=jobs._upload_export,
+            now=jobs._now, export_provider=jobs.EXPORT_STORAGE_PROVIDER)
     return fake, uid, token, project, asset_id, cand
 
 
@@ -80,6 +81,70 @@ def test_preview_url_unavailable_when_missing(monkeypatch, tmp_path):
     r = client.post(f"/projects/{project['id']}/candidates/{cand['id']}/preview-url",
                     headers=_auth(token), json={})
     assert r.status_code == 409
+
+
+# ---- preview signing follows the store the preview was WRITTEN to (S3 or Supabase).
+# Regression: upload_export honors EXPORT_STORAGE_PROVIDER while this endpoint always
+# signed Supabase, so every candidate preview 404'd under S3 exports.
+def _use_s3(monkeypatch):
+    from tests.fake_s3 import FakeS3
+    from app import s3store
+    s3 = FakeS3()
+    monkeypatch.setattr(s3store, "_CLIENT", s3)
+    monkeypatch.setenv("AWS_S3_BUCKET", "test-bucket")
+    # jobs reads the provider once at import, so patch the resolved constant —
+    # that is the value _upload_export actually routes on.
+    monkeypatch.setattr(jobs, "EXPORT_STORAGE_PROVIDER", "s3")
+    return s3
+
+
+def test_preview_written_to_s3_is_signed_from_s3(monkeypatch, tmp_path):
+    s3 = _use_s3(monkeypatch)
+    fake, _, token, project, _, cand = _setup(monkeypatch, tmp_path)
+    assert cand["variant_config"]["previewStorageProvider"] == "s3"
+    assert cand["preview_storage_path"] in s3.objects   # really went to S3
+    client = TestClient(app, raise_server_exceptions=False)
+    r = client.post(f"/projects/{project['id']}/candidates/{cand['id']}/preview-url",
+                    headers=_auth(token), json={})
+    assert r.status_code == 200, r.text
+    assert r.json()["url"].startswith("https://s3.fake/test-bucket/")
+
+
+def test_preview_row_without_provider_still_resolves_from_s3(monkeypatch, tmp_path):
+    """Candidates bridged BEFORE provenance was recorded must keep working: the
+    endpoint verifies both stores instead of guessing from the current env."""
+    s3 = _use_s3(monkeypatch)
+    fake, _, token, project, _, cand = _setup(monkeypatch, tmp_path)
+    fake.patch("candidate_runs", f"id=eq.{cand['id']}",
+               {"variant_config": {"origin": "basic_autoedit"}})   # legacy shape
+    assert cand["preview_storage_path"] in s3.objects
+    client = TestClient(app, raise_server_exceptions=False)
+    r = client.post(f"/projects/{project['id']}/candidates/{cand['id']}/preview-url",
+                    headers=_auth(token), json={})
+    assert r.status_code == 200, r.text
+    assert r.json()["url"].startswith("https://s3.fake/test-bucket/")
+
+
+def test_preview_recorded_s3_but_object_absent_is_404_not_a_dead_url(monkeypatch,
+                                                                    tmp_path):
+    s3 = _use_s3(monkeypatch)
+    fake, _, token, project, _, cand = _setup(monkeypatch, tmp_path)
+    s3.objects.pop(cand["preview_storage_path"])       # object lost
+    client = TestClient(app, raise_server_exceptions=False)
+    r = client.post(f"/projects/{project['id']}/candidates/{cand['id']}/preview-url",
+                    headers=_auth(token), json={})
+    assert r.status_code == 404
+
+
+def test_supabase_previews_keep_signing_from_supabase(monkeypatch, tmp_path):
+    monkeypatch.delenv("EXPORT_STORAGE_PROVIDER", raising=False)
+    fake, _, token, project, _, cand = _setup(monkeypatch, tmp_path)
+    assert cand["variant_config"]["previewStorageProvider"] == "supabase"
+    client = TestClient(app, raise_server_exceptions=False)
+    r = client.post(f"/projects/{project['id']}/candidates/{cand['id']}/preview-url",
+                    headers=_auth(token), json={})
+    assert r.status_code == 200, r.text
+    assert r.json()["url"].startswith("https://fake.supabase.co/storage/v1")
 
 
 # ---------------- workspace candidate listing ----------------
