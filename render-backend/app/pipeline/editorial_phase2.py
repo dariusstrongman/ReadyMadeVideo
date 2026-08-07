@@ -42,7 +42,12 @@ SNAP_TOLERANCE_S = 1.0        # measured: snapping fixes 7/11 real cuts at <=2s;
 CAPTION_MAX_CPS = 17.0        # BBC 160-180wpm ~= 15-17cps; Netflix adult 20
 CAPTION_SYNC_TOLERANCE_S = 0.75
 MAX_LOOPS = 3
-_MIN_CLIP_S = 0.75            # mirrors the planner's clamp-minimum
+PRIMARY_LOOP_CLOSE_FRACTION = 0.6   # "the final 40%" — stated in the prompt
+UTILIZATION_MIN_CATALOG = 20        # floor only judged on catalogs this size+
+# ONE source of truth for the minimum usable clip: the planner's clamp
+# constant (audit A8 — a drifted local copy claimed to "mirror" it at 0.75
+# while the planner used 0.8).
+from .editorial_planner import _CLAMP_MIN_DURATION_S as _MIN_CLIP_S  # noqa: E402
 
 
 def enabled(flag: str) -> bool:
@@ -101,20 +106,54 @@ def nearest_safe_cut(seg: Segment, t: float, lo: float, hi: float,
     return best
 
 
+def _reserved_handles(raw: dict) -> dict:
+    """Per-timeline-index (head_reserve, tail_reserve) seconds that the plan's
+    own soft transitions require as UNUSED source. The snapper must never
+    consume them (audit A2: a snap that widens sourceOut into a dissolve's
+    handle turns a valid plan into an impossible one, then loops)."""
+    reserves: dict[int, list[float]] = {}
+    timeline = raw.get("timeline") or []
+    order = [e.get("segmentId") for e in timeline if isinstance(e, dict)]
+    for tr in raw.get("transitions") or []:
+        if not isinstance(tr, dict) or tr.get("type") == "hard_cut":
+            continue
+        try:
+            dur = float(tr.get("durationSeconds") or 0)
+        except (TypeError, ValueError):
+            continue
+        if dur <= 0:
+            continue
+        for j in range(len(order) - 1):
+            if order[j] == tr.get("fromSegmentId") \
+                    and order[j + 1] == tr.get("toSegmentId"):
+                reserves.setdefault(j, [0.0, 0.0])[1] = max(
+                    reserves.get(j, [0.0, 0.0])[1], dur)      # outgoing tail
+                reserves.setdefault(j + 1, [0.0, 0.0])[0] = max(
+                    reserves.get(j + 1, [0.0, 0.0])[0], dur)  # incoming head
+                break
+    return reserves
+
+
 def snap_timeline_speech(raw: dict, segments: list[Segment]) -> None:
     """Deterministic repair: snap severing cuts to the nearest safe boundary
     within tolerance. Runs INSIDE the planner's normalize step, before
     arithmetic rebuild, so timeline bookkeeping is recomputed afterwards.
-    Cuts it cannot fix are left for validation to reject (the revise loop
-    then teaches the model the safe boundaries). Never invents footage:
-    snapping stays inside the segment's real range and keeps a usable clip."""
+
+    Bounds honored, in order: the segment's real range, the plan's own
+    reserved transition handles (never repair speech by breaking geometry),
+    and a minimum usable clip. Cuts with no safe boundary inside those
+    bounds are LEFT ALONE — validation reports them as structured
+    violations and the revise loop teaches the model the safe boundaries.
+    Malformed entries are SKIPPED (never abort: earlier snaps must stay
+    accounted for in the ledger — audit A3)."""
     if not (isinstance(raw, dict) and isinstance(raw.get("timeline"), list)):
         return
     by_id = {s.segmentId: s for s in segments}
+    reserves = _reserved_handles(raw)
     adjustments = []
     for i, entry in enumerate(raw["timeline"]):
         if not isinstance(entry, dict):
-            return
+            continue                    # malformed — validator's job
         seg = by_id.get(entry.get("segmentId"))
         if seg is None or not seg.wordTimings:
             continue
@@ -122,11 +161,13 @@ def snap_timeline_speech(raw: dict, segments: list[Segment]) -> None:
             s_in = float(entry.get("sourceIn"))
             s_out = float(entry.get("sourceOut"))
         except (TypeError, ValueError):
-            return
+            continue                    # malformed — validator's job
+        head_res, tail_res = reserves.get(i, (0.0, 0.0))
         w = word_severed_at(seg, s_in)
         if w is not None:
-            snapped = nearest_safe_cut(seg, s_in, seg.sourceStart,
-                                       s_out - _MIN_CLIP_S)
+            lo = seg.sourceStart + head_res
+            hi = s_out - _MIN_CLIP_S
+            snapped = nearest_safe_cut(seg, s_in, lo, hi) if lo <= hi else None
             if snapped is not None:
                 adjustments.append({"index": i, "field": "sourceIn",
                                     "from": round(s_in, 3),
@@ -135,8 +176,9 @@ def snap_timeline_speech(raw: dict, segments: list[Segment]) -> None:
                 s_in = snapped
         w = word_severed_at(seg, s_out)
         if w is not None:
-            snapped = nearest_safe_cut(seg, s_out, s_in + _MIN_CLIP_S,
-                                       seg.sourceEnd)
+            lo = s_in + _MIN_CLIP_S
+            hi = seg.sourceEnd - tail_res
+            snapped = nearest_safe_cut(seg, s_out, lo, hi) if lo <= hi else None
             if snapped is not None:
                 adjustments.append({"index": i, "field": "sourceOut",
                                     "from": round(s_out, 3),
@@ -146,6 +188,39 @@ def snap_timeline_speech(raw: dict, segments: list[Segment]) -> None:
         entry["sourceIn"], entry["sourceOut"] = round(s_in, 3), round(s_out, 3)
     if adjustments:
         raw["dialogueAdjustments"] = adjustments
+
+
+def snap_hook_out(raw: dict, segments: list[Segment]) -> None:
+    """A6: the hook's out-point is re-derived AFTER timeline snapping (the
+    planner caps it at min(span, cap, 5.0)), so the cap itself can land
+    inside a word. Shrink it to the nearest safe boundary — never grow it
+    (growing could exceed the executor's 5.0s hook ceiling)."""
+    hook = raw.get("hook") if isinstance(raw, dict) else None
+    timeline = raw.get("timeline") if isinstance(raw, dict) else None
+    if not (isinstance(hook, dict) and isinstance(timeline, list) and timeline):
+        return
+    first = timeline[0]
+    if not isinstance(first, dict):
+        return
+    seg = next((s for s in segments
+                if s.segmentId == hook.get("segmentId")), None)
+    if seg is None or not seg.wordTimings:
+        return
+    try:
+        h_in = float(hook.get("sourceIn"))
+        h_out = float(hook.get("sourceOut"))
+    except (TypeError, ValueError):
+        return
+    if word_severed_at(seg, h_out) is None:
+        return
+    lo, hi = h_in + 0.5, h_out          # shrink only
+    # search the WHOLE shrink window: a hook that must shrink from 5.0s to
+    # 2.3s to finish a word is a valid hook; a severed word is not
+    snapped = nearest_safe_cut(seg, h_out, lo, hi,
+                               tolerance=hi - lo) if lo <= hi else None
+    if snapped is not None and snapped < h_out:
+        hook["sourceOut"] = round(snapped, 3)
+        hook["durationSeconds"] = round(snapped - h_in, 3)
 
 
 def dialogue_violations(plan, segments: list[Segment]) -> list[str]:
@@ -236,6 +311,12 @@ def rank_hook_candidates(segments: list[Segment], top_n: int = 6) -> list[dict]:
     out = []
     for s in segments:
         archetype, reason = classify_hook_archetype(s)
+        # A12: only segments with a REAL hook signal (an archetype or an
+        # explicit storyUses hook tag) are candidates. Quality-only entries
+        # produced degenerate all-tied shortlists whose "ranking" was
+        # lexicographic segment-id order presented as editorial judgment.
+        if not archetype and "hook" not in s.storyUses:
+            continue
         score = 0.0
         if archetype:
             score += 3.0
@@ -251,16 +332,27 @@ def rank_hook_candidates(segments: list[Segment], top_n: int = 6) -> list[dict]:
             score -= 2.0
         if score > 0:
             out.append({"segmentId": s.segmentId,
-                        "archetype": archetype or "quality",
-                        "score": round(score, 2), "reason": reason})
-    out.sort(key=lambda c: (-c["score"], c["segmentId"]))
+                        "archetype": archetype or "story_hook",
+                        "score": round(score, 2), "reason": reason,
+                        "_motion": motion_pct(s.motionIntensity),
+                        "_quality": (s.focusScore + s.audioScore) / 2})
+    # deterministic, signal-led tie-breaks — id order is the LAST resort
+    out.sort(key=lambda c: (-c["score"], -c["_motion"], -c["_quality"],
+                            c["segmentId"]))
+    for c in out:
+        c.pop("_motion", None)
+        c.pop("_quality", None)
     return out[:top_n]
 
 
 def hook_violations(plan, segments: list[Segment]) -> list[str]:
+    """A12: enforce the shortlist only when it offers a REAL choice (>= 2
+    candidates). Zero candidates never blocks; a single candidate is
+    advisory (shown in the prompt) — forcing it would fake a ranked choice
+    the ranking never made."""
     shortlist = rank_hook_candidates(segments)
-    if not shortlist:
-        return []                    # nothing rankable — don't block the plan
+    if len(shortlist) < 2:
+        return []
     ids = {c["segmentId"] for c in shortlist}
     out: list[str] = []
     if plan.hook.segmentId not in ids:
@@ -271,9 +363,23 @@ def hook_violations(plan, segments: list[Segment]) -> list[str]:
     return out
 
 
+def primary_loop_opened_by_hook(plan) -> bool:
+    """THE definition of 'the hook opens the primary loop' — identity AND
+    timing (audit A9: two competing definitions lived in this module; the
+    validator and the interest gate now share this one predicate). All loop
+    times are TIMELINE seconds."""
+    loops = getattr(plan, "loops", []) or []
+    if not loops:
+        return False
+    return (loops[0].openedBySegmentId == plan.hook.segmentId
+            and loops[0].openedAtSeconds <= plan.hook.durationSeconds + 0.1)
+
+
 def loop_violations(plan) -> list[str]:
     """Curiosity-loop ledger (S4). Ovsiankina: loops are a COMPLETION
-    mechanic — an unclosed loop is worse than none, so closure is hard."""
+    mechanic — an unclosed loop is worse than none, so closure is hard.
+    All times are TIMELINE seconds, judged AFTER the planner's arithmetic
+    normalization (the same rewritten duration the prompt's feedback shows)."""
     out: list[str] = []
     loops = getattr(plan, "loops", []) or []
     duration = plan.plannedDurationSeconds
@@ -290,27 +396,40 @@ def loop_violations(plan) -> list[str]:
         if lp.closedAtSeconds > duration + 0.1:
             out.append(f"loops[{i}] never closes inside the video "
                        f"({round(lp.closedAtSeconds, 2)}s > "
-                       f"{round(duration, 2)}s) — an unclosed loop is a "
-                       "broken promise")
+                       f"{round(duration, 2)}s of TIMELINE time) — an "
+                       "unclosed loop is a broken promise")
         for field, sid in (("openedBySegmentId", lp.openedBySegmentId),
                            ("closedBySegmentId", lp.closedBySegmentId)):
             if sid not in planned:
                 out.append(f"loops[{i}].{field} references a segment the "
                            "timeline does not use")
-    primary = loops[0]
-    if primary.openedAtSeconds > plan.hook.durationSeconds + 0.1:
+    if not primary_loop_opened_by_hook(plan):
         out.append("loops[0] (the primary loop) must be opened by the hook "
-                   "itself, not later")
-    if primary.closedAtSeconds < 0.6 * duration:
-        out.append("loops[0] (the primary loop) closes too early — the "
-                   "payoff that answers the hook belongs in the final act")
+                   "itself: openedBySegmentId is the hook's segment and "
+                   "openedAtSeconds falls inside the hook")
+    if loops[0].closedAtSeconds < PRIMARY_LOOP_CLOSE_FRACTION * duration:
+        out.append("loops[0] (the primary loop) closes too early — it must "
+                   f"close in the final "
+                   f"{round((1 - PRIMARY_LOOP_CLOSE_FRACTION) * 100):d}% "
+                   "of the video")
     return out
 
 
 # ------------------------------------------------- caption coherence (S7a)
 def _quote_start_on_timeline(plan, seg: Segment, quote: str) -> float | None:
+    """Source time of a quote's first word, mapped to timeline time.
+
+    A14: quotes that span a sentence boundary live across TWO speechSpans —
+    single-span lookup silently no-oped on them, so adjacent pairs are
+    searched too (the earlier span's start is the honest anchor)."""
     span = next((sp for sp in seg.speechSpans
                  if quote in (sp.text or "").lower()), None)
+    if span is None:
+        for a, b in zip(seg.speechSpans, seg.speechSpans[1:], strict=False):
+            joined = f"{(a.text or '').lower()} {(b.text or '').lower()}"
+            if quote in joined:
+                span = a
+                break
     if span is None:
         return None
     for e in plan.timeline:
@@ -321,11 +440,20 @@ def _quote_start_on_timeline(plan, seg: Segment, quote: str) -> float | None:
     return None
 
 
-def coherence_violations(plan, segments: list[Segment]) -> list[str]:
+def coherence_violations(plan, segments: list[Segment],
+                         constraints: dict | None = None) -> list[str]:
     """Mayer: coherence d=0.86 (delete extraneous), temporal contiguity
     d=1.31 (text lands WITH its words). The rule is not 'fewer captions' —
-    it is 'text that adds what the audio/picture does not'."""
+    it is 'text that adds what the audio/picture does not'.
+
+    A13: a fact caption needs at least one VERIFIED non-visual evidence — a
+    transcript quote actually present in its cited segment, or the user's
+    own words. Merely ATTACHING a transcript entry no longer bypasses the
+    narration rule."""
     by_id = {s.segmentId: s for s in segments}
+    user_text = " ".join(str((constraints or {}).get(k) or "")
+                         for k in ("brief", "platform", "tone",
+                                   "style")).lower()
     out: list[str] = []
     for i, cap in enumerate(plan.captions):
         where = f"captions[{i}]"
@@ -337,12 +465,24 @@ def coherence_violations(plan, segments: list[Segment]) -> list[str]:
                        "its time")
         if cap.claimType != "fact" or not cap.evidence:
             continue
-        sources = {ev.sourceType for ev in cap.evidence}
-        if sources == {"segment_metadata"}:
+
+        def _verified_nonvisual(ev) -> bool:
+            quote = ev.quoteOrValue.strip().lower()
+            if not quote:
+                return False
+            if ev.sourceType == "user_input":
+                return quote in user_text
+            if ev.sourceType != "transcript" or not ev.segmentId:
+                return False
+            seg = by_id.get(ev.segmentId)
+            return seg is not None and quote in (seg.transcript or "").lower()
+
+        if not any(_verified_nonvisual(ev) for ev in cap.evidence):
             out.append(f"coherence: {where} narrates the visible picture "
-                       "(all evidence is segment_metadata) — a caption must "
-                       "add information the viewer cannot already see: quote "
-                       "the transcript or drop it")
+                       "(no VERIFIED transcript or user quote in its "
+                       "evidence) — a caption must add information the "
+                       "viewer cannot already see: quote the transcript "
+                       "verbatim or drop it")
             continue
         for ev in cap.evidence:
             if ev.sourceType != "transcript" or not ev.segmentId:
@@ -353,22 +493,29 @@ def coherence_violations(plan, segments: list[Segment]) -> list[str]:
             expected = _quote_start_on_timeline(
                 plan, seg, ev.quoteOrValue.strip().lower())
             if expected is None:
-                continue
+                continue                 # try the next transcript evidence
             if abs(cap.timelineStart - expected) > CAPTION_SYNC_TOLERANCE_S:
                 out.append(f"coherence: {where} starts at "
                            f"{round(cap.timelineStart, 2)}s but its quoted "
                            f"words are spoken at {round(expected, 2)}s — "
                            "bind the caption to the words' timing")
-            break
+            break                        # first RESOLVABLE evidence decides
     return out
 
 
 # ------------------------------------------------------ tension shape (S5)
-_PAYOFF_WORDS = ("payoff", "result", "reveal", "closing", "outcome", "after")
+_PAYOFF_TOKENS = frozenset(("payoff", "result", "results", "reveal",
+                            "closing", "outcome", "after", "finale",
+                            "ending"))
+_TOKEN_SPLIT = re.compile(r"[^a-z0-9]+")
 
 
 def _is_payoff_beat(name: str) -> bool:
-    return any(w in (name or "").lower() for w in _PAYOFF_WORDS)
+    """A10: WHOLE-token match. Substring matching declared 'rafter_install'
+    a payoff beat (contains 'after'), silently passing the tension rules on
+    the wrong beat."""
+    return any(t in _PAYOFF_TOKENS
+               for t in _TOKEN_SPLIT.split((name or "").lower()) if t)
 
 
 def tension_violations(plan) -> list[str]:
@@ -404,8 +551,41 @@ def tension_violations(plan) -> list[str]:
 
 
 # --------------------------------------------------- interest gate (S9)
-def interest_gate(plan, segments: list[Segment]) -> dict:
-    """Scored FLOOR (threshold env PHASE2_INTEREST_THRESHOLD, default 60).
+# FLAG DEPENDENCY MODEL (audit A1). Each rule names the subsystem flag that
+# provides its INPUTS (the loops schema+prompt, the dialogue repair+data, the
+# tension/coherence instructions). A rule whose feeding flag is OFF is
+# EXCLUDED and the score is normalized to the applicable weight total — so
+# every enabled combination can genuinely reach 100 and the flags are
+# independently safe. Rules with feeder None are computable from the plan
+# alone and always apply.
+_RULE_FEEDER = {
+    "hook_from_shortlist": HOOK_FLAG,
+    "hook_opens_loop": HOOK_FLAG,
+    "loops_closed": HOOK_FLAG,
+    "dialogue_clean": DIALOGUE_FLAG,
+    "captions_add_info": COHERENCE_FLAG,
+    "energy_variance": TENSION_FLAG,
+    "payoff_peak": TENSION_FLAG,
+    "no_late_longueur": TENSION_FLAG,
+    "catalog_utilization": None,
+    "shot_length_variety": None,
+}
+
+
+def _interest_threshold() -> int:
+    """A5: a malformed env value must degrade to the default, never crash
+    the job outside the PlanRejected retry path."""
+    raw = os.environ.get("PHASE2_INTEREST_THRESHOLD", "60")
+    try:
+        return max(0, min(100, int(float(raw))))
+    except (TypeError, ValueError):
+        return 60
+
+
+def interest_gate(plan, segments: list[Segment],
+                  constraints: dict | None = None) -> dict:
+    """Scored FLOOR (threshold env PHASE2_INTEREST_THRESHOLD, default 60),
+    normalized over the rules whose feeding flags are enabled.
 
     Rules are measurable proxies only. Story/emotion judgment deliberately
     stays with the model + rendered critique: scoring what we can compute
@@ -414,17 +594,18 @@ def interest_gate(plan, segments: list[Segment]) -> dict:
     rules: list[dict] = []
 
     def rule(name: str, weight: int, passed: bool, detail: str):
+        feeder = _RULE_FEEDER[name]
         rules.append({"rule": name, "weight": weight, "passed": passed,
-                      "detail": detail})
+                      "detail": detail, "feeder": feeder,
+                      "applicable": feeder is None or enabled(feeder)})
 
     shortlist = rank_hook_candidates(segments)
     ids = {c["segmentId"] for c in shortlist}
     rule("hook_from_shortlist", 15,
-         not shortlist or plan.hook.segmentId in ids,
+         len(shortlist) < 2 or plan.hook.segmentId in ids,
          "the opening is a ranked hook candidate, not chronology")
     loops = getattr(plan, "loops", []) or []
-    rule("hook_opens_loop", 10,
-         bool(loops) and loops[0].openedBySegmentId == plan.hook.segmentId,
+    rule("hook_opens_loop", 10, primary_loop_opened_by_hook(plan),
          "the hook itself opens the primary curiosity loop")
     rule("loops_closed", 15, bool(loops) and not loop_violations(plan),
          "every opened loop is answered inside the video")
@@ -449,13 +630,21 @@ def interest_gate(plan, segments: list[Segment]) -> dict:
          or longest.timelineIn < 0.75 * dur or _is_payoff_beat(longest.beat),
          "the longest shot is not parked at the retention cliff")
     rule("captions_add_info", 10,
-         not [v for v in coherence_violations(plan, segments)
+         not [v for v in coherence_violations(plan, segments, constraints)
               if "narrates the visible" in v],
          "no caption narrates what the picture already shows")
     used = {e.segmentId for e in plan.timeline}
-    floor = min(max(5, len(segments) // 10), len(segments))
-    rule("catalog_utilization", 5, len(used) >= floor,
-         f"at least {floor} distinct segments considered worth using")
+    # A11: only judge utilization on catalogs big enough for the ratio to
+    # mean anything — a legitimate 3-cut edit of a 3-segment catalog is not
+    # "under-utilization", and dropping bad footage is correct editing.
+    if len(segments) >= UTILIZATION_MIN_CATALOG:
+        floor = len(segments) // 10
+        rule("catalog_utilization", 5, len(used) >= floor,
+             f"at least {floor} distinct segments considered worth using")
+    else:
+        rule("catalog_utilization", 5, True,
+             f"catalog under {UTILIZATION_MIN_CATALOG} segments — "
+             "utilization not judged")
     durs = [e.timelineOut - e.timelineIn for e in plan.timeline]
     if len(durs) >= 4:
         mean = sum(durs) / len(durs)
@@ -467,14 +656,18 @@ def interest_gate(plan, segments: list[Segment]) -> dict:
     rule("shot_length_variety", 5, variety,
          "shot lengths vary (cv >= 0.3), not metronomic")
 
-    score = sum(r["weight"] for r in rules if r["passed"])
-    threshold = int(os.environ.get("PHASE2_INTEREST_THRESHOLD", "60"))
+    applicable = [r for r in rules if r["applicable"]]
+    total = sum(r["weight"] for r in applicable)
+    earned = sum(r["weight"] for r in applicable if r["passed"])
+    score = round(earned * 100 / total) if total else 100
+    threshold = _interest_threshold()
     return {"rules": rules, "score": score, "threshold": threshold,
-            "passed": score >= threshold}
+            "applicableWeight": total, "passed": score >= threshold}
 
 
 # ------------------------------------------------- planner integration
-def phase2_violations(plan, segments: list[Segment]) -> list[str]:
+def phase2_violations(plan, segments: list[Segment],
+                      constraints: dict | None = None) -> list[str]:
     """All flag-gated hard checks, appended to the planner's violations list
     (any violation forces a revise pass — same loop as Phase 1 grounding)."""
     out: list[str] = []
@@ -484,51 +677,66 @@ def phase2_violations(plan, segments: list[Segment]) -> list[str]:
         out += hook_violations(plan, segments)
         out += loop_violations(plan)
     if enabled(COHERENCE_FLAG):
-        out += coherence_violations(plan, segments)
+        out += coherence_violations(plan, segments, constraints)
     if enabled(TENSION_FLAG):
         out += tension_violations(plan)
     return out
 
 
 def prompt_parts(segments: list[Segment]) -> list[dict]:
-    """Extra prompt sections, only for the flags that are ON, so the model
-    is told exactly the rules the validator will enforce."""
+    """Extra prompt sections, only for the flags that are ON. Every number
+    and unit here MUST match the validator exactly (audit A15: 'final act'
+    was secretly 0.6x; the dialogue rule was graded on word timings the
+    model never saw). No promise is enforced only by prose."""
     parts: list[dict] = []
     if enabled(HOOK_FLAG):
         shortlist = rank_hook_candidates(segments)
         if shortlist:
             import json
+            forced = (
+                "the opening timeline cut MUST use one of these segments"
+                if len(shortlist) >= 2 else
+                "advisory — a single candidate is shown, not enforced")
             parts.append({"text": (
-                "HOOK CANDIDATES (ranked; the opening timeline cut MUST use "
-                "one of these segments):\n" + json.dumps(shortlist)
+                f"HOOK CANDIDATES (ranked; {forced}):\n"
+                + json.dumps(shortlist)
                 + "\nAlso declare `loops`: 1-3 curiosity loops "
                   "{question, openedAtSeconds, openedBySegmentId, "
-                  "closedAtSeconds, closedBySegmentId}. The hook opens "
-                  "loops[0]; every loop is ANSWERED by a later timeline "
-                  "moment; loops[0] closes in the final act. The "
-                  "viewerPromise must promise an unresolved outcome, never "
-                  "describe the video's contents.")})
+                  "closedAtSeconds, closedBySegmentId}. ALL loop times are "
+                  "TIMELINE seconds (0 = the start of the finished video). "
+                  "loops[0] is opened BY THE HOOK: openedBySegmentId is the "
+                  "hook's segment and openedAtSeconds falls inside the "
+                  "hook's duration. Every loop is ANSWERED by a later "
+                  "timeline moment before the video ends; loops[0] closes "
+                  f"in the final "
+                  f"{round((1 - PRIMARY_LOOP_CLOSE_FRACTION) * 100):d}% of "
+                  "the video. The viewerPromise must promise an unresolved "
+                  "outcome, never describe the video's contents.")})
     if enabled(DIALOGUE_FLAG):
         parts.append({"text": (
             "DIALOGUE INTEGRITY (validated): no sourceIn/sourceOut may land "
-            "inside a spoken word. Cut at sentence boundaries or in the "
-            "speech-free gaps listed per segment. Let people finish their "
-            "sentences — a clipped word is charged to the speaker's "
-            "credibility.")})
+            "inside a spoken word. The per-segment `speech` spans list "
+            "sentence start/end times and `speechFree` lists silent gaps — "
+            "cutting exactly at a span edge or anywhere inside a speechFree "
+            "gap is always safe. Let people finish their sentences — a "
+            "clipped word is charged to the speaker's credibility.")})
     if enabled(COHERENCE_FLAG):
         parts.append({"text": (
-            "CAPTIONS (validated): a caption must ADD information — quote "
-            "the transcript (short verbatim excerpt) or use a structural "
-            "label; NEVER describe what is visible on screen. Start each "
-            "caption when its quoted words are spoken. Max 17 characters "
-            "per second of display time.")})
+            "CAPTIONS (validated): a fact caption needs at least one "
+            "VERIFIED quote — a short verbatim transcript excerpt actually "
+            "present in the cited segment (or the user's own words). NEVER "
+            "describe what is visible on screen. Start each caption within "
+            f"{CAPTION_SYNC_TOLERANCE_S}s of when its quoted words are "
+            f"spoken. Max {CAPTION_MAX_CPS:g} characters per second of "
+            "display time.")})
     if enabled(TENSION_FLAG):
         parts.append({"text": (
-            "TENSION (validated): pacing energies must have shape — range "
-            ">= 0.2 across beats, the payoff beat peaks above the mean of "
-            "the others, and the longest shot must not sit in the final "
-            "quarter unless it IS the payoff. Put a quiet beat immediately "
-            "before the payoff: contrast is what makes it land.")})
+            "TENSION (validated): pacing energies must have shape — "
+            "max-min >= 0.2 across beats, the payoff beat's energy at "
+            "least 0.05 above the MEAN of the other beats, and the longest "
+            "shot must not START in the final 25% of the timeline unless "
+            "its beat IS the payoff. Put a quiet beat immediately before "
+            "the payoff: contrast is what makes it land.")})
     return parts
 
 

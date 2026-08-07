@@ -1157,7 +1157,8 @@ def validate_plan(plan: EditorialPlan, segments: list[Segment],
     # They can only ADD violations, never remove or weaken a truth ruling.
     from . import editorial_phase2
     if editorial_phase2.any_enabled():
-        v.extend(editorial_phase2.phase2_violations(plan, segments))
+        v.extend(editorial_phase2.phase2_violations(plan, segments,
+                                                    constraints))
     return v
 
 
@@ -1572,6 +1573,10 @@ def _normalize_timeline_arithmetic(raw: dict, segments: list[Segment]) -> None:
     """
     if not isinstance(raw, dict) or not isinstance(raw.get("timeline"), list):
         return
+    # dialogueAdjustments is SYSTEM-OWNED: whatever the model emitted there
+    # is discarded before repair runs, so the persisted ledger can only ever
+    # describe edits this code actually performed (audit A6/A4).
+    raw.pop("dialogueAdjustments", None)
     # Phase 2 dialogue integrity: snap speech-severing cuts to safe
     # boundaries FIRST, so the arithmetic below is rebuilt from the snapped
     # trims. Flag-gated inside; a no-op when PHASE2_DIALOGUE is off.
@@ -1600,9 +1605,20 @@ def _normalize_timeline_arithmetic(raw: dict, segments: list[Segment]) -> None:
                 s_in, s_out = c_in, c_out
         if s_out <= s_in:
             return                      # degenerate — validator's job
+        # Timeline time is SOURCE time divided by playback speed — the exact
+        # formula the validator recomputes. The old cursor ignored speed, so
+        # any playbackSpeed != 1 produced a plan the validator could never
+        # accept and the repair loop rewrote identically every attempt
+        # (audit A4: normalize wrote 8.0 where validation demanded 4.0).
+        try:
+            speed = float(entry.get("playbackSpeed") or 1.0)
+        except (TypeError, ValueError):
+            speed = 1.0
+        if speed <= 0:
+            speed = 1.0
         entry["sourceIn"], entry["sourceOut"] = round(s_in, 3), round(s_out, 3)
         entry["timelineIn"] = round(cursor, 3)
-        cursor += s_out - s_in
+        cursor += (s_out - s_in) / speed
         entry["timelineOut"] = round(cursor, 3)
     if isinstance(raw.get("plannedDurationSeconds"), (int, float)):
         raw["plannedDurationSeconds"] = round(cursor, 3)
@@ -1627,6 +1643,11 @@ def _normalize_timeline_arithmetic(raw: dict, segments: list[Segment]) -> None:
         dur = round(min(span, cap, 5.0), 3)
         hook["sourceOut"] = round(float(hook["sourceIn"]) + dur, 3)
         hook["durationSeconds"] = dur
+        # A6: the 5.0s cap applied above can itself land inside a spoken
+        # word — shrink the hook out-point to a safe boundary (flag-gated
+        # inside; no-op when PHASE2_DIALOGUE is off).
+        if editorial_phase2.enabled(editorial_phase2.DIALOGUE_FLAG):
+            editorial_phase2.snap_hook_out(raw, segments)
 
     # Audio references may only point at segments the timeline actually uses;
     # dropping strays is lossless (they were unusable references), while
@@ -1648,8 +1669,13 @@ def _normalize_timeline_arithmetic(raw: dict, segments: list[Segment]) -> None:
         for e in raw["timeline"]:
             if isinstance(e, dict) and e.get("beat") is not None:
                 labelled = True
+                try:
+                    sp = float(e.get("playbackSpeed") or 1.0)
+                except (TypeError, ValueError):
+                    sp = 1.0
                 beat_actual[e["beat"]] = beat_actual.get(e["beat"], 0.0) + (
-                    float(e.get("sourceOut", 0)) - float(e.get("sourceIn", 0)))
+                    float(e.get("sourceOut", 0))
+                    - float(e.get("sourceIn", 0))) / (sp if sp > 0 else 1.0)
         if labelled:
             # duplicates too: a real plan listed 'arrival_assessment' twice
             # with two different targets — one passed, its twin failed the
@@ -1816,7 +1842,8 @@ def plan_editorial(segments: list[Segment], constraints: dict,
                 # among honest plans, not rescue a dishonest one.
                 if editorial_phase2.enabled(editorial_phase2.INTEREST_FLAG) \
                         and plan.status == "approved":
-                    ig = editorial_phase2.interest_gate(plan, segments)
+                    ig = editorial_phase2.interest_gate(plan, segments,
+                                                        constraints)
                     result["interestGate"] = ig
                     if not ig["passed"]:
                         violations = [
