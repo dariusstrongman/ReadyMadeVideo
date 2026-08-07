@@ -2,7 +2,10 @@
 engine, loop ledger, caption coherence, tension shape, interest gate.
 
 Contract under test (docs/PHASE2_EDITORIAL_INTELLIGENCE.md):
-  * with every flag OFF, planner behavior is byte-identical to Phase 1
+  * with every flag OFF, planner behavior is unchanged — canonically
+    identical prompts/schema and deterministic serialized output, except
+    loops: [] and dialogueAdjustments: [] (proven against an origin/main
+    golden)
   * checks can only ADD violations — the truth gate is never weakened
   * every check is deterministic (no model call, no clock, no randomness)
 """

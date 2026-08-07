@@ -7,7 +7,9 @@ Design contract (docs/PHASE2_EDITORIAL_INTELLIGENCE.md):
   * every check is computed from the plan + the segment catalog; no model
     call, no randomness, no wall clock
   * all flags default OFF; with every flag off this module contributes
-    nothing and planner behavior is byte-identical to Phase 1
+    nothing and planner behavior is unchanged: canonically identical
+    prompts/schema and deterministic serialized output, except for the
+    documented additive empty fields (loops: [], dialogueAdjustments: [])
   * the interest gate is a FLOOR to clear, never a score to maximize
     (Murch: emotion+story are 74% of a cut and are what machines measure
     worst — computable metrics are veto/penalty checks only)

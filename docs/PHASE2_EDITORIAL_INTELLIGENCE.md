@@ -610,7 +610,10 @@ Ordered by *expected retention gain per unit of risk*, with each step usable on 
 1. All new `Segment` fields optional; v2 catalogs load unchanged.
 2. All new plan sections optional with defaults; a Phase-1 plan still validates.
 3. The truth gate is never weakened, never reordered, never made overridable.
-4. Every flag defaults **off**; with all flags off, behavior is byte-identical to today.
+4. Every flag defaults **off**; with all flags off, behavior is unchanged —
+   canonically identical prompts/schema and deterministically
+   serialized-identical output, except for the documented additive empty
+   fields (`loops: []`, `dialogueAdjustments: []`).
 5. `ENGINE_VERSION` bumps whenever the payload changes (existing rule), and the interest gate is a
    *separate* score — `quality_score` keeps its current meaning.
 6. No production migration ships without the established order: migrate → deploy backend → deploy
