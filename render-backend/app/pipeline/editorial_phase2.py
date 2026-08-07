@@ -54,6 +54,25 @@ def enabled(flag: str) -> bool:
     return os.environ.get(flag, "").lower() in _TRUTHY
 
 
+# Problems that make a segment ILLEGAL to select (vs. quality warnings like
+# soft_focus / bad_exposure, which are selectable but surfaced). ONE predicate,
+# used by the hook shortlist, the utilization gate and its catalog-size
+# threshold, and the selected-segment check (Codex blocker A11: 97
+# mostly_black rows inflated the utilization denominator and failed a valid
+# three-segment edit).
+_UNUSABLE_PROBLEMS = frozenset(("mostly_black", "mostly_frozen", "corrupt",
+                                "unusable", "invalid", "unavailable"))
+
+
+def is_usable_for_editorial_selection(seg: Segment) -> bool:
+    """True when the planner may legally cut from this segment: a real
+    positive duration, a real asset reference, and none of the disqualifying
+    problem classifications."""
+    if not seg.assetId or seg.sourceEnd - seg.sourceStart <= 0:
+        return False
+    return not any(p in _UNUSABLE_PROBLEMS for p in (seg.problems or []))
+
+
 def any_enabled() -> bool:
     return any(enabled(f) for f in (DIALOGUE_FLAG, HOOK_FLAG, COHERENCE_FLAG,
                                     TENSION_FLAG, INTEREST_FLAG))
@@ -310,6 +329,8 @@ def rank_hook_candidates(segments: list[Segment], top_n: int = 6) -> list[dict]:
 
     out = []
     for s in segments:
+        if not is_usable_for_editorial_selection(s):
+            continue                    # never shortlist illegal footage
         archetype, reason = classify_hook_archetype(s)
         # A12: only segments with a REAL hook signal (an archetype or an
         # explicit storyUses hook tag) are candidates. Quality-only entries
@@ -416,27 +437,45 @@ def loop_violations(plan) -> list[str]:
 
 
 # ------------------------------------------------- caption coherence (S7a)
-def _quote_start_on_timeline(plan, seg: Segment, quote: str) -> float | None:
-    """Source time of a quote's first word, mapped to timeline time.
+# A joined two-span quote is only a REAL spoken phrase when the spans are
+# separated by at most this silence (Codex blocker: "alpha" at 1-2s joined
+# with "beta" at 9-10s fabricated evidence for a phrase never spoken).
+MAX_JOINED_SPEECH_GAP_SECONDS = 1.0
 
-    A14: quotes that span a sentence boundary live across TWO speechSpans —
-    single-span lookup silently no-oped on them, so adjacent pairs are
-    searched too (the earlier span's start is the honest anchor)."""
-    span = next((sp for sp in seg.speechSpans
-                 if quote in (sp.text or "").lower()), None)
-    if span is None:
-        for a, b in zip(seg.speechSpans, seg.speechSpans[1:], strict=False):
-            joined = f"{(a.text or '').lower()} {(b.text or '').lower()}"
-            if quote in joined:
-                span = a
-                break
-    if span is None:
-        return None
-    for e in plan.timeline:
-        if e.segmentId == seg.segmentId and \
-                e.sourceIn - 0.1 <= span.start < e.sourceOut:
-            return e.timelineIn + max(0.0, span.start - e.sourceIn) \
-                / (e.playbackSpeed or 1.0)
+
+def _locate_quote_in_cut(plan, seg: Segment, quote: str) -> float | None:
+    """Timeline time of a quote's spoken start, or None when the quote does
+    not occur AS A CONTIGUOUS SPOKEN PHRASE inside a selected cut of this
+    segment.
+
+    A quote resolves from exactly one of:
+      * a single speech span, or
+      * two LIST-ADJACENT spans of the SAME segment in text order, whose
+        silence gap is <= MAX_JOINED_SPEECH_GAP_SECONDS (list adjacency
+        means no other span lies between them; spans are sentence-ordered).
+    In both cases the ENTIRE phrase (anchor start .. end of the matching
+    span(s)) must lie inside one selected cut of that segment. Anything
+    else — distant spans, cross-segment joins, a phrase whose tail the cut
+    does not include — is NOT evidence and the caller must reject it rather
+    than guess."""
+    candidates: list[tuple[float, float]] = []       # (anchor_start, end)
+    for sp in seg.speechSpans:
+        if quote in (sp.text or "").lower():
+            candidates.append((sp.start, sp.end))
+    for a, b in zip(seg.speechSpans, seg.speechSpans[1:], strict=False):
+        gap = b.start - a.end
+        if gap > MAX_JOINED_SPEECH_GAP_SECONDS:
+            continue                                  # a pause, not a phrase
+        joined = f"{(a.text or '').lower()} {(b.text or '').lower()}"
+        if quote in joined:
+            candidates.append((a.start, b.end))
+    for anchor, end in sorted(candidates, key=lambda c: c[1] - c[0]):
+        for e in plan.timeline:
+            if e.segmentId == seg.segmentId \
+                    and e.sourceIn - 0.1 <= anchor \
+                    and end <= e.sourceOut + 0.1:
+                return e.timelineIn + max(0.0, anchor - e.sourceIn) \
+                    / (e.playbackSpeed or 1.0)
     return None
 
 
@@ -488,18 +527,31 @@ def coherence_violations(plan, segments: list[Segment],
             if ev.sourceType != "transcript" or not ev.segmentId:
                 continue
             seg = by_id.get(ev.segmentId)
-            if seg is None:
+            if seg is None or not _verified_nonvisual(ev):
                 continue
-            expected = _quote_start_on_timeline(
+            if not seg.speechSpans:
+                break                    # no span data — timing unjudgeable
+            expected = _locate_quote_in_cut(
                 plan, seg, ev.quoteOrValue.strip().lower())
             if expected is None:
-                continue                 # try the next transcript evidence
-            if abs(cap.timelineStart - expected) > CAPTION_SYNC_TOLERANCE_S:
+                # The quote verifies against the transcript but does NOT
+                # occur as a contiguous spoken phrase inside a selected cut
+                # — distant spans stitched together, or a phrase whose
+                # words the cut excludes. That is fabricated evidence, not
+                # a lookup miss: reject, never guess (Codex blocker A14).
+                out.append(f"coherence: {where} quote is not a contiguous "
+                           "spoken phrase inside the selected cut (spans "
+                           "further apart than "
+                           f"{MAX_JOINED_SPEECH_GAP_SECONDS:g}s, or words "
+                           "outside the cut) — quote what is actually "
+                           "heard in the edit")
+            elif abs(cap.timelineStart - expected) \
+                    > CAPTION_SYNC_TOLERANCE_S:
                 out.append(f"coherence: {where} starts at "
                            f"{round(cap.timelineStart, 2)}s but its quoted "
                            f"words are spoken at {round(expected, 2)}s — "
                            "bind the caption to the words' timing")
-            break                        # first RESOLVABLE evidence decides
+            break                        # first VERIFIED evidence decides
     return out
 
 
@@ -634,17 +686,23 @@ def interest_gate(plan, segments: list[Segment],
               if "narrates the visible" in v],
          "no caption narrates what the picture already shows")
     used = {e.segmentId for e in plan.timeline}
-    # A11: only judge utilization on catalogs big enough for the ratio to
-    # mean anything — a legitimate 3-cut edit of a 3-segment catalog is not
-    # "under-utilization", and dropping bad footage is correct editing.
-    if len(segments) >= UTILIZATION_MIN_CATALOG:
-        floor = len(segments) // 10
-        rule("catalog_utilization", 5, len(used) >= floor,
-             f"at least {floor} distinct segments considered worth using")
+    # A11: utilization is judged against USABLE segments only — footage the
+    # planner cannot legally select (mostly_black, corrupt, zero-duration)
+    # must never make a valid edit look under-utilized. And only on
+    # catalogs big enough for the ratio to mean anything: a legitimate
+    # 3-cut edit of a 3-segment catalog is not "under-utilization" —
+    # dropping bad footage is correct editing.
+    usable = {s.segmentId for s in segments
+              if is_usable_for_editorial_selection(s)}
+    if len(usable) >= UTILIZATION_MIN_CATALOG:
+        floor = len(usable) // 10
+        rule("catalog_utilization", 5, len(used & usable) >= floor,
+             f"at least {floor} of {len(usable)} usable segments "
+             "considered worth using")
     else:
         rule("catalog_utilization", 5, True,
-             f"catalog under {UTILIZATION_MIN_CATALOG} segments — "
-             "utilization not judged")
+             f"{len(usable)} usable segments (< {UTILIZATION_MIN_CATALOG})"
+             " — utilization not judged")
     durs = [e.timelineOut - e.timelineIn for e in plan.timeline]
     if len(durs) >= 4:
         mean = sum(durs) / len(durs)
@@ -669,8 +727,23 @@ def interest_gate(plan, segments: list[Segment],
 def phase2_violations(plan, segments: list[Segment],
                       constraints: dict | None = None) -> list[str]:
     """All flag-gated hard checks, appended to the planner's violations list
-    (any violation forces a revise pass — same loop as Phase 1 grounding)."""
+    (any violation forces a revise pass — same loop as Phase 1 grounding).
+
+    The usability check runs under ANY enabled flag: a plan that cuts from
+    footage the predicate deems illegal (mostly_black, corrupt, no duration)
+    is invalid regardless of which editorial subsystem is active. With every
+    flag off this function is never called, so flags-off behavior is
+    untouched."""
     out: list[str] = []
+    by_id = {s.segmentId: s for s in segments}
+    for i, e in enumerate(plan.timeline):
+        seg = by_id.get(e.segmentId)
+        if seg is not None and not is_usable_for_editorial_selection(seg):
+            bad = sorted(set(seg.problems or []) & _UNUSABLE_PROBLEMS) \
+                or ["no usable duration"]
+            out.append(f"editorial: timeline[{i}] cuts from unusable "
+                       f"segment {e.segmentId} ({', '.join(bad)}) — "
+                       "select real, usable footage")
     if enabled(DIALOGUE_FLAG):
         out += dialogue_violations(plan, segments)
     if enabled(HOOK_FLAG):

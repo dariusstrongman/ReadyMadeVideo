@@ -252,8 +252,49 @@ def _download_sources(project: dict, tmp: str, ctx: JobContext | None = None):
 
 
 def _load_segments(project_id: str) -> list[Segment]:
+    """Load the catalog with DETERMINISTIC latest-schema selection.
+
+    `segments` is unique per (asset_id, segment_key, schema_version), so a
+    project analyzed before and after a schema bump holds BOTH generations
+    of every segment as separate rows. Selection rule (documented; Codex
+    schema-v3 coexistence blocker):
+      * group rows by (asset_id, segment_key) — falling back to the values
+        inside `data` for rows written without the columns
+      * keep the row with the HIGHEST schema_version (v3 beats v2); fields
+        are never merged across versions
+      * ties (duplicate same-version rows) resolve to the lowest row id —
+        deterministic regardless of database return order
+      * output ordering is (asset_id, segment_key), stable across runs
+    Projects with only v2 rows load exactly as before."""
     rows = supa.db_select("segments", f"project_id=eq.{project_id}")
-    return [Segment(**r["data"]) for r in rows]
+
+    def _identity(r: dict) -> tuple:
+        data = r.get("data") or {}
+        return (str(r.get("asset_id") or data.get("assetId") or ""),
+                str(r.get("segment_key") or data.get("segmentId") or ""))
+
+    def _version(r: dict):
+        data = r.get("data") or {}
+        try:
+            return int(r.get("schema_version")
+                       or data.get("schemaVersion") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    best: dict[tuple, dict] = {}
+    for r in rows:
+        key = _identity(r)
+        cur = best.get(key)
+        if cur is None:
+            best[key] = r
+            continue
+        rank = (_version(r), )
+        cur_rank = (_version(cur), )
+        if rank > cur_rank or (rank == cur_rank
+                               and str(r.get("id")) < str(cur.get("id"))):
+            best[key] = r
+    ordered = sorted(best.items(), key=lambda kv: kv[0])
+    return [Segment(**r["data"]) for _, r in ordered]
 
 
 def _upload_export(project: dict, rel: str, local: str) -> str:
