@@ -530,8 +530,14 @@ def _non_neutral_tokens(text: str, extra_allowed: str = "") -> list[str]:
 
 
 def _content_tokens(text: str) -> list[str]:
+    """Content words a factual claim must ground. B7: any token CONTAINING A
+    DIGIT is content regardless of length — the old len>=3 filter made every
+    price, count and percentage under 100 chars ('$5', '42', '10%')
+    invisible to evidence validation, i.e. freely inventable."""
     return [m.group(0).lower() for m in _WORD.finditer(text)
-            if len(m.group(0)) >= 3 and m.group(0).lower() not in _STOPWORDS]
+            if (len(m.group(0)) >= 3
+                or any(ch.isdigit() for ch in m.group(0)))
+            and m.group(0).lower() not in _STOPWORDS]
 
 
 # Words that describe the VIDEO ARTIFACT itself rather than the world in it.
@@ -1882,8 +1888,14 @@ def _revise_feedback(raw: dict, violations: list[str]) -> list[dict]:
                "insufficient_footage honestly if needed."}]
 
 
-def gemini_generate(parts: list[dict], schema: dict) -> dict:
-    """Production model call (kept tiny + injected so tests never hit it)."""
+def gemini_generate(parts: list[dict], schema: dict, heartbeat=None,
+                    usage: list | None = None) -> dict:
+    """Production model call (kept tiny + injected so tests never hit it).
+
+    ``heartbeat``: called before EACH of the two internal Gemini calls (B8 —
+    each call can run up to 600s, longer than the stale-worker threshold).
+    ``usage``: collector passed to generate_json for provider-reported
+    token counts (B9)."""
     from .gemini_common import generate_json
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -1909,9 +1921,12 @@ def gemini_generate(parts: list[dict], schema: dict) -> dict:
                             if r not in STRICT_SECTIONS]
     core_ladder = [core, prune_schema(core, 4), prune_schema(core, 2),
                    {"type": "OBJECT"}]
+    extra = {"usage": usage} if usage is not None else {}
+    if heartbeat:
+        heartbeat()
     plan_core = generate_json(model, parts, core, api_key,
                               temperature=0.4, timeout=600,
-                              ladder=core_ladder)
+                              ladder=core_ladder, **extra)
 
     strict = {"type": "OBJECT",
               "properties": {k: schema["properties"][k]
@@ -1952,7 +1967,9 @@ def gemini_generate(parts: list[dict], schema: dict) -> dict:
           " caption text. For premise and payoff text, REUSE the wording"
           " of the core plan's storySentence/viewerPromise and the cited"
           " evidence — do not introduce new words.")}]
+    if heartbeat:
+        heartbeat()
     rest = generate_json(model, strict_parts, strict, api_key,
                          temperature=0.4, timeout=600,
-                         ladder=[strict, {"type": "OBJECT"}])
+                         ladder=[strict, {"type": "OBJECT"}], **extra)
     return {**plan_core, **rest}

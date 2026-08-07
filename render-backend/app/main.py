@@ -35,7 +35,7 @@ from . import config
 
 config.validate()          # fail fast with clear errors before anything imports supa
 
-from . import raw_uploads, s3store, supa
+from . import raw_uploads, s3store, segment_store, supa
 from .renderer import RenderError, render
 
 # Exports stay on Supabase by default; set to "s3" to route completed exports to
@@ -1292,7 +1292,7 @@ def op_coverage(project_id: str, authorization: str = Header(default="")):
     from .pipeline.schemas import Segment as Seg
     _require_operator(authorization)
     _get_project(project_id)
-    rows = supa.db_select("segments", f"project_id=eq.{project_id}")
+    rows = segment_store.load_rows(project_id)
     segs = [Seg(**r["data"]) for r in rows]
     return validate_coverage(segs).model_dump()
 
@@ -1324,7 +1324,7 @@ def op_preproduction(project_id: str, body: PreproductionBody,
     op = _require_operator(authorization)
     _rate_check(op["id"], "preproduction")
     project = _get_project(project_id)
-    rows = supa.db_select("segments", f"project_id=eq.{project_id}")
+    rows = segment_store.load_rows(project_id)
     if not rows:
         raise HTTPException(409, "segment catalog required - run analysis first")
     try:
@@ -1411,7 +1411,7 @@ def op_picture_edit(project_id: str, body: PictureEditBody,
     op = _require_operator(authorization)
     _rate_check(op["id"], "picture_edit")
     project = _get_project(project_id)
-    segment_rows = supa.db_select("segments", f"project_id=eq.{project_id}")
+    segment_rows = segment_store.load_rows(project_id)
     if not segment_rows:
         raise HTTPException(409, "segment catalog required - run analysis first")
 
@@ -1530,7 +1530,7 @@ def op_music_sound(project_id: str, body: MusicSoundBody,
     if not preproduction_rows or preproduction_rows[0]["project_id"] != project_id:
         raise HTTPException(409, "Milestone 1 treatment ancestry is invalid")
     preproduction = preproduction_rows[0]
-    segment_rows = supa.db_select("segments", f"project_id=eq.{project_id}")
+    segment_rows = segment_store.load_rows(project_id)
     if not segment_rows:
         raise HTTPException(409, "segment catalog required - run analysis first")
 
@@ -1906,7 +1906,7 @@ def op_visual_finishing(project_id: str, body: VisualFinishingBody,
         value = row[key]
         return json.loads(value) if isinstance(value, str) else value
 
-    segment_rows = supa.db_select("segments", f"project_id=eq.{project_id}")
+    segment_rows = segment_store.load_rows(project_id)
     transcript_rows = supa.db_select(
         "asset_analysis", f"project_id=eq.{project_id}&kind=eq.transcript&status=eq.completed",
     )
@@ -2090,7 +2090,7 @@ def op_editorial_intelligence(
             or lineage["audio_run"].get("status") != "qc_passed"):
         raise HTTPException(409, "Milestone 1-5 ancestry is inconsistent")
 
-    segment_rows = supa.db_select("segments", f"project_id=eq.{project_id}")
+    segment_rows = segment_store.load_rows(project_id)
     transcript_rows = supa.db_select(
         "asset_analysis", f"project_id=eq.{project_id}&kind=eq.transcript&status=eq.completed",
     )
@@ -2386,10 +2386,17 @@ def customer_workspace(project_id: str, authorization: str = Header(default=""))
 
 
 def _cleanup_project_storage(user_id: str, project_id: str) -> list[str]:
-    """Remove EVERY object under the project's storage prefixes (raw footage +
-    proxies/wav/thumbs + licensed music + exports + autoedit drafts + finishing
-    previews). Failures are NOT swallowed — returns the list of buckets that failed
-    so the caller can record retryable state."""
+    """Remove EVERY object under the project's storage prefixes — Supabase
+    buckets (raw footage + proxies/wav/thumbs + licensed music + exports +
+    autoedit drafts + finishing previews) AND the S3 store (multipart raw
+    footage; exports when EXPORT_STORAGE_PROVIDER=s3). Failures are NOT
+    swallowed — returns the list of families that failed so the caller can
+    record retryable state.
+
+    B3: this previously cleaned only the Supabase buckets while the delete
+    endpoint answered "cleanup: complete" — a false erasure statement for
+    every project with S3-stored footage. S3 objects are ENUMERATED and
+    deleted individually; nothing is assumed gone."""
     prefix = f"users/{user_id}/projects/{project_id}/"
     failures = []
     for bucket in ("raw-footage", "exports"):
@@ -2397,6 +2404,15 @@ def _cleanup_project_storage(user_id: str, project_id: str) -> list[str]:
             supa.storage_remove_prefix(bucket, prefix)
         except Exception as exc:  # noqa: BLE001 — surfaced, not swallowed
             failures.append(f"{bucket} ({type(exc).__name__})")
+    if s3store.enabled():
+        try:
+            keys = s3store.list_keys(prefix)
+            for key in keys:
+                s3store.delete_object(key)
+            if keys and s3store.list_keys(prefix):
+                failures.append("s3 (objects remained after delete)")
+        except Exception as exc:  # noqa: BLE001 — surfaced, not swallowed
+            failures.append(f"s3 ({type(exc).__name__})")
     return failures
 
 

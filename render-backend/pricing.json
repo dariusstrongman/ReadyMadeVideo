@@ -1,9 +1,15 @@
 {
-  "version": "2026-08-01",
-  "_note": "Cost ESTIMATE configuration (P6). Provider pricing changes — update here, never hardcode in code or marketing. Values are USD.",
+  "version": "2026-08-09",
+  "_note": "Cost ESTIMATE configuration (P6/B9). Provider pricing changes — update here, never hardcode in code or marketing. Values are USD. Token rates are per 1M tokens at the providers' BASE tier (Gemini 2.5 Pro <=200k-token prompts; the >200k tier is ~2x input / 1.5x output and is NOT modeled — estimates understate long-context calls). VERIFY against current official price pages when this file's version ages.",
   "whisper_per_audio_minute": 0.006,
   "gemini_flash_per_video_second": 0.00035,
   "gemini_flash_per_request": 0.0005,
+  "gemini_pro_per_1m_input": 1.25,
+  "gemini_pro_per_1m_output": 10.0,
+  "gemini_pro_per_1m_cached": 0.3125,
+  "gemini_flash_per_1m_input": 0.30,
+  "gemini_flash_per_1m_output": 2.50,
+  "gemini_flash_per_1m_cached": 0.075,
   "storage_per_gb_month": 0.021,
   "compute_per_cpu_hour": 0.05
 }

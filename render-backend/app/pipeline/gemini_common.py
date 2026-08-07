@@ -125,7 +125,11 @@ _TOO_MANY_STATES = "too many states"
 
 def generate_json(model: str, parts: list[dict], schema: dict, api_key: str,
                   temperature: float = 0.2, timeout: int = 600,
-                  ladder: list[dict] | None = None):
+                  ladder: list[dict] | None = None,
+                  usage: list | None = None):
+    """``usage``: optional collector list — each successful call appends one
+    record with the PROVIDER-REPORTED token counts (B9: real accounting, not
+    a fixed fake per-call price) plus the ladder rung that produced it."""
     if ladder is None:
         ladder = [schema, prune_schema(schema, 4), prune_schema(schema, 2),
                   {"type": "OBJECT"}]
@@ -159,6 +163,15 @@ def generate_json(model: str, parts: list[dict], schema: dict, api_key: str,
                       f"ladder rung {i}; retrying with a pruned schema")
                 continue
             raise
+        if usage is not None:
+            meta = out.get("usageMetadata") or {}
+            usage.append({
+                "provider": "gemini", "model": model,
+                "inputTokens": int(meta.get("promptTokenCount") or 0),
+                "outputTokens": int(meta.get("candidatesTokenCount") or 0)
+                + int(meta.get("thoughtsTokenCount") or 0),
+                "cachedTokens": int(meta.get("cachedContentTokenCount") or 0),
+                "requests": 1, "ladderRung": i})
         text = out["candidates"][0]["content"]["parts"][0]["text"]
         return json.loads(text)
     raise last

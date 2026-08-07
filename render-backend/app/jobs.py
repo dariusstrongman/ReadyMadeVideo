@@ -34,6 +34,7 @@ from . import supa
 from .logging_util import log_event
 from .pipeline import telemetry
 from .pipeline.schemas import Segment
+from .renderer2 import RenderCancelled
 
 EXPORT_STORAGE_PROVIDER = os.environ.get("EXPORT_STORAGE_PROVIDER", "supabase")
 
@@ -97,9 +98,17 @@ def enqueue_job(project_id: str, user_id: str, kind: str,
     """Idempotent per (project, kind); global per-user active-job cap."""
     active = supa.db_select(
         "pipeline_jobs",
-        f"user_id=eq.{user_id}&status=in.({','.join(ACTIVE_STATES)})", "id,kind,project_id")
-    dup = [a for a in active if a["project_id"] == project_id and a["kind"] == kind]
-    if not dup and len(active) >= MAX_ACTIVE_JOBS_PER_USER:
+        f"user_id=eq.{user_id}&status=in.({','.join(ACTIVE_STATES)})")
+    dup = sorted((a for a in active
+                  if a["project_id"] == project_id and a["kind"] == kind),
+                 key=lambda a: a.get("created_at") or "")
+    if dup:
+        # B5: ACTIVE_STATES includes cancel_requested, but the DB partial
+        # unique index covers only (queued, processing) — relying on the 409
+        # here would insert a SECOND active job of the same kind while the
+        # first one drains its cancellation. Return the duplicate directly.
+        return dup[-1]
+    if len(active) >= MAX_ACTIVE_JOBS_PER_USER:
         raise ConcurrencyLimit(
             f"user already has {len(active)} active jobs "
             f"(max {MAX_ACTIVE_JOBS_PER_USER})")
@@ -181,12 +190,32 @@ def recover_stale() -> int:
 class JobContext:
     """Cancellation checkpoints + telemetry accounting for one job run."""
 
+    HEARTBEAT_EVERY_S = 25.0
+
     def __init__(self, job: dict):
         self.job = job
         self.expected = 0
         self.recorded = 0
+        self._last_beat = time.monotonic()
+
+    def beat(self, force: bool = False) -> None:
+        """B8: liveness-only heartbeat (no fake progress). Throttled so the
+        0.5s render cancel-poll doesn't turn into a PATCH storm; `force`
+        is for coarse events (planner attempts, provider-call boundaries)."""
+        now = time.monotonic()
+        if not force and now - self._last_beat < self.HEARTBEAT_EVERY_S:
+            return
+        self._last_beat = now
+        try:
+            update_job(self.job["id"], {})       # update_job stamps heartbeat_at
+        except Exception:  # noqa: BLE001 — liveness must never break the job
+            pass
 
     def cancelled(self) -> bool:
+        # every cancel poll doubles as a (throttled) liveness signal: long
+        # renders and per-asset loops heartbeat for free, so a healthy job
+        # can no longer be stale-recovered mid-encode (B8)
+        self.beat()
         rows = supa.db_select("pipeline_jobs", f"id=eq.{self.job['id']}", "status")
         return bool(rows) and rows[0]["status"] == "cancel_requested"
 
@@ -252,49 +281,10 @@ def _download_sources(project: dict, tmp: str, ctx: JobContext | None = None):
 
 
 def _load_segments(project_id: str) -> list[Segment]:
-    """Load the catalog with DETERMINISTIC latest-schema selection.
-
-    `segments` is unique per (asset_id, segment_key, schema_version), so a
-    project analyzed before and after a schema bump holds BOTH generations
-    of every segment as separate rows. Selection rule (documented; Codex
-    schema-v3 coexistence blocker):
-      * group rows by (asset_id, segment_key) — falling back to the values
-        inside `data` for rows written without the columns
-      * keep the row with the HIGHEST schema_version (v3 beats v2); fields
-        are never merged across versions
-      * ties (duplicate same-version rows) resolve to the lowest row id —
-        deterministic regardless of database return order
-      * output ordering is (asset_id, segment_key), stable across runs
-    Projects with only v2 rows load exactly as before."""
-    rows = supa.db_select("segments", f"project_id=eq.{project_id}")
-
-    def _identity(r: dict) -> tuple:
-        data = r.get("data") or {}
-        return (str(r.get("asset_id") or data.get("assetId") or ""),
-                str(r.get("segment_key") or data.get("segmentId") or ""))
-
-    def _version(r: dict):
-        data = r.get("data") or {}
-        try:
-            return int(r.get("schema_version")
-                       or data.get("schemaVersion") or 0)
-        except (TypeError, ValueError):
-            return 0
-
-    best: dict[tuple, dict] = {}
-    for r in rows:
-        key = _identity(r)
-        cur = best.get(key)
-        if cur is None:
-            best[key] = r
-            continue
-        rank = (_version(r), )
-        cur_rank = (_version(cur), )
-        if rank > cur_rank or (rank == cur_rank
-                               and str(r.get("id")) < str(cur.get("id"))):
-            best[key] = r
-    ordered = sorted(best.items(), key=lambda kv: kv[0])
-    return [Segment(**r["data"]) for _, r in ordered]
+    """Catalog load with deterministic latest-schema selection — the rule
+    lives in segment_store (B2: ONE selection rule for every consumer)."""
+    from . import segment_store
+    return segment_store.load_segments(project_id)
 
 
 def _upload_export(project: dict, rel: str, local: str) -> str:
@@ -541,6 +531,14 @@ def handle_autoedit_v2(job: dict, project: dict, tmp: str, ctx: JobContext) -> d
                 log_event("PICTURE-EDIT-V2-REUSED", job_id=job["id"],
                           edit_run_id=run["id"],
                           hash=result["deterministicHash"])
+                # B6: reuse was the ONLY success path that left project
+                # status untouched — a project sitting at render_failed
+                # whose re-run reused a draft kept showing the failure while
+                # a valid candidate existed. Every success path states the
+                # truth: a draft is ready.
+                set_project_status(project["id"], "draft_ready",
+                                   "existing draft reused (identical plan, "
+                                   "catalog and engine)")
                 return artifacts
             # bridge repair: re-render the preview and finish the journey
             log_event("PICTURE-EDIT-V2-BRIDGE-REPAIR", job_id=job["id"],
@@ -785,14 +783,71 @@ def handle_editorial_plan(job: dict, project: dict, tmp: str, ctx: JobContext) -
         "licensed_music_assets", f"project_id=eq.{project['id']}&limit=1"))
     update_job(job["id"], {"current_stage": "editorial planning", "progress": 10})
     t0 = time.time()
-    result = editorial_planner.plan_editorial(
-        segments,
-        constraints={k: params.get(k) for k in (
-            "brief", "platform", "aspectRatio", "tone", "style",
-            "toneAdvisoryOnly", "durationMin", "durationMax",
-            "mustInclude", "mustExclude")},
-        music_available=music_available,
-        generate=editorial_planner.gemini_generate)
+
+    # ---- B9/B10: real usage accounting + spend ceilings around every paid
+    # call. Costs are ESTIMATES from provider-reported tokens (actual billing
+    # is unknowable at request time — kept as a separate null field).
+    from .pipeline import ai_budget
+    prior = supa.db_select(
+        "stage_metrics",
+        f"project_id=eq.{project['id']}&stage=eq.editorial_plan_ai")
+    budget = ai_budget.AiBudget(project_spent_usd=sum(
+        float(r.get("estimated_cost_usd") or 0) for r in prior))
+    usage: list[dict] = []
+    model = os.environ.get("EDITORIAL_PLANNER_MODEL", "gemini-2.5-pro")
+
+    def _generate(parts, schema):
+        ctx.beat(force=True)                       # B8: liveness per attempt
+        budget.precheck(ai_budget.estimate_call_cost(parts, model))
+        before = len(usage)
+        gen = editorial_planner.gemini_generate
+        try:
+            import inspect
+            takes_usage = "usage" in inspect.signature(gen).parameters
+        except (TypeError, ValueError):
+            takes_usage = False
+        if takes_usage:
+            out = gen(parts, schema,
+                      heartbeat=lambda: ctx.beat(force=True), usage=usage)
+        else:
+            out = gen(parts, schema)               # tests inject 2-arg stubs
+        budget.add(usage[before:])
+        return out
+
+    def _record_ai_usage():
+        if not usage:
+            return None
+        units = ai_budget.units_for(usage)
+        units["gemini_requests"] = 0               # tokens supersede flat rate
+        summary = {
+            "provider": "gemini", "model": model,
+            "inputTokens": sum(r["inputTokens"] for r in usage),
+            "outputTokens": sum(r["outputTokens"] for r in usage),
+            "cachedTokens": sum(r["cachedTokens"] for r in usage),
+            "requests": len(usage),
+            "retries": max(0, len(usage) // 2 - 1),
+            "estimatedCostUsd": ai_budget.cost_of(usage),
+            "actualCostUsd": None,                 # billing-level actual unknown
+            "pricingVersion": telemetry.pricing_version(), "at": _now()}
+        ctx.rec("editorial_plan_ai", units=units)
+        return summary
+
+    try:
+        result = editorial_planner.plan_editorial(
+            segments,
+            constraints={k: params.get(k) for k in (
+                "brief", "platform", "aspectRatio", "tone", "style",
+                "toneAdvisoryOnly", "durationMin", "durationMax",
+                "mustInclude", "mustExclude")},
+            music_available=music_available,
+            generate=_generate)
+    except Exception:
+        # failure paths (PlanRejected, BudgetExceeded, provider errors) must
+        # still account for what was actually spent — the most expensive
+        # customers were previously invisible in the unit economics
+        _record_ai_usage()
+        raise
+    ai_usage = _record_ai_usage()
     ctx.checkpoint("before_plan_persist")
     existing = supa.db_select(
         "editorial_plans",
@@ -815,8 +870,9 @@ def handle_editorial_plan(job: dict, project: dict, tmp: str, ctx: JobContext) -
     row.raise_for_status()
     plan_id = row.json()[0]["id"]
     dur = time.time() - t0
-    ctx.rec("editorial_plan", round(dur, 2),
-            units={"gemini_requests": result["attempts"]})
+    # attempts only — the real token spend is in the editorial_plan_ai row
+    # (B9); the legacy flat per-request rate is deliberately NOT applied here
+    ctx.rec("editorial_plan", round(dur, 2), units={})
     # ── Customer-journey chain: an approved plan hands off to Picture Edit V2
     # with the EXACT plan id/version just persisted. Operator/manual plan jobs
     # (no `source` param) keep their original stop-here semantics.
@@ -855,7 +911,8 @@ def handle_editorial_plan(job: dict, project: dict, tmp: str, ctx: JobContext) -
             "status": result["status"], "qualityScore": result["qualityScore"],
             "attempts": result["attempts"],
             "plannedDurationSeconds":
-                result["plan"].get("plannedDurationSeconds")}
+                result["plan"].get("plannedDurationSeconds"),
+            **({"aiUsage": ai_usage} if ai_usage else {})}
 
 
 def handle_final_render(job: dict, project: dict, tmp: str, ctx: JobContext) -> dict:
@@ -1112,7 +1169,11 @@ def _run_job(job: dict) -> None:
         log_event("JOB-DONE", job_id=job["id"], kind=job["kind"],
                   seconds=round(time.time() - t0, 1),
                   telemetry=artifacts["telemetry_status"]["complete"])
-    except JobCancelled as e:
+    except (JobCancelled, RenderCancelled) as e:
+        # B4: RenderCancelled (ffmpeg terminated mid-render by a cancel
+        # request) is a CANCELLATION, not a failure — previously it fell
+        # through to the generic handler and told the customer their edit
+        # "failed" right after they pressed Cancel.
         update_job(job["id"], {"status": "cancelled",
                                "error_message": f"cancelled at checkpoint: {e}",
                                "artifacts": {"telemetry_status":

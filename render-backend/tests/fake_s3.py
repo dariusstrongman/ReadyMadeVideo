@@ -101,6 +101,18 @@ class FakeS3:
                              "etag": etag, "size": len(data)}
         return {"ETag": f'"{etag}"'}
 
+    def list_objects_v2(self, Bucket, Prefix="", MaxKeys=1000,
+                        ContinuationToken=None):
+        keys = sorted(k for k in self.objects if k.startswith(Prefix))
+        start = int(ContinuationToken) if ContinuationToken else 0
+        page = keys[start:start + MaxKeys]
+        truncated = start + MaxKeys < len(keys)
+        out = {"Contents": [{"Key": k} for k in page],
+               "IsTruncated": truncated}
+        if truncated:
+            out["NextContinuationToken"] = str(start + MaxKeys)
+        return out
+
     def delete_object(self, Bucket, Key):
         self.objects.pop(Key, None)
         return {}

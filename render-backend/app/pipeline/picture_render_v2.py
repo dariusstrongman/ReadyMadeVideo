@@ -16,7 +16,6 @@ filter-graph construction; raw LLM command strings are never accepted.
 from __future__ import annotations
 
 import os
-import subprocess
 
 from ..renderer import FFMPEG, RenderError, probe
 from ..renderer2 import PREVIEW, _atempo_chain
@@ -56,7 +55,8 @@ def _crop_filter(inst: dict, out_dur: float) -> str:
 
 
 def render_picture_edit(result: dict, sources: dict[str, str], out_path: str,
-                        timeout: int = 900, cancel_check=None) -> float:
+                        timeout: int = 900, cancel_check=None,
+                        tick=None) -> float:
     """Render the PictureEditV2 preview. Returns the output duration."""
     timeline = result["timeline"]
     clips = [c for t in timeline["tracks"] if t["type"] == "video"
@@ -145,12 +145,17 @@ def render_picture_edit(result: dict, sources: dict[str, str], out_path: str,
             "-r", fps, "-c:v", "libx264",
             "-preset", PREVIEW["preset"], "-crf", str(PREVIEW["crf"]),
             "-c:a", "aac", "-shortest", out_path]
-    proc = subprocess.run(cmd, capture_output=True, timeout=timeout)
-    if cancel_check and cancel_check():
-        raise RenderError("cancelled")
-    if proc.returncode != 0:
+    # B4: the interruptible runner (shared with renderer2) — a cancellation
+    # terminates ffmpeg promptly, deletes the partial output, and raises
+    # RenderCancelled, which the worker maps to job status CANCELLED (the old
+    # blocking subprocess.run only noticed cancellation after completion and
+    # surfaced it as a generic failure). tick doubles as the heartbeat.
+    from ..renderer2 import _run_interruptible
+    rc, stderr = _run_interruptible(cmd, timeout, cancel_check,
+                                    out_path=out_path, tick=tick)
+    if rc != 0:
         raise RenderError("ffmpeg failed: "
-                          + proc.stderr.decode(errors="replace")[-600:])
+                          + stderr.decode(errors="replace")[-600:])
     if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
         raise RenderError("no output produced")
     return acc_orig
