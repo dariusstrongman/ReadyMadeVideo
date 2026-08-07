@@ -1,0 +1,10 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <rect width="32" height="32" rx="6" fill="#0a0a0f"/>
+    <g transform="translate(-2, -2)">
+        <path d="M7 12 L7 7 L12 7" stroke="#ff6b5b" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M24 7 L29 7 L29 12" stroke="#ff6b5b" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M29 24 L29 29 L24 29" stroke="#ff6b5b" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M12 29 L7 29 L7 24" stroke="#ff6b5b" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <text x="12" y="24" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#ffffff">R</text>
+    </g>
+</svg>

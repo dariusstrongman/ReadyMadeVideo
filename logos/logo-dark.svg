@@ -4,8 +4,8 @@
         <path d="M30 3 L37 3 L37 10" stroke="#ff6b5b" stroke-width="2.5" fill="none" stroke-linecap="round"/>
         <path d="M37 30 L37 37 L30 37" stroke="#ff6b5b" stroke-width="2.5" fill="none" stroke-linecap="round"/>
         <path d="M10 37 L3 37 L3 30" stroke="#ff6b5b" stroke-width="2.5" fill="none" stroke-linecap="round"/>
-        <text x="12" y="28" font-family="Syne, sans-serif" font-size="22" font-weight="700" fill="#ffffff">R</text>
+        <text x="12" y="28" font-family="Syne, sans-serif" font-size="22" font-weight="700" fill="#111111">R</text>
     </g>
     <text x="60" y="58" text-anchor="middle" font-family="Outfit, sans-serif" font-size="14" font-weight="600" letter-spacing="0.08em" fill="#ff6b5b">READYMADE</text>
-    <text x="60" y="70" text-anchor="middle" font-family="Outfit, sans-serif" font-size="10" font-weight="500" letter-spacing="0.15em" fill="#6b6b7b">VIDEO</text>
+    <text x="60" y="70" text-anchor="middle" font-family="Outfit, sans-serif" font-size="10" font-weight="500" letter-spacing="0.15em" fill="#4a4a5a">VIDEO</text>
 </svg>
