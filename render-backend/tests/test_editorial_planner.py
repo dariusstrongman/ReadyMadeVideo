@@ -1110,6 +1110,35 @@ def test_flat_coverage_demands_punch_ins():
     assert "punch in" in " | ".join(exc.value.violations_history[0])
 
 
+def _reframes(ids, *, zoom):
+    """Punch-ins on `ids`. A zoom changes crop SIZE across the shot, which the
+    renderer preserves as pending and never executes."""
+    end_w, end_h = (0.35, 0.35) if zoom else (0.5, 0.5)
+    return [{"segmentId": i, "outputAspectRatio": "9:16",
+             "subjectTarget": "athlete",
+             "startCrop": {"x": 0.2, "y": 0.2, "width": 0.5, "height": 0.5},
+             "endCrop": {"x": 0.25, "y": 0.2, "width": end_w, "height": end_h}}
+            for i in ids]
+
+
+def test_zoom_reframes_do_not_count_as_coverage():
+    """A zoom is preserved as a pending instruction and never reaches the
+    delivered file. Crediting it would let the plan satisfy the coverage rule
+    with punch-ins the customer never sees."""
+    durations = [2.0, 1.0, 4.0, 1.0, 8.0, 2.0, 1.0, 4.0, 2.0, 8.0, 1.0, 3.0]
+    ids = ["r0", "r1", "r2", "r3"]
+    zoomed, segs = _rhythmic_plan(durations, reframes=_reframes(ids, zoom=True))
+    by_id = {s.segmentId: s for s in segs}
+    assert any("punch in" in v for v in ep._rhythm_violations(
+        ep.EditorialPlan(**zoomed), by_id))
+
+    # The same punch-ins at a fixed size DO render, and DO satisfy the rule.
+    static, segs = _rhythmic_plan(durations,
+                                  reframes=_reframes(ids, zoom=False))
+    assert not any("punch in" in v for v in ep._rhythm_violations(
+        ep.EditorialPlan(**static), {s.segmentId: s for s in segs}))
+
+
 def test_short_sequences_are_not_judged_on_rhythm():
     """Three cuts cannot demonstrate a distribution; the rules must not fire
     on sequences too short to have rhythm."""

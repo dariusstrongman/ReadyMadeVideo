@@ -481,6 +481,20 @@ def build_picture_edit(plan_row: dict, segments: list[Segment], *,
             inst["note"] = ("zoom interpolation pending renderer support — "
                             "preserved, NOT replaced")
             unsupported.append(inst)
+        else:
+            # Attach the crop to the CLIP as well as keeping the instruction.
+            # The instruction list is only read by the V2 preview renderer; the
+            # export renderer reads clips. While the crop lived in one place
+            # only, every punch-in the planner produced was visible in preview
+            # and absent from the delivered file — and the coverage_varied gate
+            # rule was spending repair attempts on output nobody would receive.
+            for clip in clips:
+                if clip.get("segmentId") == rf.segmentId:
+                    clip["crop"] = {
+                        "width": sc.width, "height": sc.height,
+                        "x": sc.x, "y": sc.y,
+                        "endWidth": ec.width, "endHeight": ec.height,
+                        "endX": ec.x, "endY": ec.y}
         reframe_instructions.append(inst)
 
     if reasons:

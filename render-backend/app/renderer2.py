@@ -132,9 +132,70 @@ def compile_timeline(timeline: dict, sources: dict[str, str], out_path: str,
         out_dur = (e - s) / speed
         total += out_dur
 
+        # PUNCH-IN. On single-camera coverage — 157 of 177 segments in one
+        # real catalog were wide — cropping into the frame is the only shot
+        # variety available, so it is not decoration. Crops are normalised
+        # (0-1) fractions of the source; animating between start and end
+        # gives a slow push. Values are clamped and formatted here, never
+        # taken as raw filter text.
+        crop = c.get("crop") or {}
+        crop_vf = ""
+        if crop:
+            def _f(key, lo, hi, dflt):
+                try:
+                    return min(hi, max(lo, float(crop.get(key, dflt))))
+                except (TypeError, ValueError):
+                    return dflt
+            # ffmpeg's crop evaluates w/h ONCE at init and x/y per frame, so
+            # the window size is fixed and only the position can move. The
+            # tighter of the two framings is used for the whole clip — a
+            # punch-in's job is the closer shot, and on single-camera wide
+            # coverage that tighter frame IS the shot variety. The drift adds
+            # life without pretending to be a zoom.
+            sw, sh = _f("width", 0.2, 1.0, 1.0), _f("height", 0.2, 1.0, 1.0)
+            ew = _f("endWidth", 0.2, 1.0, sw)
+            eh = _f("endHeight", 0.2, 1.0, sh)
+            cw_f, ch_f = min(sw, ew), min(sh, eh)
+            sx = _f("x", 0.0, 1.0, 0.0)
+            sy = _f("y", 0.0, 1.0, 0.0)
+            ex = _f("endX", 0.0, 1.0, sx)
+            ey = _f("endY", 0.0, 1.0, sy)
+            # keep the window inside the frame at both ends
+            sx, ex = min(sx, 1.0 - cw_f), min(ex, 1.0 - cw_f)
+            sy, ey = min(sy, 1.0 - ch_f), min(ey, 1.0 - ch_f)
+            if cw_f < 0.999 or ch_f < 0.999:
+                cw = f"trunc(iw*{cw_f:.4f}/2)*2"
+                ch = f"trunc(ih*{ch_f:.4f}/2)*2"
+                if out_dur > 0 and (abs(ex - sx) > 1e-3 or abs(ey - sy) > 1e-3):
+                    p_ = f"min(1,max(0,t/{out_dur:.4f}))"
+                    cx = f"iw*({sx:.4f}+({ex - sx:.4f})*{p_})"
+                    cy = f"ih*({sy:.4f}+({ey - sy:.4f})*{p_})"
+                else:
+                    cx, cy = f"iw*{sx:.4f}", f"ih*{sy:.4f}"
+                crop_vf = f"crop=w='{cw}':h='{ch}':x='{cx}':y='{cy}',"
+
+        # FIT vs FILL. Letterboxing a 16:9 phone clip into a 9:16 delivery
+        # spends 56% of the screen on black bars — the single largest visual
+        # defect available, and it survives every other improvement. When the
+        # source aspect is known and differs from the target, scale UP and
+        # centre-crop so the frame is full. `decrease`+pad is kept only as the
+        # fallback for sources we could not probe, where cropping blind could
+        # cut the subject out of a frame we have never measured.
+        src_w = getattr(info, "width", None) or 0
+        src_h = getattr(info, "height", None) or 0
+        if crop:
+            src_w, src_h = src_w * cw_f, src_h * ch_f
+        fill = False
+        if src_w > 0 and src_h > 0 and H > 0:
+            fill = abs((src_w / src_h) - (W / H)) > 0.01
+        if fill:
+            fit_vf = (f"scale={W}:{H}:force_original_aspect_ratio=increase,"
+                      f"crop={W}:{H}")
+        else:
+            fit_vf = (f"scale={W}:{H}:force_original_aspect_ratio=decrease,"
+                      f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2")
         vf = (f"[{idx}:v]trim=start={s:.3f}:end={e:.3f},setpts=(PTS-STARTPTS)/{speed:.4f},"
-              f"scale={W}:{H}:force_original_aspect_ratio=decrease,"
-              f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,fps={fps},format=yuv420p,setsar=1[v{k}]")
+              f"{crop_vf}{fit_vf},fps={fps},format=yuv420p,setsar=1[v{k}]")
         parts.append(vf)
         # Phase 3 audio-under b-roll: the clip's PICTURE comes from this
         # asset while the audio continues from the DONOR clip (audioFrom) —
