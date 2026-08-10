@@ -335,6 +335,15 @@ def test_clip_crop_survives_into_the_render_filter_graph():
     assert cropped[0]["crop"]["endX"] == 0.3
 
 
+def test_ramp_tolerance_matches_the_planner():
+    """The planner rejects ramp/timeline disagreement so plans never reach
+    this module and die here. Two different tolerances would reopen the gap:
+    a plan the planner blessed would be rejected by the editor."""
+    from app.pipeline import editorial_planner as ep
+    from app.pipeline.picture_edit_v2 import RAMP_CONSISTENCY_TOLERANCE
+    assert ep.RAMP_CONSISTENCY_TOLERANCE == RAMP_CONSISTENCY_TOLERANCE
+
+
 def test_punch_in_aimed_at_a_corner_is_pulled_back_toward_centre():
     """The analyzer records no subject coordinates — 'two people in a grassy
     field', never a box — so a crop is the model's guess. A guess aimed at a

@@ -45,6 +45,9 @@ SCHEMA_VERSION = 1
 MAX_ATTEMPTS = 5
 APPROVAL_THRESHOLD = 80
 TIME_EPSILON = 0.05
+# Must match picture_edit_v2.RAMP_CONSISTENCY_TOLERANCE: this check exists to
+# stop a plan reaching the picture editor that the picture editor will reject.
+RAMP_CONSISTENCY_TOLERANCE = 0.25
 BANNED_COMMAND_TOKENS = ("ffmpeg", "filter_complex", "-vf ", "libx264")
 MUSIC_FABRICATION_TOKENS = ("bpm", "beat grid", "beatgrid", "phrase map",
                             "licens", "tempo", "track:", "song:")
@@ -963,6 +966,7 @@ def validate_plan(plan: EditorialPlan, segments: list[Segment],
     # -- timeline grounding
     planned_ids: set[str] = set()
     planned_cuts: dict[str, list[tuple[float, float]]] = {}
+    cut_speeds: dict[str, list[float]] = {}
     seen_ranges: set[tuple[str, float, float]] = set()
     cursor = 0.0
     for i, seg in enumerate(plan.timeline):
@@ -972,6 +976,10 @@ def validate_plan(plan: EditorialPlan, segments: list[Segment],
             continue
         planned_ids.add(seg.segmentId)
         planned_cuts.setdefault(seg.segmentId, []).append((seg.sourceIn, seg.sourceOut))
+        # the constant speed this cut implies, for the ramp-consistency check
+        _tl_span = seg.timelineOut - seg.timelineIn
+        cut_speeds.setdefault(seg.segmentId, []).append(
+            ((seg.sourceOut - seg.sourceIn) / _tl_span) if _tl_span > 0 else 1.0)
         if seg.assetId != src.assetId:
             v.append(f"timeline[{i}] assetId does not match segment {seg.segmentId}")
         if seg.sourceIn < src.sourceStart - TIME_EPSILON \
@@ -1308,6 +1316,29 @@ def validate_plan(plan: EditorialPlan, segments: list[Segment],
                    and ramp.sourceEnd <= b + TIME_EPSILON for a, b in cuts):
             v.append(f"execution: {where} range is outside the planned cut of "
                      f"{ramp.segmentId}")
+        # A ramp that speeds the footage up or slows it down changes how long
+        # the cut LASTS, so the timeline entry must already be laid out at
+        # that duration. The picture editor rejects the whole edit when it is
+        # not — a real v4 plan died there with every other rule satisfied —
+        # and an autoedit hard failure is unrepairable, while a plan
+        # violation is just another revise. Catch it here instead.
+        avg_speed = (ramp.entrySpeed + 2 * ramp.peakSpeed + ramp.exitSpeed) / 4
+        speeds = cut_speeds.get(ramp.segmentId) or []
+        if speeds and avg_speed > 0:
+            span = ramp.sourceEnd - ramp.sourceStart
+            constant = speeds[0]
+            effective, at_constant = span / avg_speed, span / constant
+            if abs(effective - at_constant) > RAMP_CONSISTENCY_TOLERANCE:
+                v.append(
+                    f"execution: {where} averages {avg_speed:.2f}x, so its "
+                    f"{span:.2f}s of source lasts {effective:.2f}s — but the "
+                    f"timeline lays that cut out at {constant:.2f}x, lasting "
+                    f"{at_constant:.2f}s. Either re-time the timeline entry "
+                    f"to the ramped duration, or make the ramp average "
+                    f"{constant:.2f}x (entry/peak/exit average, peak counted "
+                    "twice). A ramp that changes duration without the "
+                    "timeline agreeing is rejected by the editor.")
+
         for a, b in ramp_ranges.get(ramp.segmentId, []):
             if ramp.sourceStart < b and a < ramp.sourceEnd:
                 v.append(f"execution: {where} overlaps another speed ramp on "
@@ -1610,7 +1641,13 @@ Think before you cut:
 5e-accent. Speed ramps belong on moments with a distinct physical peak (a
    lift, a flip, an impact): slow into the peak, return to speed after. Use
    them sparingly, roughly one per fifteen seconds; an accent used constantly
-   is not an accent.
+   is not an accent. A ramp CHANGES HOW LONG THE CUT LASTS, and its timeline
+   entry must already be laid out at that length: the ramp's average speed
+   (entry + 2xpeak + exit, divided by 4) must equal the cut's own speed,
+   which is (sourceOut - sourceIn) / (timelineOut - timelineIn). If those
+   disagree the edit is rejected outright. When in doubt, prefer an accent
+   made from CUT LENGTH — holding a beat longer on the peak — which needs no
+   arithmetic and is rendered today; variable-speed rendering is not.
 5a-geometry. A transition of duration D needs D/2 seconds of UNUSED source
    footage (handles) on BOTH sides of the cut: if a clip is used to its
    sourceStart/sourceEnd boundary, its handle there is 0.0s and any

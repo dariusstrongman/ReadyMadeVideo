@@ -680,10 +680,15 @@ def test_valid_ramp_crop_and_transition_accepted_together():
     plan = _valid_plan()
     plan["timeline"][1].update(sourceIn=1.0, sourceOut=5.0)
     plan["transitions"][0].update(type="dissolve", durationSeconds=0.5)
+    # The cut runs 4s of source over 4s of timeline, i.e. 1.0x, so the ramp
+    # must average 1.0x: (1.5 + 2*0.75 + 1.0)/4. It used to average 2.0x,
+    # which the PICTURE EDITOR rejects — this fixture asserted "accepted" for
+    # a plan that could never survive autoedit, and the planner now says so.
     plan["speedRamps"] = [{"segmentId": "seg-2", "sourceStart": 1.5,
-                           "sourceEnd": 4.5, "entrySpeed": 1, "peakSpeed": 3,
-                           "exitSpeed": 1, "easing": "ease-in-out",
-                           "narrativePurpose": "compress the middle"}]
+                           "sourceEnd": 4.5, "entrySpeed": 1.5,
+                           "peakSpeed": 0.75, "exitSpeed": 1.0,
+                           "easing": "ease-in-out",
+                           "narrativePurpose": "slow into the peak"}]
     plan["reframes"] = [{"segmentId": "seg-1", "outputAspectRatio": "9:16",
                          "subjectTarget": "crew",
                          "startCrop": {"x": 0.1, "y": 0.0, "width": 0.5,
@@ -1144,6 +1149,34 @@ def test_zoom_reframes_do_not_count_as_coverage():
                                   reframes=_reframes(ids, zoom=False))
     assert not any("punch in" in v for v in ep._rhythm_violations(
         ep.EditorialPlan(**static), {s.segmentId: s for s in segs}))
+
+
+def test_ramp_that_changes_duration_is_caught_at_plan_time():
+    """The real v4 plan (2026-08-10) satisfied every craft rule and then died
+    in the picture editor: 'speedRamps[0] would change the segment's duration
+    (4.8s ramped vs 6.0s at the clip's constant speed)'. An autoedit hard
+    failure is unrepairable and the customer gets nothing; a plan violation
+    is just another revise. The planner has to catch it first."""
+    plan = _valid_plan()
+    # timeline[0] runs seg-1 0->4s over 4s of timeline, i.e. 1.0x. A ramp
+    # averaging 1.5x would make that 2.67s and the editor would reject it.
+    plan["speedRamps"] = [{"segmentId": "seg-1", "sourceStart": 0.0,
+                           "sourceEnd": 4.0, "entrySpeed": 1.5,
+                           "peakSpeed": 1.5, "exitSpeed": 1.5,
+                           "narrativePurpose": "accent the lift"}]
+    flat = _reject(plan=plan, needle="averages 1.50x")
+    assert "1.00x" in flat, flat
+
+
+def test_ramp_consistent_with_its_cut_is_accepted():
+    plan = _valid_plan()
+    plan["speedRamps"] = [{"segmentId": "seg-1", "sourceStart": 0.0,
+                           "sourceEnd": 4.0, "entrySpeed": 1.2,
+                           "peakSpeed": 0.9, "exitSpeed": 1.0,
+                           "narrativePurpose": "accent the lift"}]
+    # average = (1.2 + 1.8 + 1.0)/4 = 1.0x, matching the cut's own 1.0x
+    out = ep.plan_editorial(_segments(), {}, False, _gen(plan), max_attempts=1)
+    assert out["status"] == "approved"
 
 
 def test_identical_punch_in_on_every_shot_is_not_coverage():
