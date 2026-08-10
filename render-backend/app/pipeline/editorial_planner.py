@@ -867,7 +867,13 @@ def _rhythm_violations(plan: EditorialPlan,
 
     sizes = [_shot_size(by_id[e.segmentId].shotType)
              for e in tl if e.segmentId in by_id]
-    reframed = {r.segmentId for r in plan.reframes}
+    # Only reframes the renderer will actually execute count as coverage. A
+    # zoom (crop changing size across the shot) is preserved as a pending
+    # instruction and never reaches the delivered file, so crediting it here
+    # would let the plan satisfy the rule with output the customer never sees.
+    reframed = {r.segmentId for r in plan.reframes
+                if abs(r.startCrop.width - r.endCrop.width) < 1e-6
+                and abs(r.startCrop.height - r.endCrop.height) < 1e-6}
     run = best_run = 1
     worst = ""
     for i in range(1, len(sizes)):
@@ -1539,6 +1545,13 @@ Think before you cut:
    must MANUFACTURE coverage with reframes that punch in on the subject. On
    single-camera wide footage the punch-in is the only coverage there is, and
    an edit without it looks like unedited rushes.
+   A punch-in is a TIGHTER FRAMING ON ITS OWN CUT, not a zoom inside a shot:
+   give startCrop and endCrop the SAME width and height (roughly 0.45-0.7 of
+   the frame, centred on the subject) so the cut lands already close. Leaving
+   x/y slightly different between them adds a slow drift, which is allowed.
+   A reframe whose crop CHANGES SIZE between start and end is a zoom, and
+   zooms are NOT executed by the renderer — plan one only when you actually
+   want a zoom and accept that it will not appear in the delivered file.
 5e-accent. Speed ramps belong on moments with a distinct physical peak (a
    lift, a flip, an impact): slow into the peak, return to speed after. Use
    them sparingly, roughly one per fifteen seconds; an accent used constantly

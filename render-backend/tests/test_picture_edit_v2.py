@@ -288,6 +288,51 @@ def test_static_and_pan_crops_executable_zoom_pending():
     assert any("upscale risk" in w for w in out["technicalWarnings"])
 
 
+def test_executable_reframes_reach_the_clip_not_just_the_instruction_list():
+    """The instruction list is read by the preview renderer only; the export
+    renderer reads clips. While the crop lived in one place, every punch-in was
+    visible in preview and missing from the delivered file."""
+    plan = _valid_plan()
+    plan["reframes"] = [
+        {"segmentId": "seg-1", "outputAspectRatio": "9:16",
+         "subjectTarget": "crew",
+         "startCrop": {"x": 0.1, "y": 0.0, "width": 0.5, "height": 0.9},
+         "endCrop": {"x": 0.1, "y": 0.0, "width": 0.5, "height": 0.9}},
+        {"segmentId": "seg-3", "outputAspectRatio": "9:16",
+         "subjectTarget": "crew",
+         "startCrop": {"x": 0.0, "y": 0.0, "width": 0.9, "height": 0.9},
+         "endCrop": {"x": 0.2, "y": 0.2, "width": 0.45, "height": 0.45}}]
+    out = _build(plan=plan)
+    clips = {c["segmentId"]: c for c in out["timeline"]["tracks"][0]["clips"]}
+    assert clips["seg-1"]["crop"] == {
+        "width": 0.5, "height": 0.9, "x": 0.1, "y": 0.0,
+        "endWidth": 0.5, "endHeight": 0.9, "endX": 0.1, "endY": 0.0}
+    # zoom stays pending: it is preserved as an instruction, never silently
+    # downgraded into a crop the clip would render as something else.
+    assert "crop" not in clips["seg-3"]
+    assert "seg-2" in clips and "crop" not in clips["seg-2"]
+
+
+def test_clip_crop_survives_into_the_render_filter_graph():
+    """End-to-end: plan reframe -> clip crop -> renderer_timeline -> ffmpeg."""
+    from app.product_editor import renderer_timeline
+    plan = _valid_plan()
+    plan["reframes"] = [
+        {"segmentId": "seg-1", "outputAspectRatio": "9:16",
+         "subjectTarget": "crew",
+         "startCrop": {"x": 0.1, "y": 0.0, "width": 0.5, "height": 0.9},
+         "endCrop": {"x": 0.3, "y": 0.0, "width": 0.5, "height": 0.9}}]
+    out = _build(plan=plan)
+    picture = out["timeline"]["tracks"][0]["clips"]
+    doc = {"width": 1080, "height": 1920, "fps": 30, "duration": 10.0,
+           "tracks": [{"type": "picture", "items": picture},
+                      {"type": "captions", "items": []}]}
+    tl = renderer_timeline(doc)
+    cropped = [c for c in tl["tracks"][0]["clips"] if c.get("crop")]
+    assert cropped, "crop was dropped between the edit and the renderer"
+    assert cropped[0]["crop"]["endX"] == 0.3
+
+
 def test_out_of_frame_crop_rejected():
     plan = _valid_plan()
     plan["reframes"] = [{"segmentId": "seg-1", "outputAspectRatio": "9:16",
