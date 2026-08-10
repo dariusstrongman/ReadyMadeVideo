@@ -550,8 +550,7 @@ def test_flags_off_deterministic_serialized_identity_vs_pre_phase2():
     # PERCENTAGE of available weight rather than a raw sum that totalled 100
     # by coincidence. Both are intentional; strip the new rules and compare
     # the rest, so unrelated gate drift still fails.
-    CRAFT_RULES = {"rhythm_varied", "coverage_varied", "hook_immediate",
-                   "captions_readable"}
+    from app.pipeline.editorial_planner import CRAFT_RULES
     gate = dict(result["deterministicGate"])
     added = [r for r in gate["rules"] if r["rule"] in CRAFT_RULES]
     assert {r["rule"] for r in added} == CRAFT_RULES, "expected craft rules"

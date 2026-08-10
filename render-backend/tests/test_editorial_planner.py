@@ -1064,10 +1064,11 @@ def test_metronomic_cutting_is_rejected():
     holds, no repeated value. Uniform lengths are the signature of a
     machine, and the gate scored that edit 100/100."""
     plan, segs = _rhythmic_plan([4.0] * 12)
-    with pytest.raises(ep.PlanRejected) as exc:
-        ep.plan_editorial(segs, {"durationMin": 1, "durationMax": 600},
-                          False, _gen(plan), max_attempts=1)
-    flat = " | ".join(exc.value.violations_history[0])
+    # Read the demand off a BINDING attempt: craft stops blocking on the last
+    # one so the customer still gets a video (see the leniency tests below).
+    out = ep.plan_editorial(segs, {"durationMin": 1, "durationMax": 600},
+                            False, _gen(plan), max_attempts=2)
+    flat = " | ".join(out["violationsHistory"][0])
     assert "metronomic" in flat, flat
 
 
@@ -1104,10 +1105,13 @@ def test_flat_coverage_demands_punch_ins():
     framings with no punch-ins is rejected."""
     plan, segs = _rhythmic_plan([2.0, 1.0, 4.0, 1.0, 8.0, 2.0,
                                  1.0, 4.0, 2.0, 8.0, 1.0, 3.0])
-    with pytest.raises(ep.PlanRejected) as exc:
-        ep.plan_editorial(segs, {"durationMin": 1, "durationMax": 600},
-                          False, _gen(plan), max_attempts=1)
-    assert "punch in" in " | ".join(exc.value.violations_history[0])
+    # Craft binds on every attempt but the last, so the demand under test is
+    # read off the BINDING attempt. With max_attempts=2 the model returns the
+    # same flat plan twice: attempt 1 must demand punch-ins, attempt 2 ships.
+    out = ep.plan_editorial(segs, {"durationMin": 1, "durationMax": 600},
+                            False, _gen(plan), max_attempts=2)
+    assert "punch in" in " | ".join(out["violationsHistory"][0])
+    assert out["craftDeferred"] is True
 
 
 def _reframes(ids, *, zoom):
@@ -1137,6 +1141,64 @@ def test_zoom_reframes_do_not_count_as_coverage():
                                   reframes=_reframes(ids, zoom=False))
     assert not any("punch in" in v for v in ep._rhythm_violations(
         ep.EditorialPlan(**static), {s.segmentId: s for s in segs}))
+
+
+class TestCraftRulesDoNotCostTheCustomerTheVideo:
+    """Craft rules push the model to edit better, but a flat edit delivered
+    beats PlanRejected. They bind on every attempt but the last."""
+
+    _METRONOME = [4.0] * 11 + [2.0]
+
+    def _plan(self):
+        return _rhythmic_plan(self._METRONOME)
+
+    def test_craft_failure_blocks_while_attempts_remain(self):
+        plan, segs = self._plan()
+        result = ep.plan_editorial(segs, {"durationMin": 1, "durationMax": 600},
+                                   False, _gen(plan), max_attempts=3)
+        # Attempts 1 and 2 bind craft and reject; only the 3rd ships.
+        assert result["attempts"] == 3
+        for earlier in result["violationsHistory"][:2]:
+            assert any(ep._is_craft_violation(v) for v in earlier)
+
+    def test_last_attempt_ships_a_flat_edit_instead_of_rejecting(self):
+        plan, segs = self._plan()
+        # Two attempts: the model returns the same metronomic plan both
+        # times. Attempt 1 must reject on craft; attempt 2 must deliver.
+        result = ep.plan_editorial(segs, {"durationMin": 1, "durationMax": 600},
+                                   False, _gen(plan), max_attempts=2)
+        assert result["attempts"] == 2
+        assert result["craftDeferred"] is True
+        assert any("rhythm:" in w for w in result["craftWarnings"])
+        # The first attempt's rejection was craft, proving the pressure was
+        # real before it was relaxed.
+        assert any(ep._is_craft_violation(v)
+                   for v in result["violationsHistory"][0])
+
+    def test_a_lying_plan_is_still_rejected_on_the_last_attempt(self):
+        """Leniency is for taste, never for truth."""
+        plan, segs = self._plan()
+        plan["hook"] = {**plan["hook"], "text": {
+            "text": "A helicopter lands on the roof.",
+            "claimType": "fact", "evidence": []}}
+        with pytest.raises(ep.PlanRejected):
+            ep.plan_editorial(segs, {"durationMin": 1, "durationMax": 600},
+                              False, _gen(plan), max_attempts=2)
+
+    def test_score_ignores_craft_rules_once_they_stop_binding(self):
+        """Dropping craft to 'soft' would not be enough — a failing craft rule
+        would still drag the score under the threshold and reject by the
+        other door."""
+        plan, segs = self._plan()
+        P = ep.EditorialPlan(**plan)
+        v = ep.validate_plan(P, segs, {"durationMin": 1, "durationMax": 600},
+                             False)
+        binding = ep.deterministic_gate(P, segs, {}, v, True)
+        lenient = ep.deterministic_gate(
+            P, segs, {}, [x for x in v if not ep._is_craft_violation(x)],
+            False)
+        assert {r["rule"] for r in lenient["rules"]}.isdisjoint(ep.CRAFT_RULES)
+        assert lenient["score"] > binding["score"]
 
 
 def test_short_sequences_are_not_judged_on_rhythm():

@@ -1365,9 +1365,27 @@ def validate_plan(plan: EditorialPlan, segments: list[Segment],
     return v
 
 
+# Craft rules judge how the edit FEELS, not whether it is true. They are
+# binding while repair attempts remain — that pressure is the whole point —
+# but they are not grounds to hand the customer nothing. See plan_editorial.
+CRAFT_RULES = frozenset({"rhythm_varied", "coverage_varied", "hook_immediate",
+                         "captions_readable"})
+
+# Mirrors the substrings the craft rules match on below. Kept beside them so
+# the two cannot drift: a violation the gate treats as craft must be one the
+# repair loop can also recognise as craft.
+_CRAFT_VIOLATION_MARKERS = ("rhythm:", "coverage:", "hook: the first cut",
+                            "characters/second", "on screen")
+
+
+def _is_craft_violation(v: str) -> bool:
+    return any(m in v for m in _CRAFT_VIOLATION_MARKERS)
+
+
 # ---------------------------------------------------- deterministic quality gate
 def deterministic_gate(plan: EditorialPlan, segments: list[Segment],
-                       constraints: dict, violations: list[str]) -> dict:
+                       constraints: dict, violations: list[str],
+                       craft_binding: bool = True) -> dict:
     """Independent pass/fail from VERIFIABLE properties. Every violation class
     (claims, shortfall, policy, execution geometry) is a HARD failure the
     model's self-assessment cannot override."""
@@ -1470,6 +1488,13 @@ def deterministic_gate(plan: EditorialPlan, segments: list[Segment],
     # inflated the scale and quietly changed what the approval threshold
     # meant. Normalised, the gate stays extensible: 100 is "everything
     # passed" no matter how many rules exist.
+    # On the final attempt the craft rules leave the gate entirely — not
+    # merely downgraded to soft, because a failing craft rule would still
+    # drag the SCORE under the threshold and reject the plan by the other
+    # door. Dropping them asks the honest question: is this plan true?
+    if not craft_binding:
+        rules = [r for r in rules if r["rule"] not in CRAFT_RULES]
+
     possible = sum(r["weight"] for r in rules) or 1
     earned = sum(r["weight"] for r in rules if r["passed"])
     score = int(earned * 100 / possible)
@@ -2094,7 +2119,24 @@ def plan_editorial(segments: list[Segment], constraints: dict,
         else:
             violations = validate_plan(plan, segments, constraints,
                                        music_available)
-            gate = deterministic_gate(plan, segments, constraints, violations)
+            # ESCALATING LENIENCY. Craft rules (rhythm, coverage, hook,
+            # caption speed) are aesthetic judgements, and they are binding
+            # for every attempt but the last so the model is genuinely
+            # pushed to fix them. On the final attempt they stop blocking.
+            # A flat edit delivered is worth more to the customer than
+            # PlanRejected — which is the error this loop exists to prevent,
+            # and which adding these rules would otherwise have made MORE
+            # common, not less. Truth rules (grounding, geometry, duration,
+            # policy) never soften: a plan that lies is still rejected.
+            craft_binding = _attempt < max_attempts
+            deferred_craft: list[str] = []
+            if not craft_binding:
+                deferred_craft = [x for x in violations
+                                  if _is_craft_violation(x)]
+                violations = [x for x in violations
+                              if not _is_craft_violation(x)]
+            gate = deterministic_gate(plan, segments, constraints, violations,
+                                      craft_binding)
             # Approval is DETERMINISTIC; rule-level failures always join the
             # feedback so the revise loop learns WHICH rule broke (a dishonest
             # insufficient_footage report included).
@@ -2111,6 +2153,13 @@ def plan_editorial(segments: list[Segment], constraints: dict,
                           "qualityScore": gate["score"], "status": plan.status,
                           "deterministicGate": gate,
                           "violationsHistory": history}
+                # Never swallowed: a plan approved on leniency says so, and
+                # says exactly which craft rules it is short on. Silence here
+                # would make a flat edit indistinguishable from a good one in
+                # every downstream report.
+                if deferred_craft:
+                    result["craftWarnings"] = deferred_craft
+                    result["craftDeferred"] = True
                 # Phase 2 interest gate: a scored FLOOR beside (never above)
                 # the truth gate — evaluated only for plans that already
                 # passed every truth rule, so interest can only ever choose
