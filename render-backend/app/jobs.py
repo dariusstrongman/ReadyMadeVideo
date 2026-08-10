@@ -826,6 +826,15 @@ def handle_editorial_plan(job: dict, project: dict, tmp: str, ctx: JobContext) -
             "cachedTokens": sum(r["cachedTokens"] for r in usage),
             "requests": len(usage),
             "retries": max(0, len(usage) // 2 - 1),
+            # Which wire schema actually produced the plan. Rung 0 is full
+            # enforcement; anything higher means the schema was pruned and
+            # deep repetitive sections (transitions, speed ramps, reframes)
+            # were no longer required by the wire. A plan that silently loses
+            # its craft layer looks identical to one that never had it, and
+            # this is the only signal that distinguishes them.
+            "maxLadderRung": max((r.get("ladderRung", 0) for r in usage),
+                                 default=0),
+            "degraded": any(r.get("ladderRung", 0) > 0 for r in usage),
             "estimatedCostUsd": ai_budget.cost_of(usage),
             "actualCostUsd": None,                 # billing-level actual unknown
             "pricingVersion": telemetry.pricing_version(), "at": _now()}

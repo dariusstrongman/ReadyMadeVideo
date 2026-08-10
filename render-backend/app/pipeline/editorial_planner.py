@@ -770,6 +770,21 @@ def _aspect_for(value: str | None) -> str | None:
 # How hard an edit may distil footage when the customer named no length.
 # 15:1 still allows an aggressive cut — 22 minutes down to 90 seconds — but
 # refuses the 40:1 that turns a training session into a teaser.
+def _shot_size(raw: str | None) -> str:
+    """Normalise the analyser's shot vocabulary.
+
+    It emits both "wide" and "wide shot" for the same framing (117 and 40
+    times respectively in one real catalog), which silently defeats any rule
+    that counts distinct shot sizes — two labels for one framing looks like
+    variety that is not there.
+    """
+    t = (raw or "").strip().lower()
+    for word in ("extreme close", "close", "medium", "wide", "full", "long"):
+        if word in t:
+            return "close" if word == "extreme close" else word
+    return t
+
+
 MAX_OPEN_COMPRESSION = 15.0
 OPEN_DURATION_CEILING_S = 600.0
 
@@ -1303,7 +1318,7 @@ def deterministic_gate(plan: EditorialPlan, segments: list[Segment],
     rule("no_redundant_reuse", 2, False,
          reuse_ok and no_violation("repeats an identical range"),
          f"no segment used more than {MAX_SEGMENT_REUSE}x, no duplicate ranges")
-    shot_types = {by_id[u].shotType for u in set(used)
+    shot_types = {_shot_size(by_id[u].shotType) for u in set(used)
                   if u in by_id and by_id[u].shotType}
     variety_ok = len(set(used)) >= min(2, len(segments)) \
         and (len(shot_types) >= 2 if len(shot_types) else True)
