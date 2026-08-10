@@ -14,7 +14,7 @@ os.environ["WORKER_ENABLED"] = "0"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import jobs, supa  # noqa: E402
+from app import jobs  # noqa: E402
 from app.main import app  # noqa: E402
 from app.pipeline import editorial_planner as ep  # noqa: E402
 from app.pipeline.schemas import Segment  # noqa: E402
@@ -958,3 +958,49 @@ def test_get_returns_latest_plan(monkeypatch):
     body = r.json()
     assert body["status"] == "approved" and body["quality_score"] == 100
     assert "ffmpeg" not in str(body["plan"]).lower()
+
+
+def _big_catalog():
+    """A real customer's catalog: 30 minutes of footage, many activities.
+    plannedDurationSeconds cannot be faked in a fixture — normalization
+    recomputes it from the timeline — so the floor must be tripped the way
+    it happens in production: a large catalog distilled to a teaser."""
+    segs = _segments()
+    for i in range(60):
+        segs.append(ep.Segment(
+            segmentId=f"filler-{i}", assetId="asset-1",
+            sourceStart=0.0, sourceEnd=30.0, action=f"distinct activity {i}",
+            shotType="wide", location="field"))
+    return segs
+
+
+def test_open_ended_duration_must_tell_the_whole_story():
+    """2026-08-10: "the recommended length IS the full story" was prose the
+    model could disregard, and did — 22.4 minutes of real gym footage came
+    back as an internally coherent, gate-passing 33-second teaser. With no
+    requested range the floor is now computed from the catalog and enforced
+    like every other rule that actually holds."""
+    segs = _big_catalog()
+    floor = ep._open_duration_floor(segs)
+    assert floor > 100, "a 30-minute catalog should demand a real edit"
+    with pytest.raises(ep.PlanRejected) as exc:
+        ep.plan_editorial(segs, {}, False, _gen(_valid_plan()), max_attempts=1)
+    flat = " | ".join(exc.value.violations_history[0])
+    assert "COMPLETE story" in flat, flat
+
+
+def test_a_requested_range_still_governs_when_given():
+    """Someone who asks for a 12-second cut gets one. The floor speaks only
+    when nobody said what they wanted."""
+    segs = _big_catalog()
+    plan = ep.plan_editorial(segs, {"durationMin": 5, "durationMax": 40},
+                             False, _gen(_valid_plan()))
+    assert plan["plan"]["plannedDurationSeconds"] <= 40
+
+
+def test_a_short_catalog_is_not_forced_to_pad():
+    """The rule stops teasers being sold as complete stories; it must never
+    demand length the footage cannot honestly support."""
+    segs = _segments()
+    assert ep._open_duration_floor(segs) < 12.0
+    ep.plan_editorial(segs, {}, False, _gen(_valid_plan()))

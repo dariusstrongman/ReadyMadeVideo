@@ -767,6 +767,26 @@ def _aspect_for(value: str | None) -> str | None:
 
 
 # ------------------------------------------------------------ grounding checks
+# How hard an edit may distil footage when the customer named no length.
+# 15:1 still allows an aggressive cut — 22 minutes down to 90 seconds — but
+# refuses the 40:1 that turns a training session into a teaser.
+MAX_OPEN_COMPRESSION = 15.0
+OPEN_DURATION_CEILING_S = 600.0
+
+
+def _open_duration_floor(segments: list[Segment]) -> float:
+    """The shortest defensible 'complete story' for this catalog.
+
+    Capped so an enormous catalog cannot demand an unwatchable edit: the
+    rule exists to stop teasers being passed off as complete stories, not
+    to mandate feature length.
+    """
+    raw = sum(float(sg.sourceEnd) - float(sg.sourceStart) for sg in segments)
+    if raw <= 0:
+        return 0.0
+    return min(raw / MAX_OPEN_COMPRESSION, OPEN_DURATION_CEILING_S)
+
+
 def validate_plan(plan: EditorialPlan, segments: list[Segment],
                   constraints: dict, music_available: bool) -> list[str]:
     """Grounding + binding-constraint + execution validation. The REQUEST
@@ -857,6 +877,25 @@ def validate_plan(plan: EditorialPlan, segments: list[Segment],
         v.append(f"approved plan ({plan.plannedDurationSeconds}s) falls outside "
                  f"the REQUESTED duration range {lo}-{hi}s — extend the edit or "
                  "report insufficient_footage honestly")
+    if lo is None and hi is None and plan.status == "approved":
+        # No requested range means the spec's "recommended length IS the full
+        # story" governs — but that was prose with nothing checking it, and a
+        # 22-minute catalog came back as a coherent, gate-passing 33 seconds.
+        # Every other rule that holds in this system holds because something
+        # verifies it; this one now does too.
+        floor = _open_duration_floor(segments)
+        if floor and plan.plannedDurationSeconds < floor - TIME_EPSILON:
+            raw_min = sum(float(sg.sourceEnd) - float(sg.sourceStart)
+                          for sg in segments) / 60.0
+            v.append(
+                f"duration: no range was requested, so the plan must tell the "
+                f"COMPLETE story the footage supports, but "
+                f"{plan.plannedDurationSeconds}s distils {raw_min:.1f} "
+                f"minutes of catalog — at least {floor:.0f}s is required. "
+                "Platform idiom is not a reason to drop story. Cover every "
+                "distinct activity that advances it, or set "
+                "insufficient_footage honestly.")
+
     if plan.status == "insufficient_footage":
         if in_range and (lo is not None or hi is not None):
             v.append("shortfall: the timeline already satisfies the requested "
@@ -1231,7 +1270,8 @@ def deterministic_gate(plan: EditorialPlan, segments: list[Segment],
                       "implies unsupported"),
          "every factual claim carries verified structured evidence")
     lo, hi = constraints.get("durationMin"), constraints.get("durationMax")
-    duration_ok = no_violation("REQUESTED duration range", "shortfall:") and (
+    duration_ok = no_violation("REQUESTED duration range", "shortfall:",
+                               "duration: no range was requested") and (
         ((lo is None or plan.plannedDurationSeconds >= float(lo) - TIME_EPSILON)
          and (hi is None or plan.plannedDurationSeconds <= float(hi) + TIME_EPSILON))
         or plan.status == "insufficient_footage")
