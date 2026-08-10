@@ -106,6 +106,47 @@ def _load_plan(plan_row: dict) -> tuple[EditorialPlan, list[str]]:
     return plan, reasons
 
 
+# A punch-in is aimed by the model at a subject it can only describe in
+# prose: the analyzer records "two people in a grassy field", never a
+# bounding box. So the crop is a GUESS, and these bounds decide how badly a
+# wrong guess can hurt. Below MIN_PUNCH_IN_SCALE a 1080p source is being
+# upscaled past the point of looking sharp; outside the centre band the
+# window can miss the subject entirely and frame empty background. Both are
+# pulled back rather than rejected — a slightly loose punch-in is still
+# coverage, while no punch-in at all leaves single-camera wide footage with
+# no shot variety whatsoever.
+MIN_PUNCH_IN_SCALE = 0.4
+CENTRE_BAND = (0.25, 0.75)
+
+
+def _safe_punch_in(sc, ec) -> tuple[dict, list[str]]:
+    """Clamp a planned crop to a window a wrong guess survives.
+
+    Returns the crop dict plus the names of whatever had to be adjusted, so
+    the caller can say so out loud instead of silently overriding the plan.
+    """
+    adjusted: list[str] = []
+    w = max(sc.width, MIN_PUNCH_IN_SCALE)
+    h = max(sc.height, MIN_PUNCH_IN_SCALE)
+    if w != sc.width or h != sc.height:
+        adjusted.append(f"widened to {max(w, h):.2f} of frame")
+
+    def centre(pos, size, axis):
+        c = pos + size / 2
+        lo, hi = CENTRE_BAND
+        if c < lo or c > hi:
+            adjusted.append(f"{axis} pulled toward centre")
+            c = min(hi, max(lo, c))
+        # keep the window inside the frame after re-centring
+        return round(min(1.0 - size, max(0.0, c - size / 2)), 4)
+
+    return ({"width": round(w, 4), "height": round(h, 4),
+             "x": centre(sc.x, w, "x"), "y": centre(sc.y, h, "y"),
+             "endWidth": round(w, 4), "endHeight": round(h, 4),
+             "endX": centre(ec.x, w, "endX"), "endY": centre(ec.y, h, "endY")},
+            adjusted)
+
+
 def build_picture_edit(plan_row: dict, segments: list[Segment], *,
                        now: str) -> dict:
     """Build the PictureEditV2 result from the approved plan + CURRENT catalog.
@@ -488,13 +529,16 @@ def build_picture_edit(plan_row: dict, segments: list[Segment], *,
             # only, every punch-in the planner produced was visible in preview
             # and absent from the delivered file — and the coverage_varied gate
             # rule was spending repair attempts on output nobody would receive.
+            crop, adjusted = _safe_punch_in(sc, ec)
+            if adjusted:
+                warnings.append(
+                    f"reframe on {rf.segmentId}: crop pulled back to a safe "
+                    f"window ({', '.join(adjusted)}) — the analyzer records no "
+                    "subject coordinates, so an aggressive or off-centre "
+                    "punch-in cannot be verified to contain the subject")
             for clip in clips:
                 if clip.get("segmentId") == rf.segmentId:
-                    clip["crop"] = {
-                        "width": sc.width, "height": sc.height,
-                        "x": sc.x, "y": sc.y,
-                        "endWidth": ec.width, "endHeight": ec.height,
-                        "endX": ec.x, "endY": ec.y}
+                    clip["crop"] = crop
         reframe_instructions.append(inst)
 
     if reasons:

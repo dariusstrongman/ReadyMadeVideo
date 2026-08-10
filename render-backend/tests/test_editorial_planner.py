@@ -1130,7 +1130,10 @@ def test_zoom_reframes_do_not_count_as_coverage():
     delivered file. Crediting it would let the plan satisfy the coverage rule
     with punch-ins the customer never sees."""
     durations = [2.0, 1.0, 4.0, 1.0, 8.0, 2.0, 1.0, 4.0, 2.0, 8.0, 1.0, 3.0]
-    ids = ["r0", "r1", "r2", "r3"]
+    # ALTERNATING punch-ins: the rule measures the size each shot reads as,
+    # so coverage means tight/wide/tight/wide, not a block of punch-ins
+    # followed by a block of wides (which is still two flat runs).
+    ids = [f"r{i}" for i in range(0, len(durations), 2)]
     zoomed, segs = _rhythmic_plan(durations, reframes=_reframes(ids, zoom=True))
     by_id = {s.segmentId: s for s in segs}
     assert any("punch in" in v for v in ep._rhythm_violations(
@@ -1141,6 +1144,46 @@ def test_zoom_reframes_do_not_count_as_coverage():
                                   reframes=_reframes(ids, zoom=False))
     assert not any("punch in" in v for v in ep._rhythm_violations(
         ep.EditorialPlan(**static), {s.segmentId: s for s in segs}))
+
+
+def test_identical_punch_in_on_every_shot_is_not_coverage():
+    """From the real 2026-08-10 v3 plan: asked to manufacture coverage, the
+    model punched in on 100% of shots with the SAME 0.6 crop centred at
+    0.5/0.5. That is a 40% zoom on the whole video — every shot still reads
+    the same size, which is precisely what the rule forbids. Counting
+    reframes let it pass; measuring effective size does not."""
+    durations = [4.0, 2.0, 6.0, 3.0, 8.0, 2.0, 5.0, 4.0, 2.0, 7.0, 3.0, 4.0]
+    uniform = [{"segmentId": f"r{i}", "outputAspectRatio": "9:16",
+                "subjectTarget": "athlete",
+                "startCrop": {"x": 0.2, "y": 0.2, "width": 0.6, "height": 0.6},
+                "endCrop": {"x": 0.2, "y": 0.2, "width": 0.6, "height": 0.6}}
+               for i in range(len(durations))]
+    plan, segs = _rhythmic_plan(durations, reframes=uniform)
+    v = ep._rhythm_violations(ep.EditorialPlan(**plan),
+                              {s.segmentId: s for s in segs})
+    coverage = [x for x in v if x.startswith("coverage:")]
+    assert coverage, "a uniform crop on every shot must not pass as coverage"
+    assert "same crop" in coverage[0], coverage[0]
+
+
+def test_varied_punch_in_depths_read_as_coverage():
+    """Alternating tight and loose crops genuinely change shot size."""
+    durations = [4.0, 2.0, 6.0, 3.0, 8.0, 2.0, 5.0, 4.0, 2.0, 7.0, 3.0, 4.0]
+    varied = []
+    for i in range(len(durations)):
+        w = (0.48, 1.0, 0.68, 1.0)[i % 4]      # tight, wide, mid, wide
+        if w >= 1.0:
+            continue
+        varied.append({"segmentId": f"r{i}", "outputAspectRatio": "9:16",
+                       "subjectTarget": "athlete",
+                       "startCrop": {"x": (1 - w) / 2, "y": (1 - w) / 2,
+                                     "width": w, "height": w},
+                       "endCrop": {"x": (1 - w) / 2, "y": (1 - w) / 2,
+                                   "width": w, "height": w}})
+    plan, segs = _rhythmic_plan(durations, reframes=varied)
+    v = ep._rhythm_violations(ep.EditorialPlan(**plan),
+                              {s.segmentId: s for s in segs})
+    assert not [x for x in v if x.startswith("coverage:")], v
 
 
 class TestCraftRulesDoNotCostTheCustomerTheVideo:

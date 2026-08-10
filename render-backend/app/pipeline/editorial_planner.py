@@ -865,15 +865,35 @@ def _rhythm_violations(plan: EditorialPlan,
             "twice in a row. Hold on moments that earn it; cut fast through "
             "repetition.")
 
-    sizes = [_shot_size(by_id[e.segmentId].shotType)
-             for e in tl if e.segmentId in by_id]
     # Only reframes the renderer will actually execute count as coverage. A
     # zoom (crop changing size across the shot) is preserved as a pending
     # instruction and never reaches the delivered file, so crediting it here
     # would let the plan satisfy the rule with output the customer never sees.
-    reframed = {r.segmentId for r in plan.reframes
-                if abs(r.startCrop.width - r.endCrop.width) < 1e-6
-                and abs(r.startCrop.height - r.endCrop.height) < 1e-6}
+    crops = {r.segmentId: r.startCrop.width for r in plan.reframes
+             if abs(r.startCrop.width - r.endCrop.width) < 1e-6
+             and abs(r.startCrop.height - r.endCrop.height) < 1e-6}
+
+    # EFFECTIVE shot size, not reframe count. Counting reframes was gameable
+    # and duly gamed: a real plan answered this rule with a punch-in on 100%
+    # of shots, every one an identical 0.6 crop centred at 0.5/0.5. That is
+    # not coverage, it is zooming the whole video in 40% — consecutive shots
+    # are still all the same size, which is the exact thing the 30-degree
+    # rule forbids. A punch-in only counts when it makes THIS shot a
+    # different size from its neighbour.
+    sizes = []
+    for e in tl:
+        seg = by_id.get(e.segmentId)
+        if not seg:
+            continue
+        base = _shot_size(seg.shotType)
+        w = crops.get(e.segmentId)
+        if w is None or w > 0.75:
+            sizes.append(base)          # no punch-in worth the name
+        elif w <= 0.5:
+            sizes.append(f"{base}/tight")
+        else:
+            sizes.append(f"{base}/mid")
+
     run = best_run = 1
     worst = ""
     for i in range(1, len(sizes)):
@@ -883,16 +903,19 @@ def _rhythm_violations(plan: EditorialPlan,
                 best_run, worst = run, sizes[i]
         else:
             run = 1
-    # A punch-in manufactures the missing size change, so a run that is
-    # broken up by reframes is legitimate coverage rather than a flat one.
-    if best_run > MAX_SAME_SIZE_RUN and len(reframed) < len(tl) // 4:
+    if best_run > MAX_SAME_SIZE_RUN:
+        uniform = (f" Every one of your {len(crops)} punch-ins uses the same "
+                   "crop, so they change nothing between shots."
+                   if len(crops) >= len(sizes) - 1 and len(set(
+                       round(v, 2) for v in crops.values())) <= 1 else "")
         out.append(
-            f"coverage: {best_run} consecutive '{worst}' shots with only "
-            f"{len(reframed)} reframes. Cutting between shots of the same "
-            "size and angle reads as a mistake (the 30-degree rule). If the "
-            "catalog offers no closer framing, MANUFACTURE it: add reframes "
-            "that punch in on the subject for some of those cuts. On "
-            "single-camera wide footage the punch-in IS the coverage.")
+            f"coverage: {best_run} consecutive shots read as the same size "
+            f"('{worst}'). Cutting between shots of the same size and angle "
+            f"reads as a mistake (the 30-degree rule).{uniform} If the "
+            "catalog offers no closer framing, MANUFACTURE it: punch in on "
+            "SOME cuts and leave others wide, and vary how tight the "
+            "punch-ins are. Alternating sizes is the coverage; a uniform "
+            "crop on every shot is just a zoom.")
 
     first = round(tl[0].sourceOut - tl[0].sourceIn, 2)
     if first > HOOK_FIRST_CUT_S:
@@ -1577,6 +1600,13 @@ Think before you cut:
    A reframe whose crop CHANGES SIZE between start and end is a zoom, and
    zooms are NOT executed by the renderer — plan one only when you actually
    want a zoom and accept that it will not appear in the delivered file.
+   What is measured is the size a shot READS as, not how many reframes you
+   sent. Punching in on every cut with one crop width is not coverage — it
+   is a 40% zoom on the whole video, and it fails this rule exactly as a
+   plan with no reframes at all does. Punch in on SOME cuts and leave the
+   others wide, and vary the crop width between them (a tight ~0.45-0.5 and
+   a looser ~0.6-0.7 read as different sizes; anything above 0.75 does not
+   read as a punch-in at all).
 5e-accent. Speed ramps belong on moments with a distinct physical peak (a
    lift, a flip, an impact): slow into the peak, return to speed after. Use
    them sparingly, roughly one per fifteen seconds; an accent used constantly

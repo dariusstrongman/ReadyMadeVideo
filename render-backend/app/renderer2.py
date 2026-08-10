@@ -152,9 +152,13 @@ def compile_timeline(timeline: dict, sources: dict[str, str], out_path: str,
             # punch-in's job is the closer shot, and on single-camera wide
             # coverage that tighter frame IS the shot variety. The drift adds
             # life without pretending to be a zoom.
-            sw, sh = _f("width", 0.2, 1.0, 1.0), _f("height", 0.2, 1.0, 1.0)
-            ew = _f("endWidth", 0.2, 1.0, sw)
-            eh = _f("endHeight", 0.2, 1.0, sh)
+            # 0.4 floor, matching picture_edit_v2.MIN_PUNCH_IN_SCALE: a crop
+            # tighter than that upscales a 1080p source past looking sharp.
+            # Enforced here too because this renderer executes any crop it is
+            # handed, including from documents an editor may have revised.
+            sw, sh = _f("width", 0.4, 1.0, 1.0), _f("height", 0.4, 1.0, 1.0)
+            ew = _f("endWidth", 0.4, 1.0, sw)
+            eh = _f("endHeight", 0.4, 1.0, sh)
             cw_f, ch_f = min(sw, ew), min(sh, eh)
             sx = _f("x", 0.0, 1.0, 0.0)
             sy = _f("y", 0.0, 1.0, 0.0)

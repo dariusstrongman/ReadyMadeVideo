@@ -304,6 +304,8 @@ def test_executable_reframes_reach_the_clip_not_just_the_instruction_list():
          "endCrop": {"x": 0.2, "y": 0.2, "width": 0.45, "height": 0.45}}]
     out = _build(plan=plan)
     clips = {c["segmentId"]: c for c in out["timeline"]["tracks"][0]["clips"]}
+    # This crop is already safe (0.5x0.9, centred at 0.35/0.45), so the guard
+    # passes it through unchanged.
     assert clips["seg-1"]["crop"] == {
         "width": 0.5, "height": 0.9, "x": 0.1, "y": 0.0,
         "endWidth": 0.5, "endHeight": 0.9, "endX": 0.1, "endY": 0.0}
@@ -331,6 +333,57 @@ def test_clip_crop_survives_into_the_render_filter_graph():
     cropped = [c for c in tl["tracks"][0]["clips"] if c.get("crop")]
     assert cropped, "crop was dropped between the edit and the renderer"
     assert cropped[0]["crop"]["endX"] == 0.3
+
+
+def test_punch_in_aimed_at_a_corner_is_pulled_back_toward_centre():
+    """The analyzer records no subject coordinates — 'two people in a grassy
+    field', never a box — so a crop is the model's guess. A guess aimed at a
+    corner frames empty background; it is pulled back rather than trusted."""
+    plan = _valid_plan()
+    plan["reframes"] = [{"segmentId": "seg-1", "outputAspectRatio": "9:16",
+                         "subjectTarget": "crew",
+                         "startCrop": {"x": 0.0, "y": 0.0,
+                                       "width": 0.42, "height": 0.42},
+                         "endCrop": {"x": 0.0, "y": 0.0,
+                                     "width": 0.42, "height": 0.42}}]
+    out = _build(plan=plan)
+    crop = {c["segmentId"]: c for c in
+            out["timeline"]["tracks"][0]["clips"]}["seg-1"]["crop"]
+    # centre was 0.21/0.21, outside the 0.25-0.75 band, so it moved inward
+    assert crop["x"] + crop["width"] / 2 >= 0.25
+    assert crop["y"] + crop["height"] / 2 >= 0.25
+    assert any("toward centre" in w for w in out["technicalWarnings"])
+
+
+def test_over_tight_punch_in_is_widened_not_rejected():
+    """A 0.15 crop upscales 1080p past looking sharp. Widening keeps the
+    coverage a wide-only catalog depends on; rejecting would leave none."""
+    plan = _valid_plan()
+    plan["reframes"] = [{"segmentId": "seg-1", "outputAspectRatio": "9:16",
+                         "subjectTarget": "crew",
+                         "startCrop": {"x": 0.4, "y": 0.4,
+                                       "width": 0.15, "height": 0.15},
+                         "endCrop": {"x": 0.4, "y": 0.4,
+                                     "width": 0.15, "height": 0.15}}]
+    out = _build(plan=plan)
+    crop = {c["segmentId"]: c for c in
+            out["timeline"]["tracks"][0]["clips"]}["seg-1"]["crop"]
+    assert crop["width"] >= 0.4 and crop["height"] >= 0.4
+    assert any("widened" in w for w in out["technicalWarnings"])
+    # still a punch-in, not silently reset to the full frame
+    assert crop["width"] < 1.0
+
+
+def test_guarded_crop_never_leaves_the_frame():
+    from app.pipeline.picture_edit_v2 import _safe_punch_in
+    from app.pipeline.editorial_planner import Crop
+    for x, y, w, h in [(0.0, 0.0, 0.05, 0.05), (0.95, 0.95, 0.1, 0.1),
+                       (0.6, 0.6, 0.9, 0.9), (0.5, 0.0, 0.5, 1.0)]:
+        c = Crop(x=x, y=y, width=w, height=h)
+        got, _ = _safe_punch_in(c, c)
+        assert 0.0 <= got["x"] <= 1.0 - got["width"] + 1e-9
+        assert 0.0 <= got["y"] <= 1.0 - got["height"] + 1e-9
+        assert 0.0 <= got["endX"] <= 1.0 - got["width"] + 1e-9
 
 
 def test_out_of_frame_crop_rejected():
