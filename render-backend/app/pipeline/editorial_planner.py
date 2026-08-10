@@ -785,6 +785,29 @@ def _shot_size(raw: str | None) -> str:
     return t
 
 
+# --- rhythm and coverage, from editing craft rather than taste ------------
+# Shot-length distributions in edited film are lognormal, never uniform
+# (Salt/Redfern via Cinemetrics; Bordwell puts modern ASL at 3-6s). An edit
+# whose lengths cluster on one value has near-zero variance, which is the
+# signature of a machine rather than a style. These are permissive floors,
+# not targets.
+RHYTHM_MIN_SHOTS = 8           # below this a sequence is too short to judge
+# Craft guidance says 0.6, but that conflicts with the musical-grid advice
+# given in the same breath: lengths drawn from {1,2,4,8} beats cannot be 60%
+# unique across a dozen cuts, so the two rules together are unsatisfiable and
+# the repair loop would thrash. The run, variance and spread checks below
+# catch metronomic cutting on their own — the real edit that prompted this
+# scored 0.13 here, run 11, CV 0.17. This is a floor against pathology, not
+# a target.
+RHYTHM_MIN_DISTINCT_RATIO = 0.3
+RHYTHM_MAX_SAME_RUN = 2
+RHYTHM_MIN_CV = 0.35
+RHYTHM_MIN_SPREAD = 3.0        # longest cut vs shortest
+MAX_SAME_SIZE_RUN = 3          # the 30-degree rule, in shot-size terms
+CAPTION_MAX_CPS = 17.0         # Netflix Timed Text: adult reading speed
+CAPTION_MIN_S, CAPTION_MAX_S = 0.83, 7.0
+HOOK_FIRST_CUT_S = 3.0         # TikTok's own guidance: hook inside 3 seconds
+
 MAX_OPEN_COMPRESSION = 15.0
 OPEN_DURATION_CEILING_S = 600.0
 
@@ -800,6 +823,93 @@ def _open_duration_floor(segments: list[Segment]) -> float:
     if raw <= 0:
         return 0.0
     return min(raw / MAX_OPEN_COMPRESSION, OPEN_DURATION_CEILING_S)
+
+
+def _rhythm_violations(plan: EditorialPlan,
+                       by_id: dict[str, Segment]) -> list[str]:
+    """Craft rules an edit must satisfy to read as edited rather than sliced.
+
+    Deliberately says what to do INSTEAD, not just what is wrong: a plan
+    told only "vary the lengths" comes back with uniform 3.7s cuts. The
+    remedy for a run of identical framings is a punch-in, which is what a
+    human editor does with single-camera coverage, and the only way to get
+    shot variety out of a catalog that is entirely wide shots.
+    """
+    tl = plan.timeline
+    out: list[str] = []
+    if len(tl) < RHYTHM_MIN_SHOTS:
+        return out
+
+    d = [round(e.sourceOut - e.sourceIn, 2) for e in tl]
+    distinct_ratio = len(set(d)) / len(d)
+    run = best = 1
+    for i in range(1, len(d)):
+        run = run + 1 if d[i] == d[i - 1] else 1
+        best = max(best, run)
+    mean = sum(d) / len(d)
+    cv = (sum((x - mean) ** 2 for x in d) / len(d)) ** 0.5 / mean if mean else 0
+    spread = (max(d) / min(d)) if min(d) > 0 else 0
+
+    if (distinct_ratio < RHYTHM_MIN_DISTINCT_RATIO
+            or best > RHYTHM_MAX_SAME_RUN
+            or cv < RHYTHM_MIN_CV
+            or spread < RHYTHM_MIN_SPREAD):
+        out.append(
+            f"rhythm: the cut is metronomic — {len(set(d))} distinct lengths "
+            f"across {len(d)} cuts, longest identical run {best}, variation "
+            f"{cv:.2f}, longest/shortest {spread:.1f}. Real edits have "
+            "lognormal shot lengths: many short cuts, a few long holds, no "
+            "single repeated value. Quantise lengths to a musical grid but "
+            "VARY THE MULTIPLE — pick from roughly {1, 2, 4, 8} beats and use "
+            "at least three different ones, never the same multiple more than "
+            "twice in a row. Hold on moments that earn it; cut fast through "
+            "repetition.")
+
+    sizes = [_shot_size(by_id[e.segmentId].shotType)
+             for e in tl if e.segmentId in by_id]
+    reframed = {r.segmentId for r in plan.reframes}
+    run = best_run = 1
+    worst = ""
+    for i in range(1, len(sizes)):
+        if sizes[i] and sizes[i] == sizes[i - 1]:
+            run += 1
+            if run > best_run:
+                best_run, worst = run, sizes[i]
+        else:
+            run = 1
+    # A punch-in manufactures the missing size change, so a run that is
+    # broken up by reframes is legitimate coverage rather than a flat one.
+    if best_run > MAX_SAME_SIZE_RUN and len(reframed) < len(tl) // 4:
+        out.append(
+            f"coverage: {best_run} consecutive '{worst}' shots with only "
+            f"{len(reframed)} reframes. Cutting between shots of the same "
+            "size and angle reads as a mistake (the 30-degree rule). If the "
+            "catalog offers no closer framing, MANUFACTURE it: add reframes "
+            "that punch in on the subject for some of those cuts. On "
+            "single-camera wide footage the punch-in IS the coverage.")
+
+    first = round(tl[0].sourceOut - tl[0].sourceIn, 2)
+    if first > HOOK_FIRST_CUT_S:
+        out.append(
+            f"hook: the first cut is {first}s. The opening shot must land "
+            f"inside {HOOK_FIRST_CUT_S}s — a viewer decides to stay in the "
+            "first seconds, and a long static opening spends that budget.")
+
+    for i, c in enumerate(plan.captions):
+        dur = c.timelineEnd - c.timelineStart
+        if dur <= 0:
+            continue
+        cps = len(c.text) / dur
+        if cps > CAPTION_MAX_CPS:
+            out.append(
+                f"captions[{i}] runs at {cps:.0f} characters/second; "
+                f"{CAPTION_MAX_CPS:.0f} is the readable ceiling. Hold it "
+                "longer or write it shorter.")
+        if not (CAPTION_MIN_S <= dur <= CAPTION_MAX_S):
+            out.append(
+                f"captions[{i}] is on screen {dur:.2f}s; readable captions "
+                f"last {CAPTION_MIN_S}-{CAPTION_MAX_S}s.")
+    return out
 
 
 def validate_plan(plan: EditorialPlan, segments: list[Segment],
@@ -892,6 +1002,9 @@ def validate_plan(plan: EditorialPlan, segments: list[Segment],
         v.append(f"approved plan ({plan.plannedDurationSeconds}s) falls outside "
                  f"the REQUESTED duration range {lo}-{hi}s — extend the edit or "
                  "report insufficient_footage honestly")
+    if plan.status == "approved":
+        v.extend(_rhythm_violations(plan, by_id))
+
     if lo is None and hi is None and plan.status == "approved":
         # No requested range means the spec's "recommended length IS the full
         # story" governs — but that was prose with nothing checking it, and a
@@ -1324,6 +1437,17 @@ def deterministic_gate(plan: EditorialPlan, segments: list[Segment],
         and (len(shot_types) >= 2 if len(shot_types) else True)
     rule("visual_variety", 2, False, variety_ok,
          "multiple distinct segments / shot types where the catalog offers them")
+    # Craft is not decoration: an edit whose shot lengths never vary reads as
+    # machine output regardless of how well the story is chosen.
+    rule("rhythm_varied", 8, True, no_violation("rhythm:"),
+         "shot lengths vary like an edit, not a metronome")
+    rule("coverage_varied", 6, True, no_violation("coverage:"),
+         "consecutive same-size shots are broken up, by punch-in if needed")
+    rule("hook_immediate", 4, True, no_violation("hook: the first cut"),
+         "the opening lands inside the first seconds")
+    rule("captions_readable", 3, False,
+         no_violation("characters/second", "on screen"),
+         "captions are readable at normal reading speed")
     flagged = [u for u in set(used) if u in by_id and by_id[u].problems]
     rule("technical_warnings_surfaced", 3, False,
          (not flagged) or bool(plan.technicalWarnings),
@@ -1335,7 +1459,14 @@ def deterministic_gate(plan: EditorialPlan, segments: list[Segment],
          not policies["unresolvedToneDirectives"],
          "every tone/style directive maps to enforceable structured policy")
 
-    score = sum(r["weight"] for r in rules if r["passed"])
+    # A PERCENTAGE of the weight on offer, not a raw sum. The weights used
+    # to total exactly 100 by coincidence, so adding any rule silently
+    # inflated the scale and quietly changed what the approval threshold
+    # meant. Normalised, the gate stays extensible: 100 is "everything
+    # passed" no matter how many rules exist.
+    possible = sum(r["weight"] for r in rules) or 1
+    earned = sum(r["weight"] for r in rules if r["passed"])
+    score = int(earned * 100 / possible)
     hard_failures = [r["rule"] for r in rules if r["hard"] and not r["passed"]]
     return {"rules": rules, "score": score, "hardFailures": hard_failures,
             "passed": score >= APPROVAL_THRESHOLD and not hard_failures}
@@ -1395,6 +1526,23 @@ Think before you cut:
    story. A 25-minute training session with four distinct exercises and
    spoken context is not a 25-second story. When the request DOES give a
    range, recommend the length within it that tells the most complete story.
+5c-rhythm. SHOT LENGTHS MUST VARY. Edited film has lognormal shot lengths:
+   many short cuts, a few long holds, no single value repeated. Choose each
+   cut's length from a musical grid — roughly 1, 2, 4 or 8 beats — but use
+   at least three different multiples and never the same one more than twice
+   in a row. Hold longer on a moment that earns it (an effort, a reaction, a
+   payoff); cut fast through repetition. Uniform cut lengths are the single
+   clearest signature of a machine edit.
+5d-coverage. Cutting between two shots of the same size and angle reads as a
+   mistake, not a cut (the 30-degree rule). Alternate shot sizes where the
+   catalog offers them. WHERE IT DOES NOT — footage that is all wide — you
+   must MANUFACTURE coverage with reframes that punch in on the subject. On
+   single-camera wide footage the punch-in is the only coverage there is, and
+   an edit without it looks like unedited rushes.
+5e-accent. Speed ramps belong on moments with a distinct physical peak (a
+   lift, a flip, an impact): slow into the peak, return to speed after. Use
+   them sparingly, roughly one per fifteen seconds; an accent used constantly
+   is not an accent.
 5a-geometry. A transition of duration D needs D/2 seconds of UNUSED source
    footage (handles) on BOTH sides of the cut: if a clip is used to its
    sourceStart/sourceEnd boundary, its handle there is 0.0s and any

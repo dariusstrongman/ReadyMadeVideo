@@ -177,7 +177,14 @@ def test_valid_plan_approved_by_deterministic_gate():
     assert out["attempts"] == 1 and out["status"] == "approved"
     assert out["qualityScore"] == 100
     assert out["deterministicGate"]["passed"] is True
-    assert sum(r["weight"] for r in out["deterministicGate"]["rules"]) == 100
+    # The score is a PERCENTAGE of the weight on offer. It used to be a raw
+    # sum that totalled 100 only by coincidence, so adding a rule silently
+    # rescaled the gate and changed what the approval threshold meant.
+    rules = out["deterministicGate"]["rules"]
+    assert all(r["passed"] for r in rules), \
+        [r["rule"] for r in rules if not r["passed"]]
+    assert sum(r["weight"] for r in rules) > 100, \
+        "craft rules should have added weight, not replaced it"
 
 
 def test_schema_version_is_enforced():
@@ -1004,3 +1011,108 @@ def test_a_short_catalog_is_not_forced_to_pad():
     segs = _segments()
     assert ep._open_duration_floor(segs) < 12.0
     ep.plan_editorial(segs, {}, False, _gen(_valid_plan()))
+
+
+def _rhythmic_plan(durations, shot_size="wide", reframes=None):
+    """A plan whose cut lengths are exactly `durations`, on a catalog large
+    enough for the rhythm rules to apply."""
+    segs = [ep.Segment(segmentId=f"r{i}", assetId="asset-1",
+                       sourceStart=0.0, sourceEnd=30.0,
+                       action=f"activity {i}", shotType=shot_size,
+                       location="field")
+            for i in range(len(durations))]
+    plan = _valid_plan()
+    template = plan["timeline"][0]          # real shape, not an invented one
+    tl, t = [], 0.0
+    for i, d in enumerate(durations):
+        tl.append({**template, "segmentId": f"r{i}", "assetId": "asset-1",
+                   "sourceIn": 0.0, "sourceOut": d,
+                   "timelineIn": t, "timelineOut": t + d,
+                   "beat": "payoff" if i == len(durations) - 1 else "build"})
+        t += d
+    plan["timeline"] = tl
+    plan["plannedDurationSeconds"] = t
+    plan["hook"] = {**plan["hook"], "segmentId": "r0", "sourceIn": 0.0,
+                    "sourceOut": durations[0], "durationSeconds": durations[0]}
+    plan["captions"] = []
+    plan["transitions"] = []
+    plan["speedRamps"] = []
+    plan["reframes"] = reframes or []
+    plan["audio"] = {**plan["audio"], "naturalSoundSegmentIds": [],
+                     "jCutSegmentIds": [], "lCutSegmentIds": []}
+    # Sections still pointing at the fixture's original segments would fail
+    # for unrelated reasons and mask what these tests are actually checking.
+    plan["audioTreatments"] = []
+    plan["colorStabilization"] = []
+    plan["graphics"] = []
+    # Ground the root claims in THIS catalog: the fixture's original wording
+    # names things these filler segments never show.
+    grounded = {"text": "activity 0",
+                "claimType": "fact",
+                "evidence": [{"sourceType": "segment_metadata",
+                              "segmentId": "r0",
+                              "quoteOrValue": "activity 0"}]}
+    for key in ("storySentence", "viewerPromise"):
+        if isinstance(plan.get(key), dict):
+            plan[key] = {**plan[key], **grounded}
+    return plan, segs
+
+
+def test_metronomic_cutting_is_rejected():
+    """2026-08-10, from a real edit: 20 of 23 cuts at exactly 4.0s. Shot
+    lengths in edited film are lognormal — many short cuts, a few long
+    holds, no repeated value. Uniform lengths are the signature of a
+    machine, and the gate scored that edit 100/100."""
+    plan, segs = _rhythmic_plan([4.0] * 12)
+    with pytest.raises(ep.PlanRejected) as exc:
+        ep.plan_editorial(segs, {"durationMin": 1, "durationMax": 600},
+                          False, _gen(plan), max_attempts=1)
+    flat = " | ".join(exc.value.violations_history[0])
+    assert "metronomic" in flat, flat
+
+
+def test_varied_rhythm_passes():
+    """The remedy the spec asks for: musical multiples, varied. This must
+    pass, or the rule is unsatisfiable and the repair loop will thrash."""
+    plan, segs = _rhythmic_plan([2.0, 1.0, 4.0, 1.0, 8.0, 2.0,
+                                 1.0, 4.0, 2.0, 8.0, 1.0, 3.0])
+    # All-wide footage, so the plan must manufacture its own coverage —
+    # exactly what the rule asks for.
+    # A real catalog has some size variation; the all-wide case is covered
+    # by test_flat_coverage_demands_punch_ins.
+    for i in (2, 5, 9):
+        segs[i] = ep.Segment(segmentId=f"r{i}", assetId="asset-1",
+                             sourceStart=0.0, sourceEnd=30.0,
+                             action=f"activity {i}", shotType="medium",
+                             location="field")
+    plan["reframes"] = [{"segmentId": f"r{i}", "outputAspectRatio": "9:16",
+                         "subjectTarget": "the subject",
+                         "startCrop": {"x": 0.0, "y": 0.0,
+                                       "width": 1.0, "height": 1.0},
+                         "endCrop": {"x": 0.15, "y": 0.1,
+                                     "width": 0.7, "height": 0.7},
+                         "trackingMode": "static"}
+                        for i in (1, 4, 7, 10)]
+    out = ep.plan_editorial(segs, {"durationMin": 1, "durationMax": 600},
+                            False, _gen(plan))
+    assert out["status"] == "approved"
+
+
+def test_flat_coverage_demands_punch_ins():
+    """All-wide footage — 157 of 177 segments in the real gym catalog. The
+    only way to vary shot size is a reframe, so a long run of identical
+    framings with no punch-ins is rejected."""
+    plan, segs = _rhythmic_plan([2.0, 1.0, 4.0, 1.0, 8.0, 2.0,
+                                 1.0, 4.0, 2.0, 8.0, 1.0, 3.0])
+    with pytest.raises(ep.PlanRejected) as exc:
+        ep.plan_editorial(segs, {"durationMin": 1, "durationMax": 600},
+                          False, _gen(plan), max_attempts=1)
+    assert "punch in" in " | ".join(exc.value.violations_history[0])
+
+
+def test_short_sequences_are_not_judged_on_rhythm():
+    """Three cuts cannot demonstrate a distribution; the rules must not fire
+    on sequences too short to have rhythm."""
+    plan, segs = _rhythmic_plan([4.0, 4.0, 4.0])
+    assert ep._rhythm_violations(
+        ep.EditorialPlan(**plan), {s.segmentId: s for s in segs}) == []

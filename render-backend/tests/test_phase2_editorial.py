@@ -515,8 +515,26 @@ def test_flags_off_deterministic_serialized_identity_vs_pre_phase2():
                 out.append(p_)
         return out
 
-    assert _normalize_vocab(captured["parts"]) \
-        == _normalize_vocab(golden["parts"])             # prompt: identical
+    def _normalize_craft(parts):
+        """2026-08-10: spec sections 5c-rhythm / 5d-coverage / 5e-accent were
+        added after a real edit came back with 20 of 23 cuts at exactly 4.0s,
+        zero reframes and zero ramps. That is an INTENTIONAL change to the
+        baseline for every plan, flags or not. Strip the new block from both
+        sides and assert it is exactly that, so any OTHER prompt drift still
+        fails this test."""
+        out = []
+        for p_ in parts:
+            i, j = p_.find("5c-rhythm."), p_.find("5a-geometry.")
+            out.append(p_[:i] + p_[j:] if 0 <= i < j else p_)
+        return out
+
+    assert _normalize_craft(_normalize_vocab(captured["parts"])) \
+        == _normalize_craft(_normalize_vocab(golden["parts"]))  # prompt: identical
+    spec_now = next(p_ for p_ in captured["parts"] if "5c-rhythm." in p_)
+    for marker in ("5c-rhythm.", "5d-coverage.", "5e-accent."):
+        assert marker in spec_now, f"{marker} missing from the spec"
+    assert not any("5c-rhythm." in p_ for p_ in golden["parts"]), \
+        "the golden predates the craft rules; that is the documented delta"
     vocab_now = next(p_ for p_ in captured["parts"]
                      if p_.startswith("ALLOWED FACTUAL VOCABULARY"))
     vocab_then = next(p_ for p_ in golden["parts"]
@@ -528,7 +546,19 @@ def test_flags_off_deterministic_serialized_identity_vs_pre_phase2():
     assert plan.pop("loops") == []                       # documented delta 1
     assert plan.pop("dialogueAdjustments") == []         # documented delta 2
     assert plan.pop("brollInsertions") == []             # documented delta 3 (Phase 3)
-    got = {**result, "plan": plan}
+    # The gate gained four craft rules on 2026-08-10 and its score became a
+    # PERCENTAGE of available weight rather than a raw sum that totalled 100
+    # by coincidence. Both are intentional; strip the new rules and compare
+    # the rest, so unrelated gate drift still fails.
+    CRAFT_RULES = {"rhythm_varied", "coverage_varied", "hook_immediate",
+                   "captions_readable"}
+    gate = dict(result["deterministicGate"])
+    added = [r for r in gate["rules"] if r["rule"] in CRAFT_RULES]
+    assert {r["rule"] for r in added} == CRAFT_RULES, "expected craft rules"
+    assert all(r["passed"] for r in added), \
+        "the golden fixture should satisfy the craft rules"
+    gate["rules"] = [r for r in gate["rules"] if r["rule"] not in CRAFT_RULES]
+    got = {**result, "plan": plan, "deterministicGate": gate}
     assert _json.dumps(got, sort_keys=True, default=str) \
         == _json.dumps(golden["result"], sort_keys=True, default=str)
 
