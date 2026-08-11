@@ -7,6 +7,7 @@ import { editorApi } from '../lib/editor'
 import { UPLOAD_LIMIT_TEXT } from '../lib/config'
 import { MultipartUpload, UploadError, createRealTransport, interruptedUploads, validateFile } from '../lib/s3upload'
 import { availableDurationBands } from '../lib/duration'
+import OutputChooser from '../components/OutputChooser'
 
 // A customer export is a Product Editor render: pipeline_jobs.kind === 'final_render'
 // carrying an editor_document_id. Analysis/autoedit jobs are never exports.
@@ -179,6 +180,17 @@ export default function Project() {
   const [pendingFiles, setPendingFiles] = useState([])
   const fileInputRef = useRef(null)
   const pollRef = useRef(null)
+  // Output Intelligence: null = flag off / not probed; [] = flag on, none yet.
+  // One GET per page load; a 404 (flag off) leaves the classic journey
+  // byte-identical. Packages existing => the package view owns the page.
+  const [oiPackages, setOiPackages] = useState(null)
+  useEffect(() => {
+    let dead = false
+    editorApi(`/projects/${projectId}/output-packages`, session)
+      .then(out => { if (!dead) setOiPackages(out.packages || []) })
+      .catch(() => {})           // 404 = feature off; transient errors: classic view
+    return () => { dead = true }
+  }, [projectId, session])
   const videoRef = useRef(null)
 
   const load = useCallback(async () => {
@@ -464,6 +476,23 @@ export default function Project() {
         <Breadcrumb projectName={project.name} projectId={projectId} />
         <ExportView job={latestExport} project={project} projectId={projectId}
           session={session} onRetry={load} />
+      </>
+    )
+  }
+
+  // ── Output Intelligence takeover ──
+  // Active when the flagged backend finished analysis into a choice, or a
+  // package already exists (any device, any reload). Flag off => oiPackages
+  // stays null and none of this renders.
+  const oiActive = Array.isArray(oiPackages) && (
+    oiPackages.length > 0 ||
+    (project.status_reason || '').includes('choose your outputs'))
+  if (oiActive) {
+    return (
+      <>
+        <Breadcrumb projectName={project.name} projectId={projectId} />
+        <OutputChooser projectId={projectId} session={session}
+          packages={oiPackages} onPackagesChange={setOiPackages} />
       </>
     )
   }

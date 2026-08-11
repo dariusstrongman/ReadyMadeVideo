@@ -2489,3 +2489,45 @@ textarea { resize: vertical; min-height: 80px; }
   .start-bar { flex-direction: column; align-items: stretch; }
   .start-bar .btn { width: 100%; }
 }
+
+/* ═══════════ Output Intelligence — recommendation & package progress ═══════ */
+.oi-panel {
+  background: var(--bg-1); border: 1px solid var(--border-2);
+  border-radius: 12px; padding: 28px; margin: 24px 0; max-width: 720px;
+}
+.oi-h { font-size: 1.15rem; margin: 0 0 6px; letter-spacing: 0.01em; }
+.oi-reco-title { font-size: 1.5rem; font-weight: 600; margin: 10px 0 8px; }
+.oi-deliverables { list-style: none; padding: 0; margin: 0 0 12px; }
+.oi-deliverables li {
+  padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 8px; margin-bottom: 6px; background: var(--bg-2);
+}
+.oi-deliverables em, .oi-child-what em { opacity: 0.65; font-style: normal; }
+.oi-why { opacity: 0.75; font-size: 0.92rem; margin: 10px 0 16px; }
+.oi-others { margin-top: 18px; display: flex; gap: 8px; flex-wrap: wrap;
+  align-items: center; }
+.oi-others-label { width: 100%; margin: 0 0 4px; opacity: 0.6;
+  font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.oi-custom { margin-top: 14px; padding: 14px; border: 1px dashed var(--border-2);
+  border-radius: 8px; display: grid; gap: 10px; }
+.oi-custom-row { display: flex; gap: 8px; align-items: center; }
+.oi-custom-row input[type="number"] { width: 5.5em; background: var(--bg-2);
+  color: inherit; border: 1px solid var(--border-2); border-radius: 6px;
+  padding: 4px 6px; }
+.oi-custom-dur small, .oi-custom-row small { opacity: 0.6; }
+.oi-rejection { margin-top: 14px; padding: 12px 14px; border-radius: 8px;
+  border: 1px solid rgba(255,160,90,0.35); background: rgba(255,160,90,0.07); }
+.oi-rejection p { margin: 0 0 8px; }
+.oi-progress { opacity: 0.8; margin: 0 0 14px; }
+.oi-children { list-style: none; padding: 0; margin: 0; }
+.oi-child { display: flex; gap: 12px; align-items: baseline; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px;
+  background: var(--bg-2); }
+.oi-child-n { opacity: 0.5; min-width: 1.2em; }
+.oi-child-what { flex: 1; }
+.oi-child-status { font-size: 0.88rem; opacity: 0.85; white-space: nowrap; }
+.oi-child.oi-ready .oi-child-status { color: #7fd8a4; }
+.oi-child.oi-failed .oi-child-status,
+.oi-child.oi-budget_blocked .oi-child-status { color: #f0a05a; }
+.oi-err { display: block; opacity: 0.65; font-size: 0.8rem; white-space: normal; }
+.oi-note { opacity: 0.6; font-size: 0.85rem; margin-top: 12px; }
