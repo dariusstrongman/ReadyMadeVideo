@@ -7,7 +7,7 @@ import {
 } from '../lib/editor'
 import iconUrl from '../assets/icon.svg'
 
-const COLORS = { picture: '#00d4ff', captions: '#f59e0b', music: '#7c3aed',
+const COLORS = { picture: '#ff6b5b', captions: '#f59e0b', music: '#b45b76',
   sfx: '#22c55e', graphics: '#ec4899' }
 const AUTOSAVE_MS = 800
 
