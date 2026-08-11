@@ -116,10 +116,12 @@ class FakeSupabase:
                     return resp(409, {"message": "duplicate key value violates "
                                                  "unique constraint"})
             if table == "output_packages":
-                # migration 0028: unique (project_id, request_key)
+                # migration 0028: PARTIAL unique (project_id, request_key)
+                # where status='active' — cancelled packages free their key
                 dup = [r for r in self.tables[table]
                        if r["project_id"] == b["project_id"]
-                       and r["request_key"] == b["request_key"]]
+                       and r["request_key"] == b["request_key"]
+                       and r.get("status", "active") == "active"]
                 if dup:
                     return resp(409, {"message": "duplicate key value violates "
                                                  "unique constraint"})

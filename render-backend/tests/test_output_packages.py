@@ -533,3 +533,24 @@ def test_audit5_two_long_forms_from_one_story_rejected(monkeypatch):
     codes = [x["code"] for res in r.json()["detail"]["results"]
              for x in res["reasons"]]
     assert "long_form_count_exceeds_stories" in codes
+
+
+def test_audit6_cancelled_package_frees_its_request_key(monkeypatch):
+    """Independent-audit finding: cancel a package, accept the SAME selection
+    again — the customer must get a fresh package, not their cancelled one
+    squatting on the request key forever. The uniqueness is partial
+    (status='active'), mirrored in fake_supa."""
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    uid, token, project = _seed(fake, monkeypatch)
+    client = _client()
+    rec = _recommend(client, project, token)
+    first = _accept(client, project, token, rec, COMBO).json()
+    client.post(f"/projects/{project['id']}/output-packages/"
+                f"{first['package']['id']}/cancel", headers=_auth(token))
+    again = _accept(client, project, token, rec, COMBO).json()
+    assert again["created"] is True
+    assert again["package"]["id"] != first["package"]["id"]
+    assert again["packageStatus"] == "processing"
+    # the cancelled one is still there, honestly cancelled — history not erased
+    assert len(fake.tables["output_packages"]) == 2

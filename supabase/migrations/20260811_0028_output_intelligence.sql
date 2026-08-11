@@ -54,16 +54,24 @@ create table if not exists public.output_packages (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
+  -- cascade, not restrict: projects cascade into BOTH tables, and a
+  -- restrict here makes any future hard project delete order-dependent.
+  -- Recommendations are never deleted on their own.
   recommendation_id uuid not null
-    references public.output_recommendations(id) on delete restrict,
+    references public.output_recommendations(id) on delete cascade,
   catalog_hash text not null,
   request_key text not null,
   selection jsonb not null,
   status text not null default 'active'
     check (status in ('active', 'cancelled')),
-  created_at timestamptz not null default now(),
-  unique (project_id, request_key)
+  created_at timestamptz not null default now()
 );
+-- Idempotency binds ACTIVE packages only: a cancelled package must not
+-- squat on its request_key forever — cancelling and accepting the same
+-- selection again is a legitimate fresh start, not a duplicate.
+create unique index if not exists output_packages_request_uniq
+  on public.output_packages (project_id, request_key)
+  where status = 'active';
 create index if not exists output_packages_project_idx
   on public.output_packages(project_id, created_at desc);
 

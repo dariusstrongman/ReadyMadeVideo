@@ -221,7 +221,8 @@ def create_package(project: dict, recommendation_id: str,
     key = _request_key(recommendation_id, selection)
     existing = supa.db_select("output_packages",
                               f"project_id=eq.{project['id']}"
-                              f"&request_key=eq.{key}&limit=1")
+                              f"&request_key=eq.{key}"
+                              "&status=eq.active&limit=1")
     if existing:
         return {"package": existing[0],
                 "deliverables": list_deliverables(existing[0]["id"]),
@@ -239,7 +240,8 @@ def create_package(project: dict, recommendation_id: str,
     if r.status_code == 409:      # double-click / concurrent accept: theirs won
         rows = supa.db_select("output_packages",
                               f"project_id=eq.{project['id']}"
-                              f"&request_key=eq.{key}&limit=1")
+                              f"&request_key=eq.{key}"
+                              "&status=eq.active&limit=1")
         return {"package": rows[0],
                 "deliverables": list_deliverables(rows[0]["id"]),
                 "created": False}
