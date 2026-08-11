@@ -554,3 +554,53 @@ def test_audit6_cancelled_package_frees_its_request_key(monkeypatch):
     assert again["packageStatus"] == "processing"
     # the cancelled one is still there, honestly cancelled — history not erased
     assert len(fake.tables["output_packages"]) == 2
+
+
+# ---------------------------------------------------- round-7 devil's advocate
+def test_da_budget_exception_name_is_pinned():
+    """The budget-block path matches the string "BudgetExceeded" in the job
+    error. If the exception class is ever renamed, that match dies silently
+    and blocked children march into the wall one by one — this pin makes the
+    rename loud instead."""
+    from app.pipeline.ai_budget import BudgetExceeded
+    assert BudgetExceeded.__name__ == "BudgetExceeded"
+    # and the worker formats errors as "<ClassName>: ..." — pin that too
+    import inspect
+    from app import jobs
+    src = inspect.getsource(jobs._run_job)
+    assert 'f"{type(e).__name__}: {e}"' in src
+
+
+def test_da_two_active_packages_interleave_without_cross_capture(monkeypatch):
+    """Different selections may run as two active packages; their children
+    must never capture each other's jobs."""
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    uid, token, project = _seed(fake, monkeypatch)
+    client = _client()
+    rec = _recommend(client, project, token)
+    a = _accept(client, project, token, rec, [{"kind": "long_form"}]).json()
+    b = _accept(client, project, token, rec,
+                [{"kind": "short_form", "quantity": 2}]).json()
+    assert a["package"]["id"] != b["package"]["id"]
+    # A's child got the plan job; B's children must all still be queued
+    assert [d["status"] for d in b["deliverables"]] == ["queued", "queued"]
+    own = [j["params"]["deliverable_id"] for j in fake.tables["pipeline_jobs"]]
+    assert own == [a["deliverables"][0]["id"]]
+
+
+def test_da_garbage_aspect_and_platform_rejected(monkeypatch):
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    uid, token, project = _seed(fake, monkeypatch)
+    client = _client()
+    rec = _recommend(client, project, token)
+    r = _accept(client, project, token, rec,
+                [{"kind": "long_form", "aspect": "16:9; rm -rf /"}])
+    assert r.status_code == 422
+    codes = [x["code"] for res in r.json()["detail"]["results"]
+             for x in res["reasons"]]
+    assert "invalid_aspect" in codes
+    r = _accept(client, project, token, rec,
+                [{"kind": "long_form", "platform": "x" * 99}])
+    assert r.status_code == 422

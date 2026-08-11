@@ -572,6 +572,18 @@ def check_feasibility(request: dict, segments: list[Segment],
         return FeasibilityResult(IMPOSSIBLE, [{
             "code": "invalid_duration",
             "message": f"durationTargetS must be a positive number, got {dur!r}"}])
+    aspect = request.get("aspect")
+    if aspect is not None and aspect not in ("16:9", "9:16", "1:1", "source"):
+        return FeasibilityResult(IMPOSSIBLE, [{
+            "code": "invalid_aspect",
+            "message": f"aspect must be one of 16:9, 9:16, 1:1 — got {aspect!r}"}])
+    platform = request.get("platform")
+    if platform is not None and (not isinstance(platform, str)
+                                 or len(platform) > 32
+                                 or not platform.replace("_", "").isalnum()):
+        return FeasibilityResult(IMPOSSIBLE, [{
+            "code": "invalid_platform",
+            "message": "platform must be a short alphanumeric name"}])
 
     if kind == "long_form":
         if dur is not None:
