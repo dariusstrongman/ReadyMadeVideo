@@ -51,7 +51,9 @@ class FakeSupabase:
                             "editor_documents", "editor_operations",
                             "editor_render_requests", "editor_revision_proposals",
                             "editor_audit_events", "pending_storage_cleanup",
-                            "editorial_plans", "raw_upload_sessions")}
+                            "editorial_plans", "raw_upload_sessions",
+                            "output_recommendations", "output_packages",
+                            "output_deliverables")}
         self.storage: dict[str, bytes] = {}          # "bucket/path" -> data
         self.fail_tables: set[str] = set()           # simulate write failures
         self.conflict_once_tables: set[str] = set()  # simulate one unique collision
@@ -104,6 +106,31 @@ class FakeSupabase:
         out = []
         for b in rows:
             b = dict(b)
+            if table == "output_recommendations":
+                # migration 0028: unique (project_id, catalog_hash, engine_version)
+                dup = [r for r in self.tables[table]
+                       if r["project_id"] == b["project_id"]
+                       and r["catalog_hash"] == b["catalog_hash"]
+                       and r["engine_version"] == b["engine_version"]]
+                if dup:
+                    return resp(409, {"message": "duplicate key value violates "
+                                                 "unique constraint"})
+            if table == "output_packages":
+                # migration 0028: unique (project_id, request_key)
+                dup = [r for r in self.tables[table]
+                       if r["project_id"] == b["project_id"]
+                       and r["request_key"] == b["request_key"]]
+                if dup:
+                    return resp(409, {"message": "duplicate key value violates "
+                                                 "unique constraint"})
+            if table == "output_deliverables":
+                # migration 0028: unique (package_id, position)
+                dup = [r for r in self.tables[table]
+                       if r["package_id"] == b["package_id"]
+                       and r["position"] == b["position"]]
+                if dup:
+                    return resp(409, {"message": "duplicate key value violates "
+                                                 "unique constraint"})
             if table == "pipeline_jobs":
                 # Mirror migration 0022's pipeline_jobs_kind_check.
                 if b.get("kind") not in ("analysis", "autoedit", "revision",

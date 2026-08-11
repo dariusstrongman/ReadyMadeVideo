@@ -330,6 +330,15 @@ def _maybe_enqueue_customer_autoedit(project: dict) -> None:
         f"&status=in.({','.join(ACTIVE_STATES)})")
     if active:
         return
+    from . import output_packages
+    if output_packages.enabled():
+        # Output Intelligence journey: analysis completes into a CHOICE, not
+        # into one predetermined edit. The customer sees what the footage
+        # supports and picks a package; nothing auto-plans here. Flag OFF
+        # keeps every line below byte-identical to today.
+        set_project_status(project["id"], "ready",
+                           "analysis complete — choose your outputs")
+        return
     if picture_edit_v2_enabled():
         # V2 journey: analysis -> editorial_plan -> (on approval) -> autoedit.
         # The plan job carries source=customer_journey so its completion knows
@@ -892,6 +901,11 @@ def handle_editorial_plan(job: dict, project: dict, tmp: str, ctx: JobContext) -
                      "editorial_plan_version": version}
             if params.get("aspectRatio"):
                 chain["aspect_ratio"] = params["aspectRatio"]
+            # Output Intelligence: the deliverable identity rides the whole
+            # chain so the autoedit that executes this plan is attributable
+            # to the exact deliverable that requested it.
+            if params.get("deliverable_id"):
+                chain["deliverable_id"] = params["deliverable_id"]
             try:
                 enqueue_job(project["id"], project["user_id"],
                             "autoedit", chain)
@@ -1170,6 +1184,24 @@ FAIL_STATUS = {"analysis": "analysis_failed", "autoedit": "analysis_failed",
                "revision": "analysis_failed", "final_render": "render_failed"}
 
 
+def _deliverable_hook(job: dict, status: str, artifacts: dict | None = None,
+                      error: str | None = None) -> None:
+    """Output Intelligence: report a terminal job to its deliverable.
+
+    Guarded — a bookkeeping failure must never kill the worker or mask the
+    job's own outcome; the package view self-heals on the next advance."""
+    if not (job.get("params") or {}).get("deliverable_id"):
+        return
+    try:
+        from . import output_packages
+        output_packages.on_job_finished({**job, "status": status,
+                                         "artifacts": artifacts or {},
+                                         "error_message": error})
+    except Exception as exc:  # noqa: BLE001
+        log_event("DELIVERABLE-HOOK-FAILED", job_id=job["id"],
+                  error=str(exc)[:200])
+
+
 def _run_job(job: dict) -> None:
     t0 = time.time()
     tmp = tempfile.mkdtemp(prefix=f"stromation-job-{job['id'][:8]}-")
@@ -1190,6 +1222,7 @@ def _run_job(job: dict) -> None:
         log_event("JOB-DONE", job_id=job["id"], kind=job["kind"],
                   seconds=round(time.time() - t0, 1),
                   telemetry=artifacts["telemetry_status"]["complete"])
+        _deliverable_hook(job, "completed", artifacts)
     except (JobCancelled, RenderCancelled) as e:
         # B4: RenderCancelled (ffmpeg terminated mid-render by a cancel
         # request) is a CANCELLATION, not a failure — previously it fell
@@ -1209,6 +1242,7 @@ def _run_job(job: dict) -> None:
                 pass
         log_event("JOB-CANCELLED", job_id=job["id"], kind=job["kind"],
                   checkpoint=str(e))
+        _deliverable_hook(job, "cancelled")
     except Exception as e:  # noqa: BLE001 — a job must never kill the worker
         err = f"{type(e).__name__}: {e}"
         ctx.rec("failed_job", round(time.time() - t0, 2),
@@ -1251,6 +1285,7 @@ def _run_job(job: dict) -> None:
             except ConcurrencyLimit:
                 pass          # at the cap — fall through and surface honestly
 
+        _deliverable_hook(job, "failed", error=err)
         if fail_status:
             try:
                 set_project_status(job["project_id"], fail_status,
