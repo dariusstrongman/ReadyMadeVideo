@@ -425,3 +425,111 @@ def test_insufficient_footage_child_is_honest_not_retried_blindly(monkeypatch):
     assert d0["status"] == "failed"
     assert "insufficient footage" in d0["error_message"]
     assert fake.select("output_deliverables", f"id=eq.{c1}")[0]["status"] == "planning"
+
+
+# ---------------------------------------------------------------- round-5 audit
+def test_audit1_quantity_zero_or_negative_is_rejected_not_coerced(monkeypatch):
+    """quantity=0 used to silently become 1 — the exact 'silently alter'
+    the contract bans. Garbage is now rejected with a reason."""
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    uid, token, project = _seed(fake, monkeypatch)
+    client = _client()
+    rec = _recommend(client, project, token)
+    for bad in (0, -3):
+        r = _accept(client, project, token, rec,
+                    [{"kind": "short_form", "quantity": bad}])
+        assert r.status_code == 422, f"quantity={bad} was accepted"
+        codes = [x["code"] for res in r.json()["detail"]["results"]
+                 for x in res["reasons"]]
+        assert "invalid_quantity" in codes
+    assert fake.tables["output_packages"] == []
+
+
+def test_audit2_foreign_active_plan_job_is_not_captured(monkeypatch):
+    """An operator's active editorial_plan job must not be claimed as a
+    child's own — the child would wait forever on a job that never reports
+    to it. The child stays queued until the foreign job ends."""
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    uid, token, project = _seed(fake, monkeypatch)
+    # a foreign plan job is already active (no deliverable_id)
+    fake.insert("pipeline_jobs", {"project_id": project["id"], "user_id": uid,
+                                  "kind": "editorial_plan", "status": "processing",
+                                  "params": {"source": "operator"}})
+    client = _client()
+    rec = _recommend(client, project, token)
+    body = _accept(client, project, token, rec, COMBO).json()
+    states = [d["status"] for d in body["deliverables"]]
+    assert states == ["queued", "queued", "queued"]     # nothing falsely planning
+    # foreign job finishes; the self-heal advance starts the real child job
+    fake.patch("pipeline_jobs", f"kind=eq.editorial_plan", {"status": "completed"})
+    pkgs = client.get(f"/projects/{project['id']}/output-packages",
+                      headers=_auth(token)).json()["packages"]
+    states = [d["status"] for d in pkgs[0]["deliverables"]]
+    assert states[0] == "planning"
+    own = [j for j in fake.tables["pipeline_jobs"]
+           if (j.get("params") or {}).get("deliverable_id")]
+    assert len(own) == 1
+
+
+def test_audit3_footage_change_mid_package_cancels_remaining(monkeypatch):
+    """The package bound one catalog identity; children must never plan
+    against footage the customer was never offered."""
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    uid, token, project = _seed(fake, monkeypatch)
+    client = _client()
+    rec = _recommend(client, project, token)
+    body = _accept(client, project, token, rec, COMBO).json()
+    c0 = body["deliverables"][0]["id"]
+    fake.insert("segments", {"project_id": project["id"], "user_id": uid,
+                             "segment_key": "k9999",
+                             "data": seg(99, 720, 750).model_dump()})
+    _simulate_plan_completed(fake, c0)
+    _simulate_autoedit_completed(fake, c0)      # c0 finishes; advance sees change
+    states = {d["id"]: d["status"] for d in fake.tables["output_deliverables"]}
+    assert states[c0] == "ready"                # finished work is never revoked
+    rest = [s for cid, s in states.items() if cid != c0]
+    assert all(s == "cancelled" for s in rest)
+    err = next(d["error_message"] for d in fake.tables["output_deliverables"]
+               if d["status"] == "cancelled")
+    assert "footage changed" in err
+
+
+def test_audit4_orphaned_child_is_reconciled_to_retryable(monkeypatch):
+    """Stale-recovery fails jobs WITHOUT firing the deliverable hook; the
+    list endpoint repairs the orphan into a retryable failure."""
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    uid, token, project = _seed(fake, monkeypatch)
+    client = _client()
+    rec = _recommend(client, project, token)
+    body = _accept(client, project, token, rec, COMBO).json()
+    c0 = body["deliverables"][0]["id"]
+    # the worker dies: its job is failed by stale recovery, no hook fires
+    fake.patch("pipeline_jobs", "kind=eq.editorial_plan",
+               {"status": "failed", "error_message": "stale: heartbeat lost"})
+    pkgs = client.get(f"/projects/{project['id']}/output-packages",
+                      headers=_auth(token)).json()["packages"]
+    d0 = next(d for d in pkgs[0]["deliverables"] if d["id"] == c0)
+    assert d0["status"] in ("failed", "planning")
+    if d0["status"] == "failed":
+        assert "retry" in d0["error_message"]
+    r = client.post(f"/projects/{project['id']}/output-deliverables/{c0}/retry",
+                    headers=_auth(token))
+    assert r.status_code == 200
+
+
+def test_audit5_two_long_forms_from_one_story_rejected(monkeypatch):
+    fake = FakeSupabase()
+    install(monkeypatch, fake)
+    uid, token, project = _seed(fake, monkeypatch)
+    client = _client()
+    rec = _recommend(client, project, token)
+    r = _accept(client, project, token, rec,
+                [{"kind": "long_form"}, {"kind": "long_form"}])
+    assert r.status_code == 422
+    codes = [x["code"] for res in r.json()["detail"]["results"]
+             for x in res["reasons"]]
+    assert "long_form_count_exceeds_stories" in codes

@@ -714,6 +714,9 @@ def customer_create_output_package(project_id: str, body: PackageSelection,
     pkg, children = out["package"], out["deliverables"]
     return {"package": pkg, "deliverables": children,
             "created": out["created"],
+            # SUPPORTED_WITH_CONSTRAINTS is accepted but never silent: the
+            # caller sees exactly which constraint shaped the result.
+            "feasibility": out.get("feasibility", []),
             "packageStatus": op.package_status(pkg, children)}
 
 
@@ -727,7 +730,10 @@ def customer_list_output_packages(project_id: str,
     out = []
     for p in pkgs:
         children = op.list_deliverables(p["id"])
-        # self-heal: a lost worker hook must not strand a queued child forever
+        # repair liveness holes first (jobs lost to worker restarts /
+        # stale-recovery, which fails jobs without firing the hook) …
+        children = op.reconcile_package(p, children)
+        # … then self-heal: a queued child with nothing active gets started
         if any(c["status"] == "queued" for c in children) \
                 and not any(c["status"] in op.ACTIVE_CHILD for c in children):
             op.advance_package(p["id"])

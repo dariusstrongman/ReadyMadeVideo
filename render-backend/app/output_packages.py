@@ -134,15 +134,17 @@ def _specs_from_selection(selection: list[dict],
     longs = oi.assess_long_form(segments, inv)
     specs: list[dict] = []
     short_cursor = 0
+    long_used: set[str] = set()
     for item in selection:
         kind = item.get("kind")
         if kind == "long_form":
-            pool = longs
+            pool = [o for o in longs if o.opportunityId not in long_used]
             opp = next((o for o in pool
                         if o.opportunityId == item.get("opportunityId")),
                        pool[0] if pool else None)
             if opp is None:
                 continue                    # feasibility already rejected this
+            long_used.add(opp.opportunityId)
             lo, hi = opp.feasibleDurationS
             target = float(item.get("durationTargetS")
                            or opp.recommendedDurationS)
@@ -213,6 +215,8 @@ def create_package(project: dict, recommendation_id: str,
     results = oi.check_selection(selection, segments)
     if any(r.verdict in (oi.IMPOSSIBLE, oi.NOT_RECOMMENDED) for r in results):
         raise SelectionRejected(results)
+    feasibility = [r.to_json() for r in results
+                   if r.verdict == oi.SUPPORTED_WITH_CONSTRAINTS]
 
     key = _request_key(recommendation_id, selection)
     existing = supa.db_select("output_packages",
@@ -252,7 +256,7 @@ def create_package(project: dict, recommendation_id: str,
     advance_package(package["id"])
     return {"package": package,
             "deliverables": list_deliverables(package["id"]),
-            "created": True}
+            "created": True, "feasibility": feasibility}
 
 
 # ---------------------------------------------------------------- execution
@@ -310,6 +314,19 @@ def advance_package(package_id: str) -> dict | None:
     nxt = next((c for c in children if c["status"] == QUEUED), None)
     if nxt is None:
         return None
+    # The package was accepted against ONE catalog identity. Footage uploaded
+    # or removed mid-package would make later children plan against material
+    # the customer never saw offered — cancel them honestly instead.
+    live_hash = oi.catalog_hash(_load_segments(package["project_id"]))
+    if live_hash != package["catalog_hash"]:
+        for c in children:
+            if c["status"] == QUEUED:
+                _set_child(c["id"], {"status": CANCELLED,
+                                     "error_message":
+                                         "footage changed after this package "
+                                         "was created — request a fresh "
+                                         "recommendation for the new footage"})
+        return None
     spec = nxt["spec"]
     params = {"source": "customer_journey", "deliverable_id": nxt["id"],
               **{k: spec[k] for k in ("aspectRatio", "platform",
@@ -322,8 +339,42 @@ def advance_package(package_id: str) -> dict | None:
                           "editorial_plan", params)
     except ConcurrencyLimit:
         return None                        # user at the cap; retried on next poll
+    if (job.get("params") or {}).get("deliverable_id") != nxt["id"]:
+        # enqueue_job's idempotency returned a FOREIGN active plan job
+        # (operator/classic journey). Claiming it would strand this child in
+        # "planning" against a job that will never report back to it. Leave
+        # the child queued; the self-heal advance retries after that job ends.
+        return None
     _set_child(nxt["id"], {"status": PLANNING})
     return job
+
+
+def reconcile_package(package: dict, children: list[dict]) -> list[dict]:
+    """Repair liveness holes the worker hooks cannot see.
+
+    A child in planning/editing whose job no longer exists in any active
+    state was orphaned — stale-recovery fails jobs without firing the
+    deliverable hook, and a crash between chain steps leaves no job at all.
+    An orphaned child becomes failed (retryable); nothing running is touched.
+    """
+    active = [c for c in children if c["status"] in ACTIVE_CHILD]
+    if not active:
+        return children
+    jobs = supa.db_select(
+        "pipeline_jobs",
+        f"project_id=eq.{package['project_id']}"
+        "&status=in.(queued,processing,cancel_requested)")
+    live_children = {(j.get("params") or {}).get("deliverable_id")
+                     for j in jobs}
+    changed = False
+    for c in active:
+        if c["id"] not in live_children:
+            _set_child(c["id"], {"status": FAILED,
+                                 "error_message":
+                                     "its job was lost (worker restart) — "
+                                     "retry to continue"})
+            changed = True
+    return list_deliverables(package["id"]) if changed else children
 
 
 def cancel_package(package_id: str) -> None:

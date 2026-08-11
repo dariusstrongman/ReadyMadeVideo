@@ -561,6 +561,17 @@ def check_feasibility(request: dict, segments: list[Segment],
 
     kind = request.get("kind")
     dur = request.get("durationTargetS")
+    qty = request.get("quantity")
+    # Garbage in the request is rejected, never coerced: a quantity of 0 or -3
+    # silently becoming 1 is exactly the "silently alter it" the contract bans.
+    if qty is not None and (not isinstance(qty, int) or qty < 1):
+        return FeasibilityResult(IMPOSSIBLE, [{
+            "code": "invalid_quantity",
+            "message": f"quantity must be a positive whole number, got {qty!r}"}])
+    if dur is not None and (not isinstance(dur, (int, float)) or dur <= 0):
+        return FeasibilityResult(IMPOSSIBLE, [{
+            "code": "invalid_duration",
+            "message": f"durationTargetS must be a positive number, got {dur!r}"}])
 
     if kind == "long_form":
         if dur is not None:
@@ -646,12 +657,37 @@ def check_selection(selection: list[dict],
     shorts = discover_shorts(segments, inv)
     longs = assess_long_form(segments, inv)
     results = []
-    shorts_requested = sum(int(item.get("quantity") or 1)
+
+    def _valid_qty(item) -> bool:
+        q = item.get("quantity")
+        return q is None or (isinstance(q, int) and q >= 1)
+
+    # Aggregate ONLY over well-formed quantities; a malformed item keeps its
+    # raw value so check_feasibility rejects it instead of a sum masking it.
+    shorts_requested = sum((item.get("quantity") if item.get("quantity")
+                            is not None else 1)
                            for item in selection
-                           if item.get("kind") == "short_form")
+                           if item.get("kind") == "short_form"
+                           and _valid_qty(item))
+    longs_requested = sum(1 for item in selection
+                          if item.get("kind") == "long_form")
     for item in selection:
         req = dict(item)
-        if item.get("kind") == "short_form":
+        if item.get("kind") == "short_form" and _valid_qty(item):
             req["quantity"] = shorts_requested
-        results.append(check_feasibility(req, segments, inv, shorts, longs))
+        r = check_feasibility(req, segments, inv, shorts, longs)
+        # Two long-form requests against one coherent story would both map to
+        # the SAME material — duplicate videos, quantity inflation by another
+        # door. Each long-form needs its own independent story.
+        if (item.get("kind") == "long_form" and r.verdict in
+                (SUPPORTED, SUPPORTED_WITH_CONSTRAINTS)
+                and longs_requested > len(longs or [])):
+            r = FeasibilityResult(NOT_RECOMMENDED, [{
+                "code": "long_form_count_exceeds_stories",
+                "message": (f"you asked for {longs_requested} full videos but "
+                            f"the footage holds {len(longs or [])} independent "
+                            "stor" + ("y" if len(longs or []) == 1 else "ies")
+                            + " — the same story cut twice is one video, twice")}],
+                {"kind": "long_form"} if longs else None)
+        results.append(r)
     return results
