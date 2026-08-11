@@ -141,9 +141,9 @@ def compile_timeline(timeline: dict, sources: dict[str, str], out_path: str,
         crop = c.get("crop") or {}
         crop_vf = ""
         if crop:
-            def _f(key, lo, hi, dflt):
+            def _f(key, lo, hi, dflt, _crop=crop):
                 try:
-                    return min(hi, max(lo, float(crop.get(key, dflt))))
+                    return min(hi, max(lo, float(_crop.get(key, dflt))))
                 except (TypeError, ValueError):
                     return dflt
             # ffmpeg's crop evaluates w/h ONCE at init and x/y per frame, so

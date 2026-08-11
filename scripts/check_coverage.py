@@ -14,6 +14,11 @@ THRESHOLDS = {          # module filename -> minimum percent
     "editorial_phase2.py": 85.0,
     "creative_phase3.py": 85.0,
     "picture_edit_v2.py": 85.0,
+    # Output Intelligence: the feasibility/recommendation engine decides what
+    # customers are offered and the orchestrator moves their money's worth —
+    # both hold ~90%+ today; gate them so that cannot silently decay.
+    "output_intelligence.py": 90.0,
+    "output_packages.py": 85.0,
     "product_editor.py": 85.0,
     "ingestion.py": 90.0,
     "integration.py": 90.0,

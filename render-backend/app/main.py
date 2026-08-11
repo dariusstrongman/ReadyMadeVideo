@@ -643,6 +643,143 @@ def customer_get_editorial_plan(project_id: str,
     return rows[0]
 
 
+# ══════════════════════════ Output Intelligence ═══════════════════════════
+# What is worth making, before how to make it. Flag-gated (default OFF): with
+# the flag off every endpoint below 404s and the classic journey is untouched.
+def _oi():
+    from . import output_packages
+    if not output_packages.enabled():
+        raise HTTPException(404, "not found")
+    return output_packages
+
+
+class PackageSelection(BaseModel):
+    recommendationId: UUID
+    # [{kind: long_form|short_form, quantity?, durationTargetS?, aspect?,
+    #   platform?, opportunityId?}] — validated server-side by the
+    # deterministic feasibility engine; the client is never trusted.
+    selection: list[dict] = Field(min_length=1, max_length=12)
+
+
+@app.post("/projects/{project_id}/output-recommendation")
+def customer_output_recommendation(project_id: str,
+                                   authorization: str = Header(default="")):
+    """Compute (idempotently) what this footage honestly supports.
+
+    Free — pure deterministic derivation from the existing segment catalog;
+    no model call, no re-analysis. Requires a completed analysis."""
+    op = _oi()
+    user, project = _owned_project(project_id, authorization)
+    _rate_check(user["id"], "output_recommendation")
+    if not supa.db_select("segments", f"project_id=eq.{project_id}&limit=1"):
+        raise HTTPException(409, "no segment catalog yet — run analysis first")
+    row = op.generate_recommendation(project)
+    return {**row, "stale": False}
+
+
+@app.get("/projects/{project_id}/output-recommendation")
+def customer_get_output_recommendation(project_id: str,
+                                       authorization: str = Header(default="")):
+    op = _oi()
+    _owned_project(project_id, authorization)
+    rows = supa.db_select(
+        "output_recommendations",
+        f"project_id=eq.{project_id}&order=created_at.desc&limit=1")
+    if not rows:
+        raise HTTPException(404, "no recommendation yet")
+    return {**rows[0], "stale": op.recommendation_staleness(project_id, rows[0])}
+
+
+@app.post("/projects/{project_id}/output-packages")
+def customer_create_output_package(project_id: str, body: PackageSelection,
+                                   authorization: str = Header(default="")):
+    """Accept or customize a recommendation. Deterministic feasibility decides;
+    impossible selections are rejected with reasons and the nearest honest
+    alternative, never silently altered. Idempotent per exact selection."""
+    op = _oi()
+    user, project = _owned_project(project_id, authorization)
+    _rate_check(user["id"], "output_package")
+    try:
+        out = op.create_package(project, str(body.recommendationId),
+                                body.selection)
+    except op.SelectionRejected as exc:
+        raise HTTPException(422, detail={
+            "error": "selection_not_feasible",
+            "results": [r.to_json() for r in exc.results]})
+    except op.StaleRecommendation as exc:
+        raise HTTPException(409, detail={
+            "error": "stale_recommendation", "message": str(exc)})
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    pkg, children = out["package"], out["deliverables"]
+    return {"package": pkg, "deliverables": children,
+            "created": out["created"],
+            # SUPPORTED_WITH_CONSTRAINTS is accepted but never silent: the
+            # caller sees exactly which constraint shaped the result.
+            "feasibility": out.get("feasibility", []),
+            "packageStatus": op.package_status(pkg, children)}
+
+
+@app.get("/projects/{project_id}/output-packages")
+def customer_list_output_packages(project_id: str,
+                                  authorization: str = Header(default="")):
+    op = _oi()
+    _owned_project(project_id, authorization)
+    pkgs = supa.db_select("output_packages",
+                          f"project_id=eq.{project_id}&order=created_at.desc")
+    out = []
+    for p in pkgs:
+        children = op.list_deliverables(p["id"])
+        # repair liveness holes first (jobs lost to worker restarts /
+        # stale-recovery, which fails jobs without firing the hook) …
+        children = op.reconcile_package(p, children)
+        # … then self-heal: a queued child with nothing active gets started
+        if any(c["status"] == "queued" for c in children) \
+                and not any(c["status"] in op.ACTIVE_CHILD for c in children):
+            op.advance_package(p["id"])
+            children = op.list_deliverables(p["id"])
+        out.append({"package": p, "deliverables": children,
+                    "packageStatus": op.package_status(p, children)})
+    return {"packages": out}
+
+
+@app.post("/projects/{project_id}/output-packages/{package_id}/cancel")
+def customer_cancel_output_package(project_id: str, package_id: UUID,
+                                   authorization: str = Header(default="")):
+    op = _oi()
+    _owned_project(project_id, authorization)
+    rows = supa.db_select("output_packages",
+                          f"id=eq.{package_id}&project_id=eq.{project_id}&limit=1")
+    if not rows:
+        raise HTTPException(404, "package not found")
+    op.cancel_package(str(package_id))
+    children = op.list_deliverables(str(package_id))
+    return {"package": {**rows[0], "status": "cancelled"},
+            "deliverables": children, "packageStatus": "cancelled"}
+
+
+@app.post("/projects/{project_id}/output-deliverables/{deliverable_id}/retry")
+def customer_retry_deliverable(project_id: str, deliverable_id: UUID,
+                               authorization: str = Header(default="")):
+    """Retry ONE failed child. Siblings are untouched; a double-click is a
+    no-op because the second call finds the child no longer failed."""
+    op = _oi()
+    user, _ = _owned_project(project_id, authorization)
+    _rate_check(user["id"], "output_retry")
+    rows = supa.db_select(
+        "output_deliverables",
+        f"id=eq.{deliverable_id}&project_id=eq.{project_id}&limit=1")
+    if not rows:
+        raise HTTPException(404, "deliverable not found")
+    child = rows[0]
+    if child["status"] not in (op.FAILED, op.BUDGET_BLOCKED):
+        return {"retried": False, "status": child["status"]}
+    op.retry_deliverable(child)
+    fresh = supa.db_select("output_deliverables",
+                           f"id=eq.{deliverable_id}&limit=1")[0]
+    return {"retried": True, "status": fresh["status"]}
+
+
 @app.post("/projects/{project_id}/generate-draft")
 def op_generate_draft(project_id: str, body: JobParams = JobParams(),
                       authorization: str = Header(default="")):
