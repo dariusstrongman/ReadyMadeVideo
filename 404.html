@@ -7,7 +7,7 @@
 <meta name="description" content="The page you are looking for does not exist.">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
-<meta name="theme-color" content="#0a0a0f">
+<meta name="theme-color" content="#100c0d">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
@@ -27,12 +27,12 @@
 <nav class="nav" id="nav">
   <a href="index.html" class="nav-logo" aria-label="ReadyMadeVideo home">
     <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" width="28" height="28">
-      <circle cx="30" cy="8" r="5" stroke="#00d4ff" stroke-width="2"/>
-      <circle cx="20" cy="22" r="4" stroke="#00d4ff" stroke-width="2"/>
-      <circle cx="10" cy="34" r="5" stroke="#00d4ff" stroke-width="2"/>
-      <path d="M27 11 C24 14, 22 18, 22 20" stroke="#00d4ff" stroke-width="2" stroke-linecap="round" marker-end="url(#na)"/>
-      <path d="M18 25 C16 28, 13 30, 13 32" stroke="#00d4ff" stroke-width="2" stroke-linecap="round" marker-end="url(#na)"/>
-      <defs><marker id="na" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="3" markerHeight="3" orient="auto"><path d="M1 1L6 4L1 7" stroke="#00d4ff" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+      <circle cx="30" cy="8" r="5" stroke="#ff6b5b" stroke-width="2"/>
+      <circle cx="20" cy="22" r="4" stroke="#ff6b5b" stroke-width="2"/>
+      <circle cx="10" cy="34" r="5" stroke="#ff6b5b" stroke-width="2"/>
+      <path d="M27 11 C24 14, 22 18, 22 20" stroke="#ff6b5b" stroke-width="2" stroke-linecap="round" marker-end="url(#na)"/>
+      <path d="M18 25 C16 28, 13 30, 13 32" stroke="#ff6b5b" stroke-width="2" stroke-linecap="round" marker-end="url(#na)"/>
+      <defs><marker id="na" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="3" markerHeight="3" orient="auto"><path d="M1 1L6 4L1 7" stroke="#ff6b5b" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
     </svg>
     <span class="nav-logo-text">READYMADEVIDEO</span>
   </a>
@@ -62,7 +62,7 @@
     <div class="footer-grid">
       <div class="footer-brand">
         <a href="index.html" class="nav-logo" style="display:inline-flex" aria-label="ReadyMadeVideo home">
-          <svg viewBox="0 0 40 40" fill="none" width="22" height="22" aria-hidden="true"><circle cx="30" cy="8" r="5" stroke="#00d4ff" stroke-width="2"/><circle cx="20" cy="22" r="4" stroke="#00d4ff" stroke-width="2"/><circle cx="10" cy="34" r="5" stroke="#00d4ff" stroke-width="2"/><path d="M27 11 C24 14, 22 18, 22 20" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/><path d="M18 25 C16 28, 13 30, 13 32" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/></svg>
+          <svg viewBox="0 0 40 40" fill="none" width="22" height="22" aria-hidden="true"><circle cx="30" cy="8" r="5" stroke="#ff6b5b" stroke-width="2"/><circle cx="20" cy="22" r="4" stroke="#ff6b5b" stroke-width="2"/><circle cx="10" cy="34" r="5" stroke="#ff6b5b" stroke-width="2"/><path d="M27 11 C24 14, 22 18, 22 20" stroke="#ff6b5b" stroke-width="2" stroke-linecap="round"/><path d="M18 25 C16 28, 13 30, 13 32" stroke="#ff6b5b" stroke-width="2" stroke-linecap="round"/></svg>
           <span class="nav-logo-text" style="margin-left:8px">READYMADEVIDEO</span>
         </a>
         <p>AI-first video production platform. Upload raw footage, describe your vision, receive a complete edit.</p>
@@ -78,7 +78,7 @@
 const mb=document.getElementById('menu-btn'),nl=document.getElementById('nav-links');
 if(mb&&nl){mb.addEventListener('click',()=>{const o=nl.classList.toggle('open');mb.setAttribute('aria-expanded',o)});nl.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>{nl.classList.remove('open');mb.setAttribute('aria-expanded','false')}));}
 const nav=document.getElementById('nav');
-if(nav)window.addEventListener('scroll',()=>{nav.style.background=window.scrollY>20?'rgba(10,10,15,0.97)':'rgba(10,10,15,0.85)';},{passive:true});
+if(nav)window.addEventListener('scroll',()=>{nav.style.background=window.scrollY>20?'rgba(16,12,13,0.97)':'rgba(16,12,13,0.85)';},{passive:true});
 </script>
 </body>
 </html>
